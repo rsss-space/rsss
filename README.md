@@ -124,15 +124,15 @@ cross-origin-isolated worker.
 
 We use the `@substrate-system/blur-hash` web component to do
 [the blur-up technique](https://css-tricks.com/the-blur-up-technique-for-loading-background-images/).
-The component renders a blurhash placeholder synchronously on first paint,
-then swaps in the real image once it loads. The placeholder string itself
-is computed on the Cloudflare backend; the client never decodes images to
-derive it.
+The placeholder hash string is computed on the Cloudflare backend.
 
-#### When the blurhash string is created
 
-Generation is driven by the per-user Durable Object (`UserDO`) as new feed
-items arrive:
+#### Computing the Hash String
+
+The strings are computed by the Durable Objects whenever they get a new feed
+item. The Durable Object resolves the `og:image` tag, then uses that image
+to generate a blurhash string, and we save the blurhash string globally in
+a KV cache.
 
 1. When the DO ingests a new item and resolves its `og:image`, it calls
    `updateBlurhashFromCacheOrQueue` (`src/server/durable-objects/index.ts`).
