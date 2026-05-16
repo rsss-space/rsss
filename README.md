@@ -116,7 +116,84 @@ cross-origin-isolated worker.
 * Item reader with read/star toggles
 * Responsive design
 
--------
+---------------------------------------------------
+
+## Images
+
+### Blur-Up
+
+We use the `@substrate-system/blur-hash` web component to do
+[the blur-up technique](https://css-tricks.com/the-blur-up-technique-for-loading-background-images/).
+The component renders a blurhash placeholder synchronously on first paint,
+then swaps in the real image once it loads. The placeholder string itself
+is computed on the Cloudflare backend; the client never decodes images to
+derive it.
+
+#### When the blurhash string is created
+
+Generation is driven by the per-user Durable Object (`UserDO`) as new feed
+items arrive:
+
+1. When the DO ingests a new item and resolves its `og:image`, it calls
+   `updateBlurhashFromCacheOrQueue` (`src/server/durable-objects/index.ts`).
+2. That method hashes the image URL with SHA-256 (see
+   `blurhashCacheKey` in `src/server/blurhash.ts`) and looks up the result
+   in the `BLURHASH_KV` namespace (`expirationTtl` 90 days).
+3. **Cache hit**: the cached `{ blurhash, image_width, image_height }`
+   entry is written straight onto the `items` row and the DO's feed
+   version is bumped.
+4. **Cache miss**: the DO enqueues a `BlurhashJob` (image URL, item id,
+   DO id) onto the `BLURHASH_QUEUE` Cloudflare Queue and continues
+   serving the request — the rest of the work happens asynchronously.
+
+The queue consumer is registered on the worker
+(`worker.queue` in `src/server/index.ts`) and dynamically imports
+`blurhash-runtime.ts` so the WASM image codec is only loaded in the
+consumer isolate. For each job, `handleBlurhashQueueBatch`
+(`src/server/blurhash-consumer.ts`):
+
+* Re-checks `BLURHASH_KV` in case another item with the same image URL
+  populated it concurrently.
+* Fetches the image with a 10 s timeout, a 5 MiB ceiling, and a browser
+  `user-agent` so origins that block bots still serve the og image.
+* Decodes the bytes with `@cf-wasm/photon` (`PhotonImage.new_from_byteslice`),
+  resizes to 32×32 with `SamplingFilter.Nearest`, and encodes the raw
+  pixels with `blurhash`'s `encode()` using 4×4 components.
+* Writes `{ blurhash, image_width, image_height }` into `BLURHASH_KV`
+  with a 90 day TTL, then `POST`s it back to the originating DO at
+  `/internal/blurhash/items/:id`, which updates the `items` row and
+  bumps the feed version.
+
+#### How the strings get into the page
+
+The HTML served to the client is rendered server-side and cached per user
+in `HTML_KV` under `html:v3:<did>:<version>`. Because the DO bumps its
+`feed_version` whenever an item's blurhash is filled in, the next request
+from that user misses the HTML cache and re-renders.
+
+Rendering happens in `src/server/lazy-html.ts`:
+
+* `injectInitialFeed` writes a `<script id="initial-feed" type="application/json">`
+  block into `<head>`. That JSON payload is the same shape the client
+  would otherwise fetch from `/api/sync`, and every item carries its
+  `blurhash`, `image_width`, and `image_height` fields.
+* `renderInitialFeedImage` replaces the `#root` placeholder with a fully
+  hydrated item list. When an item has a valid blurhash plus dimensions,
+  it emits `<blur-hash placeholder="..." src="..." width="..." height="...">`;
+  otherwise it falls back to a plain `<img>`. That is the markup
+  `@substrate-system/blur-hash` upgrades when the component definition
+  registers on the client.
+
+This is a build-on-demand model: HTML is generated the first time a
+signed-in user requests it after their feed version changes, then served
+from `HTML_KV` until the next item (and therefore the next blurhash) lands.
+Items that never get a blurhash (image fetch failed, 4xx, oversized, or
+undecodable) are simply rendered as `<img>` — the queue consumer `ack`s
+the job and moves on, and the cache key is left empty so retries can
+happen later.
+
+
+---------------------------------------------------
 
 ## Files
 
