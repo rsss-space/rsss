@@ -124,10 +124,75 @@
 
 .subscription-section {
     & p {
-        margin: 0 0 1rem;
+        margin: 0 0 0.5rem;
     }
 
-    & .btn-manage,
+    & .subscription-summary {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    & .subscription-headline {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 1.125rem;
+        margin: 0 0 0.25rem;
+    }
+
+    & .subscription-plan {
+        font-weight: 600;
+    }
+
+    & .subscription-status {
+        color: var(--color-text-secondary);
+    }
+
+    & .subscription-note {
+        margin: 0 0 0.25rem;
+        color: var(--color-text-secondary);
+    }
+
+    & .subscription-billed-to {
+        margin: 0 0 0.5rem;
+        color: var(--color-text-secondary);
+        font-size: 1rem;
+    }
+
+    & .subscription-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+    }
+
+    & .subscription-actions-sep {
+        color: var(--color-border);
+    }
+
+    & .subscription-error {
+        margin: 0.5rem 0 0;
+        color: var(--color-error);
+        font-size: 1rem;
+    }
+
+    & .btn-link {
+        background: transparent;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        font-size: 1rem;
+        color: var(--color-primary);
+        text-decoration: underline;
+    }
+
+    & .btn-link:hover {
+        color: var(--color-primary-hover);
+    }
+
     & .btn-upgrade {
         background-color: var(--color-primary);
         color: var(--color-surface);

@@ -25,6 +25,10 @@ import {
     verifySubscription,
     getCustomerPortalUrl,
     getCurrentPeriodEnd,
+    getSubscriptionSnapshot,
+    cancelSubscription,
+    resumeSubscription,
+    getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
 import {
@@ -62,6 +66,8 @@ interface CachedBilling {
     planId:string;
     status:'active'|'scheduled'|'none';
     refreshedAt:number;
+    currentPeriodEnd:number|null;
+    canceledAt:number|null;
 }
 
 const BILLING_CACHE_TTL_SECONDS = 600
@@ -180,22 +186,27 @@ async function resolveBilling (
     if (cached) return cached
 
     if (!billingUseLive(env)) {
-        // No Autumn configured -- treat as not entitled. Dev path
-        // creates entitlement explicitly via /api/billing/checkout.
         const fresh:CachedBilling = {
             planId,
             status: 'none',
-            refreshedAt: Date.now()
+            refreshedAt: Date.now(),
+            currentPeriodEnd: null,
+            canceledAt: null
         }
         await writeCachedBilling(env, did, fresh)
         return fresh
     }
 
     const verified = await verifySubscription(env, did, planId)
+    const snapshot = verified ?
+        await getSubscriptionSnapshot(env, did, planId) :
+        { currentPeriodEnd: null, canceledAt: null }
     const fresh:CachedBilling = {
         planId,
         status: verified ? verified.status : 'none',
-        refreshedAt: Date.now()
+        refreshedAt: Date.now(),
+        currentPeriodEnd: snapshot.currentPeriodEnd,
+        canceledAt: snapshot.canceledAt
     }
     await writeCachedBilling(env, did, fresh)
     return fresh
@@ -836,13 +847,20 @@ app.get('/api/billing/status', requireAuth, async (c) => {
             c.env,
             session.did
         )
+        const contactEmail = await readContactEmail(
+            c.env,
+            session.did
+        )
         return c.json({
             entitled: isEntitled(billing),
             planId: billing.planId,
             status: billing.status,
             refreshedAt: billing.refreshedAt,
             useLive: billingUseLive(c.env),
-            pendingDeletion
+            pendingDeletion,
+            currentPeriodEnd: billing.currentPeriodEnd,
+            canceledAt: billing.canceledAt,
+            contactEmail
         })
     } catch (err) {
         console.error('billing/status error:', err)
@@ -1011,7 +1029,9 @@ app.post('/api/billing/checkout', requireAuth, async (c) => {
         const billing:CachedBilling = {
             planId,
             status: 'active',
-            refreshedAt: Date.now()
+            refreshedAt: Date.now(),
+            currentPeriodEnd: null,
+            canceledAt: null
         }
         await writeCachedBilling(c.env, session.did, billing)
 
@@ -1137,10 +1157,17 @@ app.post(
                     error: 'payment_incomplete'
                 }, 402)
             }
+            const snapshot = await getSubscriptionSnapshot(
+                c.env,
+                session.did,
+                planId
+            )
             const billing:CachedBilling = {
                 planId: verified.planId,
                 status: verified.status,
-                refreshedAt: Date.now()
+                refreshedAt: Date.now(),
+                currentPeriodEnd: snapshot.currentPeriodEnd,
+                canceledAt: snapshot.canceledAt
             }
             await writeCachedBilling(
                 c.env,
@@ -1292,6 +1319,162 @@ app.post('/api/billing/portal', requireAuth, async (c) => {
         return c.json({ url })
     } catch (err) {
         console.error('billing/portal error:', err)
+        return c.json({
+            error: 'billing_unavailable'
+        }, 503)
+    }
+})
+
+/**
+ * Schedule cancellation of the user's subscription at the end of
+ * the current billing period. In dev mode (no Autumn key) we
+ * mutate the cached billing entry directly so the client UI can
+ * be exercised without Autumn.
+ */
+app.post('/api/billing/cancel', requireAuth, async (c) => {
+    const session = c.get('session')!
+    const planId:BillingPlanId = DEFAULT_PLAN_ID
+
+    if (!billingUseLive(c.env)) {
+        const cached = await readCachedBilling(
+            c.env,
+            session.did
+        )
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
+        const now = Date.now()
+        // 30-day synthetic period so the UI has a date to show.
+        const periodEnd = now + 30 * 24 * 60 * 60 * 1000
+        const updated:CachedBilling = {
+            ...cached,
+            canceledAt: now,
+            currentPeriodEnd: cached.currentPeriodEnd ?? periodEnd
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({
+            ok: true,
+            canceledAt: updated.canceledAt,
+            currentPeriodEnd: updated.currentPeriodEnd
+        })
+    }
+
+    try {
+        const cached = await readCachedBilling(
+            c.env,
+            session.did
+        )
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
+        const snapshot = await cancelSubscription(
+            c.env,
+            session.did,
+            planId
+        )
+        const updated:CachedBilling = {
+            planId,
+            status: cached.status,
+            refreshedAt: Date.now(),
+            currentPeriodEnd: snapshot.currentPeriodEnd,
+            canceledAt: snapshot.canceledAt ?? Date.now()
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({
+            ok: true,
+            canceledAt: updated.canceledAt,
+            currentPeriodEnd: updated.currentPeriodEnd
+        })
+    } catch (err) {
+        console.error('billing/cancel error:', err)
+        return c.json({
+            error: 'billing_unavailable'
+        }, 503)
+    }
+})
+
+/**
+ * Reverse a scheduled cancellation.
+ */
+app.post('/api/billing/resume', requireAuth, async (c) => {
+    const session = c.get('session')!
+    const planId:BillingPlanId = DEFAULT_PLAN_ID
+
+    if (!billingUseLive(c.env)) {
+        const cached = await readCachedBilling(
+            c.env,
+            session.did
+        )
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
+        const updated:CachedBilling = {
+            ...cached,
+            canceledAt: null
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({ ok: true })
+    }
+
+    try {
+        const cached = await readCachedBilling(c.env, session.did)
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
+        const snapshot = await resumeSubscription(
+            c.env,
+            session.did,
+            planId
+        )
+        const updated:CachedBilling = {
+            planId,
+            status: cached.status,
+            refreshedAt: Date.now(),
+            currentPeriodEnd: snapshot.currentPeriodEnd,
+            canceledAt: snapshot.canceledAt
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({ ok: true })
+    } catch (err) {
+        console.error('billing/resume error:', err)
+        return c.json({
+            error: 'billing_unavailable'
+        }, 503)
+    }
+})
+
+/**
+ * Create a Stripe SetupIntent-backed URL the user can visit to add
+ * or update their payment method. Replaces the kitchen-sink
+ * `openCustomerPortal` flow for in-app card updates.
+ */
+app.post('/api/billing/payment-method', requireAuth, async (c) => {
+    const session = c.get('session')!
+
+    if (!billingUseLive(c.env)) {
+        return c.json({
+            error: 'portal_unavailable_in_dev'
+        }, 503)
+    }
+
+    try {
+        const baseUrl = new URL(c.req.url).origin
+        const url = await getPaymentSetupUrl(
+            c.env,
+            session.did,
+            `${baseUrl}/settings`
+        )
+        return c.json({ url })
+    } catch (err) {
+        console.error('billing/payment-method error:', err)
         return c.json({
             error: 'billing_unavailable'
         }, 503)

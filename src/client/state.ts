@@ -1436,6 +1436,87 @@ State.openCustomerPortal = async function (
 }
 
 /**
+ * Schedule cancellation of the user's subscription. The server
+ * stores the resulting canceledAt + currentPeriodEnd on the
+ * cached billing entry; this function reloads billing so the
+ * panel re-renders.
+ */
+State.cancelSubscription = async function ():Promise<void> {
+    setBillingError(null)
+    try {
+        const res = await api.post('billing/cancel', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            throw new Error(
+                body.error || `cancel_${res.status}`
+            )
+        }
+        await State.loadBillingStatus()
+    } catch (err) {
+        setBillingError(err instanceof Error ?
+            err.message :
+            'Failed to cancel subscription')
+        throw err
+    }
+}
+
+/**
+ * Reverse a scheduled cancellation.
+ */
+State.resumeSubscription = async function ():Promise<void> {
+    setBillingError(null)
+    try {
+        const res = await api.post('billing/resume', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            throw new Error(
+                body.error || `resume_${res.status}`
+            )
+        }
+        await State.loadBillingStatus()
+    } catch (err) {
+        setBillingError(err instanceof Error ?
+            err.message :
+            'Failed to resume subscription')
+        throw err
+    }
+}
+
+/**
+ * Fetch a single-purpose Stripe URL the user can visit to update
+ * their payment method, then navigate to it.
+ */
+State.openPaymentMethodUpdate = async function ():Promise<void> {
+    try {
+        const res = await api.post('billing/payment-method', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            throw new Error(
+                body.error || `payment_method_${res.status}`
+            )
+        }
+        const data = await res.json<{ url:string }>()
+        window.location.assign(data.url)
+    } catch (err) {
+        setBillingError(err instanceof Error ?
+            err.message :
+            'Failed to open payment-method page')
+    }
+}
+
+/**
  * Logout
  */
 State.logout = async function (

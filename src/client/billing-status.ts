@@ -15,6 +15,9 @@ export interface BillingStatus {
     refreshedAt:number
     useLive:boolean
     pendingDeletion?:PendingDeletion|null
+    currentPeriodEnd?:number|null
+    canceledAt?:number|null
+    contactEmail?:string|null
 }
 
 export const billingStatus:Signal<BillingStatus|null> =
