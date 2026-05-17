@@ -497,12 +497,14 @@ export const SettingsRoute:FunctionComponent<{
                             </button>
                         `}
                         ${billing.value?.useLive ? html`
-                            <button
-                                class="btn-link"
+                            <button class="btn-link"
                                 onClick=${handleUpdatePaymentMethod}
                             >
                                 Update payment method
                             </button>
+                            <p class="hint">
+                                This will open page on stripe.com.
+                            </p>
                         ` : null}
                     </div>
                     ${billingError.value ? html`
