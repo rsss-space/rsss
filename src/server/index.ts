@@ -844,13 +844,20 @@ app.get('/api/billing/status', requireAuth, async (c) => {
             c.env,
             session.did
         )
+        const contactEmail = await readContactEmail(
+            c.env,
+            session.did
+        )
         return c.json({
             entitled: isEntitled(billing),
             planId: billing.planId,
             status: billing.status,
             refreshedAt: billing.refreshedAt,
             useLive: billingUseLive(c.env),
-            pendingDeletion
+            pendingDeletion,
+            currentPeriodEnd: billing.currentPeriodEnd,
+            canceledAt: billing.canceledAt,
+            contactEmail
         })
     } catch (err) {
         console.error('billing/status error:', err)

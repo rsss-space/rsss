@@ -121,6 +121,13 @@ const commands = [
         '| tapout'
     ].join(' '),
     [
+        'esbuild ./test/billing-management.ts --bundle',
+        '--platform=node --format=esm',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '--loader:.wasm=dataurl',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
         'esbuild ./test/index.ts --bundle',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '--alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts',
