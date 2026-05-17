@@ -26,6 +26,9 @@ import {
     getCustomerPortalUrl,
     getCurrentPeriodEnd,
     getSubscriptionSnapshot,
+    cancelSubscription,
+    resumeSubscription,
+    getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
 import {
@@ -1316,6 +1319,73 @@ app.post('/api/billing/portal', requireAuth, async (c) => {
         return c.json({ url })
     } catch (err) {
         console.error('billing/portal error:', err)
+        return c.json({
+            error: 'billing_unavailable'
+        }, 503)
+    }
+})
+
+/**
+ * Schedule cancellation of the user's subscription at the end of
+ * the current billing period. In dev mode (no Autumn key) we
+ * mutate the cached billing entry directly so the client UI can
+ * be exercised without Autumn.
+ */
+app.post('/api/billing/cancel', requireAuth, async (c) => {
+    const session = c.get('session')!
+    const planId:BillingPlanId = DEFAULT_PLAN_ID
+
+    if (!billingUseLive(c.env)) {
+        const cached = await readCachedBilling(
+            c.env,
+            session.did
+        )
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
+        const now = Date.now()
+        // 30-day synthetic period so the UI has a date to show.
+        const periodEnd = now + 30 * 24 * 60 * 60 * 1000
+        const updated:CachedBilling = {
+            ...cached,
+            canceledAt: now,
+            currentPeriodEnd: cached.currentPeriodEnd ?? periodEnd
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({
+            ok: true,
+            canceledAt: updated.canceledAt,
+            currentPeriodEnd: updated.currentPeriodEnd
+        })
+    }
+
+    try {
+        const snapshot = await cancelSubscription(
+            c.env,
+            session.did,
+            planId
+        )
+        const cached = await readCachedBilling(
+            c.env,
+            session.did
+        )
+        const updated:CachedBilling = {
+            planId,
+            status: cached?.status ?? 'active',
+            refreshedAt: Date.now(),
+            currentPeriodEnd: snapshot.currentPeriodEnd,
+            canceledAt: snapshot.canceledAt ?? Date.now()
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({
+            ok: true,
+            canceledAt: updated.canceledAt,
+            currentPeriodEnd: updated.currentPeriodEnd
+        })
+    } catch (err) {
+        console.error('billing/cancel error:', err)
         return c.json({
             error: 'billing_unavailable'
         }, 503)
