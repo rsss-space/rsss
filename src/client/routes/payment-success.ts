@@ -95,13 +95,7 @@ export const PaymentSuccessPage:FunctionComponent<{
                             If your card was charged, try refreshing
                             this page in a few seconds. Otherwise
                             you can
-                            ${' '}<a
-                                href="/signup"
-                                onClick=${(e:Event) => {
-                                    e.preventDefault()
-                                    state._setRoute('/signup')
-                                }}
-                            >restart signup</a>.
+                            ${' '}<a href="/signup">restart signup</a>.
                         </p>
                     </div>
                 `}

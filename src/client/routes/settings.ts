@@ -1,6 +1,6 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { useCallback, useEffect, useRef } from 'preact/hooks'
 import { useComputed, batch } from '@preact/signals'
 import { CheckBox } from '@substrate-system/check-box'
 import { type AppState, State } from '../state.js'
@@ -114,11 +114,6 @@ export const SettingsRoute:FunctionComponent<{
         }
     }
 
-    function handleDeleteAccount (e:Event) {
-        e.preventDefault()
-        state._setRoute('/confirm-close')
-    }
-
     function formatDeletionDate (ms:number):string {
         return new Date(ms).toLocaleString()
     }
@@ -135,15 +130,10 @@ export const SettingsRoute:FunctionComponent<{
         })
     }, [pendingSyncSubscriptions.value, syncSubscriptions.value])
 
-    function handleManageSubscription (e:Event) {
+    const handleManageSubscription = useCallback((e:MouseEvent) => {
         e.preventDefault()
         State.openCustomerPortal()
-    }
-
-    function handleUpgrade (e:Event) {
-        e.preventDefault()
-        state._setRoute('/signup')
-    }
+    }, [])
 
     function confirmTerminalBootstrapReset (message:string):boolean {
         return confirm([
@@ -421,12 +411,9 @@ export const SettingsRoute:FunctionComponent<{
                     You're on the <strong>Free</strong> plan. RSSS
                     works while you're online only.
                 </p>
-                <button
-                    class="btn-upgrade"
-                    onClick=${handleUpgrade}
-                >
+                <a href="/signup" class="btn btn-upgrade">
                     Upgrade to Local-first
-                </button>
+                </a>
             `}
         </section>
 
@@ -435,7 +422,7 @@ export const SettingsRoute:FunctionComponent<{
             ${!isEntitled && html`
                 <p class="upgrade-note">
                     Local storage is part of the Local-first plan.${NBSP}
-                    <a href="/signup" onClick=${handleUpgrade}>Upgrade</a>
+                    <a href="/signup">Upgrade</a>
                     ${NBSP}to keep your feeds on this device and work offline.
                 </p>
             `}
@@ -768,7 +755,6 @@ export const SettingsRoute:FunctionComponent<{
                 <a
                     href="/confirm-close"
                     class="btn"
-                    onClick=${handleDeleteAccount}
                 >
                     Delete account
                 </a>

@@ -52,11 +52,6 @@ export const ConfirmCloseRoute:FunctionComponent<{
         }
     }
 
-    function handleCancel (e:Event) {
-        e.preventDefault()
-        state._setRoute('/settings')
-    }
-
     if (status.kind === 'scheduled') {
         const isImmediate =
             status.scheduledFor <= Date.now() + 5 * 60 * 1000
@@ -95,7 +90,6 @@ export const ConfirmCloseRoute:FunctionComponent<{
             <a
                 href="/settings"
                 class="back-link"
-                onClick=${handleCancel}
             >
                 ${'<'} Back to Settings
             </a>
@@ -144,13 +138,12 @@ export const ConfirmCloseRoute:FunctionComponent<{
                         'Deleting...' :
                         'Confirm Delete'}
                 </button>
-                <button
-                    type="button"
+                <a
+                    href="/settings"
                     class="btn-cancel"
-                    onClick=${handleCancel}
                 >
                     Cancel
-                </button>
+                </a>
             </div>
         </section>
     </div>`

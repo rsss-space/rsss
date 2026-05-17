@@ -36,15 +36,6 @@ export const SignupPage:FunctionComponent<{
 
     const entitled = Boolean(billing.value?.entitled)
 
-    function handleFree (e:Event) {
-        e.preventDefault()
-        if (state.isAuthenticated.value) {
-            state._setRoute('/')
-        } else {
-            state._setRoute('/login')
-        }
-    }
-
     async function handleSync (e:Event) {
         e.preventDefault()
         if (!state.isAuthenticated.value) {
@@ -102,10 +93,7 @@ export const SignupPage:FunctionComponent<{
                             Manage subscription
                         </button>
                         <p class="signup-secondary">
-                            <a href="/" onClick=${(e:Event) => {
-                                e.preventDefault()
-                                state._setRoute('/')
-                            }}>Back to feeds</a>
+                            <a href="/">Back to feeds</a>
                         </p>
                     </div>
                 `}
@@ -120,16 +108,14 @@ export const SignupPage:FunctionComponent<{
                                 <li>Read on any device with a browser</li>
                                 <li>Requires an internet connection</li>
                             </ul>
-                            <button
-                                type="button"
+                            <a
                                 class="btn btn-secondary"
-                                onClick=${handleFree}
-                                disabled=${authLoading.value}
+                                href="${isAuthed.value ? '/' : '/login'}"
                             >
                                 ${isAuthed.value ?
                                     'Continue with Free' :
                                     'Get started'}
-                            </button>
+                            </a>
                         </article>
 
                         <article class="plan-card plan-sync">
