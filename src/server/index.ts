@@ -27,8 +27,6 @@ import {
     getCurrentPeriodEnd,
     getSubscriptionSnapshot,
     cancelSubscription,
-    resumeSubscription,
-    getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
 import {
