@@ -345,3 +345,75 @@ test(
         })
     }
 )
+
+test(
+    'POST /api/billing/payment-method returns 503 in dev mode',
+    async t => {
+        const env = makeEnv({ NODE_ENV: 'development' })
+        const { cookieHeader } = await makeSession(env)
+
+        const res = await app.request(
+            'http://127.0.0.1/api/billing/payment-method',
+            {
+                method: 'POST',
+                headers: authedHeaders(cookieHeader),
+                body: JSON.stringify({})
+            },
+            env,
+            executionCtx
+        )
+        const body = await res.json() as Record<string, unknown>
+
+        t.equal(res.status, 503, 'returns 503')
+        t.equal(
+            body.error,
+            'portal_unavailable_in_dev',
+            'reports the dev-mode error code'
+        )
+    }
+)
+
+test(
+    'POST /api/billing/payment-method returns Stripe setup URL ' +
+    'in live mode',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY
+        })
+        const { cookieHeader } = await makeSession(env)
+
+        await withFetch(async call => {
+            if (call.url.includes('/v1/billing.setup_payment')) {
+                return jsonResponse({
+                    url: 'https://stripe.example/setup/abc'
+                })
+            }
+            return jsonResponse({}, 404)
+        }, async calls => {
+            const res = await app.request(
+                'http://127.0.0.1/api/billing/payment-method',
+                {
+                    method: 'POST',
+                    headers: authedHeaders(cookieHeader),
+                    body: JSON.stringify({})
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as Record<string, unknown>
+
+            t.equal(res.status, 200, 'returns 200')
+            t.equal(
+                body.url,
+                'https://stripe.example/setup/abc',
+                'returns the Stripe setup URL'
+            )
+            t.ok(
+                calls.some(c =>
+                    c.url.includes('/v1/billing.setup_payment')),
+                'called Autumn billing.setupPayment'
+            )
+        })
+    }
+)

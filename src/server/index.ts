@@ -28,6 +28,7 @@ import {
     getSubscriptionSnapshot,
     cancelSubscription,
     resumeSubscription,
+    getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
 import {
@@ -1444,6 +1445,36 @@ app.post('/api/billing/resume', requireAuth, async (c) => {
         return c.json({ ok: true })
     } catch (err) {
         console.error('billing/resume error:', err)
+        return c.json({
+            error: 'billing_unavailable'
+        }, 503)
+    }
+})
+
+/**
+ * Create a Stripe SetupIntent-backed URL the user can visit to add
+ * or update their payment method. Replaces the kitchen-sink
+ * `openCustomerPortal` flow for in-app card updates.
+ */
+app.post('/api/billing/payment-method', requireAuth, async (c) => {
+    const session = c.get('session')!
+
+    if (!billingUseLive(c.env)) {
+        return c.json({
+            error: 'portal_unavailable_in_dev'
+        }, 503)
+    }
+
+    try {
+        const baseUrl = new URL(c.req.url).origin
+        const url = await getPaymentSetupUrl(
+            c.env,
+            session.did,
+            `${baseUrl}/settings`
+        )
+        return c.json({ url })
+    } catch (err) {
+        console.error('billing/payment-method error:', err)
         return c.json({
             error: 'billing_unavailable'
         }, 503)
