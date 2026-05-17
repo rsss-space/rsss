@@ -163,14 +163,10 @@
 
     & .subscription-actions {
         display: flex;
-        align-items: center;
-        flex-wrap: wrap;
+        flex-direction: column;
+        align-items: start;
         gap: 0.5rem;
         margin-top: 0.5rem;
-    }
-
-    & .subscription-actions-sep {
-        color: var(--color-border);
     }
 
     & .subscription-error {

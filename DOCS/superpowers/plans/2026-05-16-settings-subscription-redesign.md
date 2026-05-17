@@ -1532,10 +1532,6 @@ Find the `.subscription-section { ... }` rule in `src/client/routes/settings.css
         margin-top: 0.5rem;
     }
 
-    & .subscription-actions-sep {
-        color: var(--color-border);
-    }
-
     & .subscription-error {
         margin: 0.5rem 0 0;
         color: var(--color-error);

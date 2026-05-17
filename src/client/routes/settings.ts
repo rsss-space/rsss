@@ -497,9 +497,6 @@ export const SettingsRoute:FunctionComponent<{
                             </button>
                         `}
                         ${billing.value?.useLive ? html`
-                            <span class="subscription-actions-sep">
-                                ·
-                            </span>
                             <button
                                 class="btn-link"
                                 onClick=${handleUpdatePaymentMethod}
