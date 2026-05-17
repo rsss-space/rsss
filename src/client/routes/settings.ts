@@ -1,10 +1,10 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
-import { useCallback, useEffect, useRef } from 'preact/hooks'
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { useComputed, batch } from '@preact/signals'
 import { CheckBox } from '@substrate-system/check-box'
 import { type AppState, State } from '../state.js'
-import { billingStatus } from '../billing-status.js'
+import { billingStatus, billingError } from '../billing-status.js'
 import { RadioInput } from '@substrate-system/radio-input'
 import {
     syncSubscriptions,
@@ -90,6 +90,8 @@ export const SettingsRoute:FunctionComponent<{
         loadStorageUsage(db, ids).catch(() => {})
     }, [feeds.value, syncSubscriptions.value])
 
+    const [subscriptionPending, setSubscriptionPending] = useState(false)
+
     const supported = localFirstSupported.value
     const inProgress = bootstrapInProgress.value
     const bError = bootstrapError.value
@@ -118,6 +120,14 @@ export const SettingsRoute:FunctionComponent<{
         return new Date(ms).toLocaleString()
     }
 
+    function formatRenewDate (ms:number):string {
+        return new Date(ms).toLocaleDateString(undefined, {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        })
+    }
+
     useEffect(() => {
         const did = pendingBootstrapDid.current
         if (!did) return
@@ -130,9 +140,45 @@ export const SettingsRoute:FunctionComponent<{
         })
     }, [pendingSyncSubscriptions.value, syncSubscriptions.value])
 
-    const handleManageSubscription = useCallback((e:MouseEvent) => {
+    const handleCancelSubscription = useCallback(async () => {
+        const periodEnd = billing.value?.currentPeriodEnd
+        const dateText = periodEnd ?
+            formatRenewDate(periodEnd) :
+            'the end of your billing period'
+        const lines = [
+            'Cancel your Local-first subscription? You\'ll keep ' +
+            `access until ${dateText}.`,
+            '',
+            'After that, this device returns to the free plan and ' +
+            'goes online-only. Local data on each device stays ' +
+            'until you turn off local storage.'
+        ]
+        if (!confirm(lines.join('\n'))) return
+        setSubscriptionPending(true)
+        try {
+            await State.cancelSubscription()
+        } catch {
+            // State.cancelSubscription already populates billingError;
+            // the inline notice below renders it. No alert.
+        } finally {
+            setSubscriptionPending(false)
+        }
+    }, [billing.value?.currentPeriodEnd])
+
+    const handleResumeSubscription = useCallback(async () => {
+        setSubscriptionPending(true)
+        try {
+            await State.resumeSubscription()
+        } catch {
+            // billingError populated by the action; inline notice below.
+        } finally {
+            setSubscriptionPending(false)
+        }
+    }, [])
+
+    const handleUpdatePaymentMethod = useCallback((e:MouseEvent) => {
         e.preventDefault()
-        State.openCustomerPortal()
+        State.openPaymentMethodUpdate()
     }, [])
 
     function confirmTerminalBootstrapReset (message:string):boolean {
@@ -396,16 +442,78 @@ export const SettingsRoute:FunctionComponent<{
         <section class="settings-section subscription-section">
             <h2>Subscription</h2>
             ${isEntitled ? html`
-                <p>
-                    You're on the <strong>${planLabel}</strong> plan.
-                    Your feeds can be stored on each device for offline reading.
-                </p>
-                <button
-                    class="btn-manage"
-                    onClick=${handleManageSubscription}
-                >
-                    Manage subscription
-                </button>
+                <div class="subscription-summary">
+                    <p class="subscription-headline">
+                        <span class="subscription-plan">
+                            ${planLabel}
+                        </span>
+                        <span class="subscription-status">
+                            ${billing.value?.canceledAt ?
+                                (billing.value?.currentPeriodEnd ?
+                                    `Ending ${formatRenewDate(
+                                        billing.value.currentPeriodEnd
+                                    )}` :
+                                    'Ending soon') :
+                                'Active'}
+                        </span>
+                    </p>
+                    ${billing.value?.canceledAt ? html`
+                        <p class="subscription-note">
+                            Your device will fall back to online-only after
+                            this date. Local data stays until you turn it off.
+                        </p>
+                    ` : billing.value?.currentPeriodEnd ? html`
+                        <p class="subscription-note">
+                            Renews ${formatRenewDate(
+                                billing.value.currentPeriodEnd
+                            )}
+                        </p>
+                    ` : null}
+                    ${billing.value?.contactEmail ? html`
+                        <p class="subscription-billed-to">
+                            Billed to ${billing.value.contactEmail}
+                        </p>
+                    ` : null}
+                    <div class="subscription-actions">
+                        ${billing.value?.canceledAt ? html`
+                            <button
+                                class="btn-link"
+                                onClick=${handleResumeSubscription}
+                                disabled=${subscriptionPending || undefined}
+                            >
+                                ${subscriptionPending ?
+                                    'Resuming...' :
+                                    'Resume subscription'}
+                            </button>
+                        ` : html`
+                            <button
+                                class="btn-link"
+                                onClick=${handleCancelSubscription}
+                                disabled=${subscriptionPending || undefined}
+                            >
+                                ${subscriptionPending ?
+                                    'Canceling...' :
+                                    'Cancel subscription'}
+                            </button>
+                        `}
+                        ${billing.value?.useLive ? html`
+                            <span class="subscription-actions-sep">
+                                ·
+                            </span>
+                            <button
+                                class="btn-link"
+                                onClick=${handleUpdatePaymentMethod}
+                            >
+                                Update payment method
+                            </button>
+                        ` : null}
+                    </div>
+                    ${billingError.value ? html`
+                        <p class="subscription-error" role="alert">
+                            Couldn't reach billing. Try again in a moment.
+                        </p>
+                    ` : null}
+                </div>
             ` : html`
                 <p>
                     You're on the <strong>Free</strong> plan. RSSS
