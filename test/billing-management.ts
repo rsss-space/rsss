@@ -157,8 +157,21 @@ test(
         })
         const { session, cookieHeader } = await makeSession(env)
 
+        // Seed an active subscription in the cache.
+        await env.SESSIONS.put(
+            `billing:${session.did}`,
+            JSON.stringify({
+                planId: 'local-first',
+                status: 'active',
+                refreshedAt: Date.now(),
+                currentPeriodEnd: null,
+                canceledAt: null
+            }),
+            { expirationTtl: 600 }
+        )
+
         await withFetch(async call => {
-            if (call.url.includes('/v1/billing')) {
+            if (call.url.includes('/v1/billing.update')) {
                 return jsonResponse({ customer_id: 'cust' })
             }
             if (call.url.includes('/v1/customers')) {
@@ -197,6 +210,19 @@ test(
                 updateBody.cancel_action,
                 'cancel_end_of_cycle',
                 'requested cancel_end_of_cycle'
+            )
+
+            const raw = await env.SESSIONS.get(`billing:${session.did}`)
+            const cached = raw ? JSON.parse(raw) : null
+            t.equal(
+                cached?.currentPeriodEnd,
+                1800000000000,
+                'cached currentPeriodEnd reflects Autumn snapshot'
+            )
+            t.equal(
+                cached?.canceledAt,
+                1700000000000,
+                'cached canceledAt reflects Autumn snapshot'
             )
         })
     }

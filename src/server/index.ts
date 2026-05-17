@@ -1360,18 +1360,23 @@ app.post('/api/billing/cancel', requireAuth, async (c) => {
     }
 
     try {
+        const cached = await readCachedBilling(
+            c.env,
+            session.did
+        )
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
         const snapshot = await cancelSubscription(
             c.env,
             session.did,
             planId
         )
-        const cached = await readCachedBilling(
-            c.env,
-            session.did
-        )
         const updated:CachedBilling = {
             planId,
-            status: cached?.status ?? 'active',
+            status: cached.status,
             refreshedAt: Date.now(),
             currentPeriodEnd: snapshot.currentPeriodEnd,
             canceledAt: snapshot.canceledAt ?? Date.now()
