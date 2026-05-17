@@ -156,22 +156,58 @@ export async function getCurrentPeriodEnd (
     env:BillingEnv,
     did:string
 ):Promise<number|null> {
-    if (!useLive(env)) return null
+    const snapshot = await getSubscriptionSnapshot(env, did)
+    return snapshot.currentPeriodEnd
+}
+
+export interface SubscriptionSnapshot {
+    /** end of the current paid period (ms epoch), or null */
+    currentPeriodEnd:number|null;
+    /** ms epoch the user scheduled cancellation, or null */
+    canceledAt:number|null;
+}
+
+/**
+ * Read the user's active or scheduled subscription matching planId
+ * (defaults to the user's first active or scheduled non-add-on
+ * subscription) and return its lifecycle timestamps.
+ *
+ * Returns a snapshot with null fields when Autumn isn't configured
+ * or when there's no matching subscription.
+ */
+export async function getSubscriptionSnapshot (
+    env:BillingEnv,
+    did:string,
+    planId?:BillingPlanId
+):Promise<SubscriptionSnapshot> {
+    if (!useLive(env)) {
+        return { currentPeriodEnd: null, canceledAt: null }
+    }
     const customer = await client(env).customers.getOrCreate({
         customerId: didToCustomerId(did),
         expand: ['subscriptions.plan']
     })
     const subs = customer.subscriptions ?? []
     for (const s of subs) {
-        if (s.canceledAt) continue
+        if (s.addOn) continue
+        if (planId && s.planId !== planId) continue
         if (!isVerifiedSubscriptionStatus(s.status)) continue
-        const periodEnd = (s as { currentPeriodEnd?:number|null })
+        const cur = (s as { currentPeriodEnd?:number|null })
             .currentPeriodEnd
-        if (typeof periodEnd === 'number' && Number.isFinite(periodEnd)) {
-            return periodEnd
+        const cancelledRaw = (s as { canceledAt?:number|null })
+            .canceledAt
+        return {
+            currentPeriodEnd: typeof cur === 'number' &&
+                Number.isFinite(cur) ?
+                cur :
+                null,
+            canceledAt: typeof cancelledRaw === 'number' &&
+                Number.isFinite(cancelledRaw) ?
+                cancelledRaw :
+                null
         }
     }
-    return null
+    return { currentPeriodEnd: null, canceledAt: null }
 }
 
 /**
