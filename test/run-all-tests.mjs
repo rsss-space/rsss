@@ -134,6 +134,11 @@ const commands = [
         '--loader:.css=text',
         '--loader:.wasm=dataurl',
         '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/settings-route.ts --bundle',
+        '--loader:.css=text',
+        '| tapout'
     ].join(' ')
 ]
 

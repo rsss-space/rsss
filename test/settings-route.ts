@@ -84,13 +84,19 @@ function nextTick ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
 }
 
-function entitledBilling ():BillingStatus {
+function entitledBilling (
+    overrides:Partial<BillingStatus> = {}
+):BillingStatus {
     return {
         entitled: true,
         planId: 'local-first',
         status: 'active',
         refreshedAt: Date.now(),
-        useLive: false
+        useLive: false,
+        currentPeriodEnd: Date.now() + 30 * 86_400_000,
+        canceledAt: null,
+        contactEmail: 'nichoth@example.com',
+        ...overrides
     }
 }
 
@@ -508,6 +514,140 @@ test(
             )
         } finally {
             _resetFeedPolicies()
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'SettingsRoute renders active subscription panel',
+    async (t) => {
+        localStorage.removeItem('rsss.localFirst')
+        billingStatus.value = entitledBilling()
+
+        const root = mount(makeState())
+        try {
+            await nextTick()
+            const section = root.querySelector(
+                '.subscription-section'
+            )
+            t.ok(section, 'subscription section is rendered')
+
+            t.ok(
+                Array.from(
+                    section?.querySelectorAll('button.btn-link') ?? []
+                ).some(b => (b.textContent ?? '').match(/cancel/i)),
+                'cancel button is rendered'
+            )
+            t.ok(
+                !Array.from(
+                    section?.querySelectorAll('button.btn-link') ?? []
+                ).some(b => (b.textContent ?? '').match(/resume/i)),
+                'resume button is not rendered while subscription active'
+            )
+            t.ok(
+                !section?.querySelector('.btn-manage'),
+                'old Manage subscription button is gone'
+            )
+        } finally {
+            resetBilling()
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'SettingsRoute renders resume button when cancellation scheduled',
+    async (t) => {
+        localStorage.removeItem('rsss.localFirst')
+        billingStatus.value = entitledBilling({
+            canceledAt: Date.now() - 1000
+        })
+
+        const root = mount(makeState())
+        try {
+            await nextTick()
+            const section = root.querySelector(
+                '.subscription-section'
+            )
+            const buttons = Array.from(
+                section?.querySelectorAll('button.btn-link') ?? []
+            )
+            t.ok(
+                buttons.some(b => (b.textContent ?? '')
+                    .match(/resume/i)),
+                'resume button is rendered'
+            )
+            t.ok(
+                !buttons.some(b => (b.textContent ?? '')
+                    .match(/^cancel /i)),
+                'cancel button is not rendered'
+            )
+        } finally {
+            resetBilling()
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'SettingsRoute cancel button calls State.cancelSubscription',
+    async (t) => {
+        localStorage.removeItem('rsss.localFirst')
+        billingStatus.value = entitledBilling()
+
+        const originalCancel = State.cancelSubscription
+        const originalConfirm = window.confirm
+        let called = false
+        State.cancelSubscription = async () => { called = true }
+        window.confirm = () => true
+
+        const root = mount(makeState())
+        try {
+            await nextTick()
+            const section = root.querySelector(
+                '.subscription-section'
+            )
+            const cancelBtn = Array.from(
+                section?.querySelectorAll('button.btn-link') ?? []
+            ).find(b => (b.textContent ?? '').match(/cancel/i)) as
+                HTMLButtonElement|undefined
+
+            t.ok(cancelBtn, 'cancel button found')
+            cancelBtn?.click()
+            await nextTick()
+            t.ok(called, 'State.cancelSubscription was invoked')
+        } finally {
+            State.cancelSubscription = originalCancel
+            window.confirm = originalConfirm
+            resetBilling()
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'SettingsRoute hides Update payment method when useLive=false',
+    async (t) => {
+        localStorage.removeItem('rsss.localFirst')
+        billingStatus.value = entitledBilling({ useLive: false })
+
+        const root = mount(makeState())
+        try {
+            await nextTick()
+            const section = root.querySelector(
+                '.subscription-section'
+            )
+            const buttons = Array.from(
+                section?.querySelectorAll('button.btn-link') ?? []
+            )
+            t.ok(
+                !buttons.some(b => (b.textContent ?? '')
+                    .match(/payment method/i)),
+                'no payment-method link in dev mode'
+            )
+        } finally {
+            resetBilling()
             unmount(root)
         }
     }
