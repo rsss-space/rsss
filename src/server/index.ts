@@ -25,6 +25,7 @@ import {
     verifySubscription,
     getCustomerPortalUrl,
     getCurrentPeriodEnd,
+    getSubscriptionSnapshot,
     type BillingPlanId
 } from './autumn-billing.js'
 import {
@@ -62,6 +63,8 @@ interface CachedBilling {
     planId:string;
     status:'active'|'scheduled'|'none';
     refreshedAt:number;
+    currentPeriodEnd:number|null;
+    canceledAt:number|null;
 }
 
 const BILLING_CACHE_TTL_SECONDS = 600
@@ -180,22 +183,27 @@ async function resolveBilling (
     if (cached) return cached
 
     if (!billingUseLive(env)) {
-        // No Autumn configured -- treat as not entitled. Dev path
-        // creates entitlement explicitly via /api/billing/checkout.
         const fresh:CachedBilling = {
             planId,
             status: 'none',
-            refreshedAt: Date.now()
+            refreshedAt: Date.now(),
+            currentPeriodEnd: null,
+            canceledAt: null
         }
         await writeCachedBilling(env, did, fresh)
         return fresh
     }
 
     const verified = await verifySubscription(env, did, planId)
+    const snapshot = verified ?
+        await getSubscriptionSnapshot(env, did, planId) :
+        { currentPeriodEnd: null, canceledAt: null }
     const fresh:CachedBilling = {
         planId,
         status: verified ? verified.status : 'none',
-        refreshedAt: Date.now()
+        refreshedAt: Date.now(),
+        currentPeriodEnd: snapshot.currentPeriodEnd,
+        canceledAt: snapshot.canceledAt
     }
     await writeCachedBilling(env, did, fresh)
     return fresh
@@ -1011,7 +1019,9 @@ app.post('/api/billing/checkout', requireAuth, async (c) => {
         const billing:CachedBilling = {
             planId,
             status: 'active',
-            refreshedAt: Date.now()
+            refreshedAt: Date.now(),
+            currentPeriodEnd: null,
+            canceledAt: null
         }
         await writeCachedBilling(c.env, session.did, billing)
 
@@ -1137,10 +1147,17 @@ app.post(
                     error: 'payment_incomplete'
                 }, 402)
             }
+            const snapshot = await getSubscriptionSnapshot(
+                c.env,
+                session.did,
+                planId
+            )
             const billing:CachedBilling = {
                 planId: verified.planId,
                 status: verified.status,
-                refreshedAt: Date.now()
+                refreshedAt: Date.now(),
+                currentPeriodEnd: snapshot.currentPeriodEnd,
+                canceledAt: snapshot.canceledAt
             }
             await writeCachedBilling(
                 c.env,
