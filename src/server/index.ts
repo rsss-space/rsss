@@ -27,6 +27,7 @@ import {
     getCurrentPeriodEnd,
     getSubscriptionSnapshot,
     cancelSubscription,
+    resumeSubscription,
     type BillingPlanId
 } from './autumn-billing.js'
 import {
@@ -1389,6 +1390,60 @@ app.post('/api/billing/cancel', requireAuth, async (c) => {
         })
     } catch (err) {
         console.error('billing/cancel error:', err)
+        return c.json({
+            error: 'billing_unavailable'
+        }, 503)
+    }
+})
+
+/**
+ * Reverse a scheduled cancellation.
+ */
+app.post('/api/billing/resume', requireAuth, async (c) => {
+    const session = c.get('session')!
+    const planId:BillingPlanId = DEFAULT_PLAN_ID
+
+    if (!billingUseLive(c.env)) {
+        const cached = await readCachedBilling(
+            c.env,
+            session.did
+        )
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
+        const updated:CachedBilling = {
+            ...cached,
+            canceledAt: null
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({ ok: true })
+    }
+
+    try {
+        const cached = await readCachedBilling(c.env, session.did)
+        if (!cached || !isEntitled(cached)) {
+            return c.json({
+                error: 'no_active_subscription'
+            }, 409)
+        }
+        const snapshot = await resumeSubscription(
+            c.env,
+            session.did,
+            planId
+        )
+        const updated:CachedBilling = {
+            planId,
+            status: cached.status,
+            refreshedAt: Date.now(),
+            currentPeriodEnd: snapshot.currentPeriodEnd,
+            canceledAt: snapshot.canceledAt
+        }
+        await writeCachedBilling(c.env, session.did, updated)
+        return c.json({ ok: true })
+    } catch (err) {
+        console.error('billing/resume error:', err)
         return c.json({
             error: 'billing_unavailable'
         }, 503)

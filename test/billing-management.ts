@@ -227,3 +227,121 @@ test(
         })
     }
 )
+
+test(
+    'POST /api/billing/resume in dev mode clears canceledAt',
+    async t => {
+        const env = makeEnv({ NODE_ENV: 'development' })
+        const { session, cookieHeader } = await makeSession(env)
+
+        await env.SESSIONS.put(
+            `billing:${session.did}`,
+            JSON.stringify({
+                planId: 'local-first',
+                status: 'active',
+                refreshedAt: Date.now(),
+                currentPeriodEnd: Date.now() + 86_400_000,
+                canceledAt: Date.now() - 1000
+            }),
+            { expirationTtl: 600 }
+        )
+
+        const res = await app.request(
+            'http://127.0.0.1/api/billing/resume',
+            {
+                method: 'POST',
+                headers: authedHeaders(cookieHeader),
+                body: JSON.stringify({})
+            },
+            env,
+            executionCtx
+        )
+        const body = await res.json() as Record<string, unknown>
+
+        t.equal(res.status, 200, 'returns 200')
+        t.equal(body.ok, true, 'returns ok: true')
+
+        const raw = await env.SESSIONS.get(`billing:${session.did}`)
+        const cached = raw ? JSON.parse(raw) : null
+        t.equal(cached.canceledAt, null, 'cached canceledAt cleared')
+        t.equal(cached.status, 'active', 'status stays active')
+    }
+)
+
+test(
+    'POST /api/billing/resume in live mode calls Autumn ' +
+    'billing.update with uncancel',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+
+        // Seed an entitled cache so live mode passes the gate.
+        await env.SESSIONS.put(
+            `billing:${session.did}`,
+            JSON.stringify({
+                planId: 'local-first',
+                status: 'active',
+                refreshedAt: Date.now(),
+                currentPeriodEnd: 1800000000000,
+                canceledAt: Date.now() - 1000
+            }),
+            { expirationTtl: 600 }
+        )
+
+        await withFetch(async call => {
+            if (call.url.includes('/v1/billing.update')) {
+                return jsonResponse({ customer_id: 'cust' })
+            }
+            if (call.url.includes('/customers')) {
+                return jsonResponse(customerBody(
+                    session.did,
+                    'alice@example.com',
+                    [{
+                        ...activeSubscription(),
+                        canceled_at: null,
+                        current_period_end: 1800000000000
+                    }]
+                ))
+            }
+            return jsonResponse({}, 404)
+        }, async calls => {
+            const res = await app.request(
+                'http://127.0.0.1/api/billing/resume',
+                {
+                    method: 'POST',
+                    headers: authedHeaders(cookieHeader),
+                    body: JSON.stringify({})
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as Record<string, unknown>
+
+            t.equal(res.status, 200, 'returns 200')
+            t.equal(body.ok, true, 'returns ok: true')
+
+            const updateCall = calls.find(c =>
+                c.url.includes('/v1/billing.update'))
+            t.ok(updateCall, 'called Autumn billing.update')
+            const updateBody = updateCall?.body as Record<string, unknown>
+            t.equal(
+                updateBody.cancel_action,
+                'uncancel',
+                'requested uncancel'
+            )
+
+            const raw = await env.SESSIONS.get(
+                `billing:${session.did}`
+            )
+            const cached = raw ? JSON.parse(raw) : null
+            t.equal(
+                cached?.canceledAt,
+                null,
+                'cached canceledAt cleared from Autumn snapshot'
+            )
+        })
+    }
+)
