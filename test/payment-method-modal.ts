@@ -119,17 +119,26 @@ test('AC1.1 / AC1.2: Modal opens via showModal in list mode; URL stays',
             render(html`<${Harness} />`, root)
             await nextTask()
 
-            const dialog = document.body.querySelector(
-                'dialog.app-dialog.payment-method-modal'
-            ) as HTMLDialogElement
-            t.ok(dialog, 'modal dialog rendered')
-            await waitFor(() => dialog.open === true, 200)
-            t.equal(
-                dialog.open,
-                true,
-                'opened via native showModal()'
+            const modal = document.body.querySelector(
+                'modal-window.payment-method-modal'
+            ) as HTMLElement
+            t.ok(modal, 'modal-window rendered')
+            // Wait for the library to add the modal-visible class to
+            // the .modal-scroll child when active attribute = "true"
+            const modalScroll = modal.querySelector('.modal-scroll')
+            await waitFor(() =>
+                modalScroll?.classList.contains('modal-visible'),
+                300
             )
-            const rows = dialog.querySelectorAll('.pm-row')
+            // Check the nested dialog element for aria attributes
+            const dialog = modal.querySelector('dialog')
+            t.equal(
+                dialog?.getAttribute('aria-modal'),
+                'true',
+                'aria-modal=true applied by library'
+            )
+            // The <dialog> element has implicit role="dialog" in HTML
+            const rows = modal.querySelectorAll('.pm-row')
             t.equal(rows.length, 2, 'two methods rendered')
             t.equal(
                 window.location.href,
@@ -156,11 +165,11 @@ test('AC2.3: The default method row shows a Default badge',
                 />
             `, root)
             await nextTask()
-            const dialog = document.body.querySelector(
-                'dialog.app-dialog.payment-method-modal'
-            ) as HTMLDialogElement
+            const modal = document.body.querySelector(
+                'modal-window.payment-method-modal'
+            ) as HTMLElement
             const rows = Array.from(
-                dialog.querySelectorAll('.pm-row')
+                modal.querySelectorAll('.pm-row')
             )
             const defaultRow = rows.find(r =>
                 r.textContent?.includes('4444'))
@@ -201,22 +210,22 @@ test('AC1.3: With useLive=false, Settings does not render the trigger',
                 />
             `, root)
             await nextTask()
-            const dialog = document.body.querySelector(
-                'dialog.app-dialog.payment-method-modal'
-            ) as HTMLDialogElement
+            const modal = document.body.querySelector(
+                'modal-window.payment-method-modal'
+            ) as HTMLElement
             const addBtn = Array.from(
-                dialog.querySelectorAll('button')
+                modal.querySelectorAll('button')
             ).find(b => (b.textContent ?? '').match(/add a card/i))
             t.ok(addBtn, 'Add a card button rendered')
             addBtn?.click()
             // The error appears after Preact re-renders with the error state
             await waitFor(() => {
-                const err = dialog.querySelector('.pm-error')
+                const err = modal.querySelector('.pm-error')
                 return err && (err.textContent ?? '').includes(
                     'stripe_unconfigured'
                 )
             }, 100)
-            const err = dialog.querySelector(
+            const err = modal.querySelector(
                 '.pm-error'
             ) as HTMLElement|null
             t.ok(err, 'inline error shown')
@@ -259,28 +268,28 @@ test('AC3.3 / AC8.1: Successful confirmSetup refreshes the list',
                 render(html`<${Harness} />`, root)
                 await nextTask()
 
-                const dialog = document.body.querySelector(
-                    'dialog.app-dialog.payment-method-modal'
-                ) as HTMLDialogElement
+                const modal = document.body.querySelector(
+                    'modal-window.payment-method-modal'
+                ) as HTMLElement
                 const addBtn = Array.from(
-                    dialog.querySelectorAll('button')
+                    modal.querySelectorAll('button')
                 ).find(b =>
                     (b.textContent ?? '').match(/add a card/i)
                 ) as HTMLButtonElement
                 addBtn.click()
-                await waitFor(() => !!dialog.querySelector(
+                await waitFor(() => !!modal.querySelector(
                     '.pm-element-host'
                 ), 100)
                 const saveBtn = Array.from(
-                    dialog.querySelectorAll('button')
+                    modal.querySelectorAll('button')
                 ).find(b =>
                     (b.textContent ?? '').match(/save card/i)
                 ) as HTMLButtonElement
                 t.ok(saveBtn, 'Save card button shown in adding mode')
                 saveBtn.click()
-                await waitFor(() => !!dialog.querySelector(
+                await waitFor(() => !!modal.querySelector(
                     '.pm-list'
-                ) || !!dialog.querySelector('.pm-error'), 100)
+                ) || !!modal.querySelector('.pm-error'), 100)
                 t.equal(
                     reloadCalls,
                     1,
@@ -288,7 +297,7 @@ test('AC3.3 / AC8.1: Successful confirmSetup refreshes the list',
                 )
                 // Returned to list mode
                 t.ok(
-                    dialog.querySelector('.pm-list'),
+                    modal.querySelector('.pm-list'),
                     'returned to list mode'
                 )
             } finally {
@@ -321,28 +330,28 @@ test('AC3.4 / AC8.3: Declined card surfaces error and stays in adding ' +
                     />
                 `, root)
             await nextTask()
-            const dialog = document.body.querySelector(
-                'dialog.app-dialog.payment-method-modal'
-            ) as HTMLDialogElement
+            const modal = document.body.querySelector(
+                'modal-window.payment-method-modal'
+            ) as HTMLElement
             const addBtn = Array.from(
-                dialog.querySelectorAll('button')
+                modal.querySelectorAll('button')
             ).find(b =>
                 (b.textContent ?? '').match(/add a card/i)
             ) as HTMLButtonElement
             addBtn.click()
-            await waitFor(() => !!dialog.querySelector(
+            await waitFor(() => !!modal.querySelector(
                 '.pm-element-host'
             ), 100)
             const saveBtn = Array.from(
-                dialog.querySelectorAll('button')
+                modal.querySelectorAll('button')
             ).find(b =>
                 (b.textContent ?? '').match(/save card/i)
             ) as HTMLButtonElement
             saveBtn.click()
-            await waitFor(() => !!dialog.querySelector(
+            await waitFor(() => !!modal.querySelector(
                 '.pm-error'
             ), 100)
-            const err = dialog.querySelector(
+            const err = modal.querySelector(
                 '.pm-error'
             ) as HTMLElement|null
             t.ok(err, 'inline error shown')
@@ -353,7 +362,7 @@ test('AC3.4 / AC8.3: Declined card surfaces error and stays in adding ' +
             )
             // Element host still rendered = still in adding mode.
             t.ok(
-                dialog.querySelector('.pm-element-host'),
+                modal.querySelector('.pm-element-host'),
                 'still in adding mode (element host present)'
             )
         } finally {
@@ -394,44 +403,56 @@ test('AC3.6: Closing the modal mid-flow resets to list on next open',
                 render(html`<${Harness} />`, root)
                 await nextTask()
 
-                const dialog = document.body.querySelector(
-                    'dialog.app-dialog.payment-method-modal'
-                ) as HTMLDialogElement
+                const modal = document.body.querySelector(
+                    'modal-window.payment-method-modal'
+                ) as HTMLElement
                 const addBtn = Array.from(
-                    dialog.querySelectorAll('button')
+                    modal.querySelectorAll('button')
                 ).find(b =>
                     (b.textContent ?? '').match(/add a card/i)
                 ) as HTMLButtonElement
                 addBtn.click()
-                await waitFor(() => !!dialog.querySelector(
+                await waitFor(() => !!modal.querySelector(
                     '.pm-element-host'
                 ), 100)
                 t.ok(
-                    dialog.querySelector('.pm-element-host'),
+                    modal.querySelector('.pm-element-host'),
                     'now in adding mode'
                 )
-                dialog.close()
-                await nextTask()
-                await nextTask()
-                t.equal(dialog.open, false, 'modal closed')
+                // Use the library method via any cast
+                const modalLib = modal as any
+                modalLib.close()
+                const modalScroll = modal.querySelector('.modal-scroll')
+                await waitFor(() =>
+                    !modalScroll?.classList.contains('modal-visible'),
+                    300
+                )
+                t.ok(
+                    !modalScroll?.classList.contains('modal-visible'),
+                    'modal closed'
+                )
 
                 const reopen = root.querySelector(
                     '#reopen'
                 ) as HTMLButtonElement
                 reopen.click()
-                await nextTask()
-                await nextTask()
-                await waitFor(() => dialog.open === true, 300)
-                await waitFor(() => !!dialog.querySelector(
+                await waitFor(() =>
+                    modalScroll?.classList.contains('modal-visible'),
+                    300
+                )
+                t.ok(
+                    modalScroll?.classList.contains('modal-visible'),
+                    'modal reopened'
+                )
+                await waitFor(() => !!modal.querySelector(
                     '.pm-list'
                 ), 300)
-                t.equal(dialog.open, true, 'reopened')
                 t.ok(
-                    dialog.querySelector('.pm-list'),
+                    modal.querySelector('.pm-list'),
                     'reopened in list mode'
                 )
                 t.equal(
-                    dialog.querySelector('.pm-element-host'),
+                    modal.querySelector('.pm-element-host'),
                     null,
                     'element host gone'
                 )
