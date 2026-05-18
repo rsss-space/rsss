@@ -158,11 +158,6 @@ const commands = [
         '| tapout'
     ].join(' '),
     [
-        'esbuild ./test/dialog.ts --bundle',
-        '--loader:.css=text',
-        '| tapout'
-    ].join(' '),
-    [
         'esbuild ./test/payment-method-modal.ts --bundle',
         '--loader:.css=text',
         '--alias:@stripe/stripe-js=./test/stripe-js-stub.ts',
