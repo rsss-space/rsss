@@ -212,7 +212,7 @@ export const PaymentMethodModal:FunctionComponent<
     const globalError = paymentMethodsError.value
 
     const describedBy = mode === 'list' ?
-        (globalError ? ERROR_ID : undefined) :
+        ((addError || globalError) ? ERROR_ID : undefined) :
         (addError ? ERROR_ID : undefined)
 
     return html`
