@@ -1554,32 +1554,6 @@ State.resumeSubscription = async function ():Promise<void> {
 }
 
 /**
- * Fetch a single-purpose Stripe URL the user can visit to update
- * their payment method, then navigate to it.
- */
-State.openPaymentMethodUpdate = async function ():Promise<void> {
-    try {
-        const res = await api.post('billing/payment-method', {
-            throwHttpErrors: false
-        })
-        if (!res.ok) {
-            const body = await res.json<{
-                error?:string
-            }>().catch(() => ({} as { error?:string }))
-            throw new Error(
-                body.error || `payment_method_${res.status}`
-            )
-        }
-        const data = await res.json<{ url:string }>()
-        window.location.assign(data.url)
-    } catch (err) {
-        setBillingError(err instanceof Error ?
-            err.message :
-            'Failed to open payment-method page')
-    }
-}
-
-/**
  * Logout
  */
 State.logout = async function (
