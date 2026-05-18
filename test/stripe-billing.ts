@@ -77,7 +77,7 @@ test('getStripeCustomerId returns stripe_id from Autumn', async t => {
 })
 
 test(
-    'getStripeCustomerId throws when Autumn record has no stripe_id',
+    'getStripeCustomerId throws when Autumn record has no stripeId',
     async t => {
         const originalFetch = globalThis.fetch
         globalThis.fetch = (async () => {
@@ -104,7 +104,7 @@ test(
         } finally {
             globalThis.fetch = originalFetch
         }
-        t.ok(threw, 'throws when stripe_id is missing')
+        t.ok(threw, 'throws when stripeId is missing')
     }
 )
 
