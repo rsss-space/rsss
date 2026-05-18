@@ -31,7 +31,13 @@ import {
     getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
-import { getStripePublishableKey } from './stripe-billing.js'
+import {
+    getStripePublishableKey,
+    stripeUseLive,
+    getStripe,
+    getStripeCustomerId
+} from './stripe-billing.js'
+import type Stripe from 'stripe'
 import {
     sendSubscriptionStarted,
     sendPaymentFailed,
@@ -71,6 +77,20 @@ interface CachedBilling {
     refreshedAt:number;
     currentPeriodEnd:number|null;
     canceledAt:number|null;
+}
+
+export interface PaymentMethodSummary {
+    id:string;
+    brand:string;
+    last4:string;
+    expMonth:number;
+    expYear:number;
+    isDefault:boolean;
+}
+
+export interface PaymentMethodsPayload {
+    methods:PaymentMethodSummary[];
+    defaultId:string|null;
 }
 
 const BILLING_CACHE_TTL_SECONDS = 600
@@ -213,6 +233,44 @@ async function resolveBilling (
     }
     await writeCachedBilling(env, did, fresh)
     return fresh
+}
+
+async function listPaymentMethodsPayload (
+    env:Env,
+    did:string
+):Promise<PaymentMethodsPayload> {
+    const stripe = getStripe(env)
+    const customerId = await getStripeCustomerId(env, did)
+    const [list, customer] = await Promise.all([
+        stripe.paymentMethods.list({
+            customer: customerId,
+            type: 'card'
+        }),
+        stripe.customers.retrieve(customerId)
+    ])
+    const defaultId = customer.deleted ?
+        null :
+        normalizeDefaultId(
+            (customer as Stripe.Customer)
+                .invoice_settings?.default_payment_method
+        )
+    const methods:PaymentMethodSummary[] = list.data.map(pm => ({
+        id: pm.id,
+        brand: pm.card?.brand ?? 'unknown',
+        last4: pm.card?.last4 ?? '????',
+        expMonth: pm.card?.exp_month ?? 0,
+        expYear: pm.card?.exp_year ?? 0,
+        isDefault: pm.id === defaultId
+    }))
+    return { methods, defaultId }
+}
+
+function normalizeDefaultId (
+    raw:string|Stripe.PaymentMethod|null|undefined
+):string|null {
+    if (!raw) return null
+    if (typeof raw === 'string') return raw
+    return raw.id
 }
 
 type Variables = {
@@ -873,6 +931,27 @@ app.get('/api/billing/status', requireAuth, async (c) => {
         }, 503)
     }
 })
+
+app.get(
+    '/api/billing/payment-methods',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        try {
+            const payload = await listPaymentMethodsPayload(
+                c.env,
+                session.did
+            )
+            return c.json(payload)
+        } catch (err) {
+            console.error('billing/payment-methods error:', err)
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+    }
+)
 
 async function readPendingDeletion (
     env:Env,
