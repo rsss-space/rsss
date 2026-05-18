@@ -126,10 +126,9 @@ test('AC1.1 / AC1.2: Modal opens via showModal in list mode; URL stays',
             // Wait for the library to add the modal-visible class to
             // the .modal-scroll child when active attribute = "true"
             const modalScroll = modal.querySelector('.modal-scroll')
-            await waitFor(() =>
-                modalScroll?.classList.contains('modal-visible'),
-                300
-            )
+            await waitFor(() => modalScroll?.classList.contains(
+                'modal-visible'
+            ), 300)
             // Check the nested dialog element for aria attributes
             const dialog = modal.querySelector('dialog')
             t.equal(
@@ -423,10 +422,9 @@ test('AC3.6: Closing the modal mid-flow resets to list on next open',
                 const modalLib = modal as any
                 modalLib.close()
                 const modalScroll = modal.querySelector('.modal-scroll')
-                await waitFor(() =>
-                    !modalScroll?.classList.contains('modal-visible'),
-                    300
-                )
+                await waitFor(() => !modalScroll?.classList.contains(
+                    'modal-visible'
+                ), 300)
                 t.ok(
                     !modalScroll?.classList.contains('modal-visible'),
                     'modal closed'
@@ -436,10 +434,9 @@ test('AC3.6: Closing the modal mid-flow resets to list on next open',
                     '#reopen'
                 ) as HTMLButtonElement
                 reopen.click()
-                await waitFor(() =>
-                    modalScroll?.classList.contains('modal-visible'),
-                    300
-                )
+                await waitFor(() => modalScroll?.classList.contains(
+                    'modal-visible'
+                ), 300)
                 t.ok(
                     modalScroll?.classList.contains('modal-visible'),
                     'modal reopened'
