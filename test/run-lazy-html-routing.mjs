@@ -6,6 +6,7 @@ const esbuild = spawn('esbuild', [
     '--platform=node',
     '--format=esm',
     '--external:./src/server/blurhash-runtime.js',
+    '--external:stripe',
     '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
     // Vite would substitute these at build time; under node-bundle
     // tests we need to pin them so production code that branches on

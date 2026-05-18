@@ -79,6 +79,7 @@ const commands = [
         'esbuild ./test/session-record.ts --bundle --platform=node',
         '--format=esm',
         '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '| node --input-type=module | tap-spec'
     ].join(' '),
@@ -86,6 +87,7 @@ const commands = [
         'esbuild ./test/logout.ts --bundle --platform=node',
         '--format=esm',
         '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '| node --input-type=module | tap-spec'
     ].join(' '),
@@ -93,6 +95,7 @@ const commands = [
         'esbuild ./test/account-deletion.ts --bundle --platform=node',
         '--format=esm',
         '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '| node --input-type=module | tap-spec'
     ].join(' '),
