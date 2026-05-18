@@ -34,7 +34,8 @@ import {
     getStripePublishableKey,
     stripeUseLive,
     getStripe,
-    getStripeCustomerId
+    getStripeCustomerId,
+    isStripeNotFoundError
 } from './stripe-billing.js'
 import type Stripe from 'stripe'
 import {
@@ -947,6 +948,62 @@ app.get(
             return c.json(payload)
         } catch (err) {
             console.error('billing/payment-methods error:', err)
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+    }
+)
+
+app.delete(
+    '/api/billing/payment-methods/:id',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        const id = c.req.param('id')
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        try {
+            const stripe = getStripe(c.env)
+            const customerId = await getStripeCustomerId(
+                c.env,
+                session.did
+            )
+            // Defense-in-depth: refuse to detach the current default.
+            const customer = await stripe.customers.retrieve(customerId)
+            if (customer.deleted) {
+                return c.json({ error: 'stripe_error' }, 502)
+            }
+            const currentDefault = (
+                customer as Stripe.Customer
+            ).invoice_settings?.default_payment_method
+            const defaultId = typeof currentDefault === 'string' ?
+                currentDefault :
+                currentDefault?.id ?? null
+            if (defaultId === id) {
+                return c.json({
+                    error: 'cannot_remove_default'
+                }, 409)
+            }
+            try {
+                await stripe.paymentMethods.detach(id)
+            } catch (err) {
+                if (isStripeNotFoundError(err)) {
+                    return c.json({
+                        error: 'payment_method_not_found'
+                    }, 404)
+                }
+                throw err
+            }
+            const payload = await listPaymentMethodsPayload(
+                c.env,
+                session.did
+            )
+            return c.json(payload)
+        } catch (err) {
+            console.error(
+                'billing/payment-methods DELETE error:',
+                err
+            )
             return c.json({ error: 'stripe_error' }, 502)
         }
     }
