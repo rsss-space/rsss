@@ -381,3 +381,128 @@ test(
         })
     }
 )
+
+test(
+    'POST /api/billing/payment-methods/setup-intent requires auth',
+    async t => {
+        const env = makeEnv({
+            STRIPE_SECRET_KEY: STRIPE_KEY,
+            AUTUMN_SECRET_KEY: AUTUMN_KEY
+        })
+        const res = await app.request(
+            'http://127.0.0.1/api/billing/payment-methods/setup-intent',
+            {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    cookie: `csrf_token=${TEST_CSRF_TOKEN}`,
+                    'x-csrf-token': TEST_CSRF_TOKEN,
+                    'sec-fetch-site': 'same-origin'
+                }
+            },
+            env,
+            executionCtx
+        )
+        t.equal(res.status, 401, 'unauthenticated request rejected')
+    }
+)
+
+test(
+    'POST /api/billing/payment-methods/setup-intent returns 503 ' +
+    'when STRIPE_SECRET_KEY is unset',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY
+        })
+        const { cookieHeader } = await makeSession(env)
+        const res = await app.request(
+            'http://127.0.0.1/api/billing/payment-methods/setup-intent',
+            { method: 'POST', headers: authedHeaders(cookieHeader) },
+            env,
+            executionCtx
+        )
+        const body = await res.json() as { error?:string }
+        t.equal(res.status, 503, 'returns 503')
+        t.equal(body.error, 'stripe_unconfigured', 'error code')
+    }
+)
+
+test(
+    'POST /api/billing/payment-methods/setup-intent creates a ' +
+    'SetupIntent with usage=off_session and returns clientSecret',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+        await withFetch(async call => {
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            if (call.url.includes(
+                'api.stripe.com/v1/setup_intents')) {
+                return jsonResponse({
+                    id: 'seti_test',
+                    object: 'setup_intent',
+                    client_secret: 'seti_test_secret_abc',
+                    status: 'requires_payment_method'
+                })
+            }
+            return jsonResponse({}, 404)
+        }, async calls => {
+            const res = await app.request(
+                'http://127.0.0.1/api/billing/payment-methods/setup-intent',
+                {
+                    method: 'POST',
+                    headers: authedHeaders(cookieHeader)
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as { clientSecret?:string }
+            t.equal(res.status, 200, 'returns 200')
+            t.equal(
+                body.clientSecret,
+                'seti_test_secret_abc',
+                'forwards client_secret as clientSecret'
+            )
+            const createCall = calls.find(c =>
+                c.url.includes('api.stripe.com/v1/setup_intents'))
+            t.ok(createCall, 'called Stripe setup_intents')
+            // Stripe SDK URL-encodes the body. The presence of these
+            // tokens in the encoded body confirms the params were
+            // sent.
+            const rawBody = typeof createCall?.body === 'string' ?
+                createCall.body :
+                ''
+            t.ok(
+                rawBody.includes('customer=cus_test_alice'),
+                'passed customer id'
+            )
+            t.ok(
+                rawBody.includes('usage=off_session'),
+                'passed usage=off_session'
+            )
+            t.ok(
+                rawBody.includes(
+                    'automatic_payment_methods[enabled]=true'),
+                'passed automatic_payment_methods.enabled=true'
+            )
+            // AC3.2 sanity: outgoing request body MUST NOT contain
+            // any payment-method data — only customer + intent
+            // parameters.
+            t.equal(
+                rawBody.match(/card|cvc|number/i),
+                null,
+                'no card data in outgoing request'
+            )
+        })
+    }
+)
