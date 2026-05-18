@@ -70,6 +70,56 @@ test(
 )
 
 test(
+    'GET /api/billing/status includes stripePublishableKey when set',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'test',
+            STRIPE_PUBLISHABLE_KEY: 'pk_test_phase2'
+        })
+        const { cookieHeader } = await makeSession(env)
+
+        const res = await app.request(
+            'http://127.0.0.1/api/billing/status',
+            { method: 'GET', headers: authedHeaders(cookieHeader) },
+            env,
+            executionCtx
+        )
+        const body = await res.json() as Record<string, unknown>
+
+        t.equal(res.status, 200, 'returns 200')
+        t.equal(
+            body.stripePublishableKey,
+            'pk_test_phase2',
+            'echoes configured publishable key'
+        )
+    }
+)
+
+test(
+    'GET /api/billing/status returns null stripePublishableKey ' +
+    'when unset',
+    async t => {
+        const env = makeEnv({ NODE_ENV: 'test' })
+        const { cookieHeader } = await makeSession(env)
+
+        const res = await app.request(
+            'http://127.0.0.1/api/billing/status',
+            { method: 'GET', headers: authedHeaders(cookieHeader) },
+            env,
+            executionCtx
+        )
+        const body = await res.json() as Record<string, unknown>
+
+        t.equal(res.status, 200, 'returns 200')
+        t.equal(
+            body.stripePublishableKey,
+            null,
+            'returns null when publishable key is unconfigured'
+        )
+    }
+)
+
+test(
     'POST /api/billing/cancel requires auth',
     async t => {
         const env = makeEnv()

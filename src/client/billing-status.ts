@@ -18,6 +18,7 @@ export interface BillingStatus {
     currentPeriodEnd?:number|null
     canceledAt?:number|null
     contactEmail?:string|null
+    stripePublishableKey?:string|null
 }
 
 export const billingStatus:Signal<BillingStatus|null> =

@@ -31,6 +31,7 @@ import {
     getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
+import { getStripePublishableKey } from './stripe-billing.js'
 import {
     sendSubscriptionStarted,
     sendPaymentFailed,
@@ -862,7 +863,8 @@ app.get('/api/billing/status', requireAuth, async (c) => {
             pendingDeletion,
             currentPeriodEnd: billing.currentPeriodEnd,
             canceledAt: billing.canceledAt,
-            contactEmail
+            contactEmail,
+            stripePublishableKey: getStripePublishableKey(c.env)
         })
     } catch (err) {
         console.error('billing/status error:', err)
