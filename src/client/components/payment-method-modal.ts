@@ -212,13 +212,13 @@ export const PaymentMethodModal:FunctionComponent<
                             />
                         `)}
                     </ul>
-                    ${globalError && html`
+                    ${(addError || globalError) && html`
                         <p
                             id=${ERROR_ID}
                             class="pm-error"
                             role="alert"
                         >
-                            ${globalError}
+                            ${addError || globalError}
                         </p>
                     `}
                     <div class="pm-actions">
