@@ -53,6 +53,7 @@
     "@sentry/browser": "^10.53.1",
     "@sentry/cloudflare": "^10.53.1",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
+    "@stripe/stripe-js": "^4.10.0",
     "@substrate-system/a11y": "^0.0.17",
     "@substrate-system/blur-hash": "^0.0.35",
     "@substrate-system/button": "^0.0.43",
