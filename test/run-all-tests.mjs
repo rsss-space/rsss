@@ -123,6 +123,7 @@ const commands = [
     [
         'esbuild ./test/billing-management.ts --bundle',
         '--platform=node --format=esm',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '--loader:.wasm=dataurl',
         '| node --input-type=module | tap-spec'
