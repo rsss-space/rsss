@@ -1,6 +1,15 @@
 .payment-method-modal {
-    /* additional sizing on top of the Dialog primitive */
-    max-width: 32rem;
+    & h2 {
+        font-size: 1.125rem;
+        font-weight: 600;
+        margin: 0 0 1rem;
+        line-height: 1.3;
+    }
+
+    & .payment-method-modal-body {
+        font-size: 1rem;
+        line-height: 1.5;
+    }
 
     & .pm-list {
         list-style: none;
@@ -27,10 +36,11 @@
 
     & .pm-default-badge {
         font-size: 1rem;
-        /* Default is a positive/informational state, not a warning.
-         * Use existing success token; if _variables.css later
-         * grows a --color-success-bg variant, prefer it. */
-        background: color-mix(in srgb, var(--color-success) 12%, transparent);
+        background: color-mix(
+            in srgb,
+            var(--color-success) 12%,
+            transparent
+        );
         color: var(--color-success);
         padding: 0.125rem 0.5rem;
         border-radius: 999px;

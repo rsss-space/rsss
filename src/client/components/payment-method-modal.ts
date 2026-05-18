@@ -12,6 +12,8 @@ import {
     type StripeElements
 } from '@stripe/stripe-js'
 import { batch } from '@preact/signals'
+import { ModalWindow } from '@substrate-system/dialog'
+import '@substrate-system/dialog/css'
 import { State } from '../state.js'
 import {
     paymentMethods,
@@ -20,8 +22,25 @@ import {
     type PaymentMethodSummary
 } from '../payment-methods.js'
 import { billingStatus } from '../billing-status.js'
-import { Dialog } from './dialog.js'
 import './payment-method-modal.css'
+
+type ModalWindowAttrs = preact.JSX.HTMLAttributes<HTMLElement> & {
+    active?: string;
+    closable?: string;
+    'no-icon'?: string | boolean;
+    animated?: string;
+    noclick?: string | boolean;
+    close?: string;
+};
+
+declare module 'preact' {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
+    export namespace JSX {
+        interface IntrinsicElements {
+            'modal-window': ModalWindowAttrs;
+        }
+    }
+}
 
 type Mode = 'list' | 'adding' | 'confirming-remove'
 
@@ -54,6 +73,7 @@ export const PaymentMethodModal:FunctionComponent<
     const stripeRef = useRef<StripeLib|null>(null)
     const elementsRef = useRef<StripeElements|null>(null)
     const elementHostRef = useRef<HTMLDivElement|null>(null)
+    const modalRef = useRef<HTMLElement|null>(null)
 
     // Reset modal-scoped state whenever the dialog closes.
     const handleClose = useCallback(() => {
@@ -131,6 +151,18 @@ export const PaymentMethodModal:FunctionComponent<
         }
     }, [mode, setupSecret])
 
+    // Forward the modal-window's `close` event to the parent's onClose.
+    useEffect(() => {
+        const el = modalRef.current
+        if (!el) return undefined
+        const handle = () => handleClose()
+        const evt = ModalWindow.event('close')
+        el.addEventListener(evt, handle)
+        return () => {
+            el.removeEventListener(evt, handle)
+        }
+    }, [handleClose])
+
     const handleSubmitAdd = useCallback(async () => {
         const stripeLib = stripeRef.current
         const elements = elementsRef.current
@@ -190,19 +222,16 @@ export const PaymentMethodModal:FunctionComponent<
     const globalError = paymentMethodsError.value
 
     return html`
-        <${Dialog}
-            open=${open}
-            onClose=${handleClose}
-            labelledBy=${TITLE_ID}
-            describedBy=${addError || globalError ? ERROR_ID : undefined}
-            className="payment-method-modal"
+        <modal-window
+            ref=${modalRef}
+            class="payment-method-modal"
+            active=${open ? 'true' : 'false'}
+            aria-describedby=${
+                addError || globalError ? ERROR_ID : undefined
+            }
         >
-            <div class="app-dialog-header">
-                <h2 id=${TITLE_ID} class="app-dialog-title">
-                    Payment methods
-                </h2>
-            </div>
-            <div class="app-dialog-body">
+            <h2 id=${TITLE_ID}>Payment methods</h2>
+            <div class="payment-method-modal-body">
                 ${mode === 'list' && html`
                     <ul class="pm-list">
                         ${methods.map((m) => html`
@@ -265,7 +294,7 @@ export const PaymentMethodModal:FunctionComponent<
                     </div>
                 `}
             </div>
-        </${Dialog}>
+        </modal-window>
     `
 }
 
