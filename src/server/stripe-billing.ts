@@ -2,8 +2,8 @@
  * Stripe SDK boundary for the Cloudflare Worker.
  *
  * Pairs with autumn-billing.ts: Autumn owns the canonical customer
- * record (keyed by Bluesky DID, exposing `stripe_id`); this module
- * uses the `stripe_id` to talk to Stripe directly for PaymentMethod
+ * record (keyed by Bluesky DID, exposing `stripeId`); this module
+ * uses the `stripeId` to talk to Stripe directly for PaymentMethod
  * and Customer.invoice_settings operations that Autumn does not
  * expose.
  *
@@ -51,10 +51,11 @@ export function getStripe (env:StripeEnv):Stripe {
 /**
  * Resolve the Stripe customer id (`cus_*`) for a Bluesky DID by
  * asking Autumn on every request. The Autumn customer record's
- * `stripe_id` field is the source of truth.
+ * `stripeId` field (normalized from wire format `stripe_id`) is the
+ * source of truth.
  *
  * Throws if Autumn isn't configured, if the Autumn customer record
- * has no `stripe_id`, or if the lookup fails. Callers should catch
+ * has no `stripeId`, or if the lookup fails. Callers should catch
  * and surface a 503 / 502.
  */
 export async function getStripeCustomerId (
@@ -67,18 +68,13 @@ export async function getStripeCustomerId (
         )
     }
     const autumn = new Autumn({ secretKey: env.AUTUMN_SECRET_KEY })
-    const customer = await (autumn as unknown as {
-        customers:{
-            getOrCreate:(args:{ customerId:string }) =>
-                Promise<{ stripeId?:string|null }>;
-        };
-    }).customers.getOrCreate({
+    const customer = await autumn.customers.getOrCreate({
         customerId: didToCustomerId(did)
     })
     const stripeId = customer.stripeId
     if (!stripeId) {
         throw new Error(
-            'stripe-billing: autumn customer has no stripe_id'
+            'stripe-billing: autumn customer has no stripeId'
         )
     }
     return stripeId
