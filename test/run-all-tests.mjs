@@ -128,6 +128,11 @@ const commands = [
         '| node --input-type=module | tap-spec'
     ].join(' '),
     [
+        'esbuild ./test/stripe-billing.ts --bundle',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| tapout'
+    ].join(' '),
+    [
         'esbuild ./test/index.ts --bundle',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '--alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts',
