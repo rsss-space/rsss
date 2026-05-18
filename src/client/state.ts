@@ -67,6 +67,7 @@ import {
     setPaymentMethodsState,
     setPaymentMethodsLoading,
     setPaymentMethodsError,
+    resetPaymentMethods,
     type PaymentMethodSummary
 } from './payment-methods.js'
 import {
@@ -1586,9 +1587,10 @@ State.logout = async function (
             null :
             'Logout may not have completed. Please clear cookies' +
                 ' if you continue to see your account.'
+        resetBilling()
+        resetPaymentMethods()
     })
     State.closeEventStream()
-    resetBilling()
     state._setRoute('/login')
 }
 
