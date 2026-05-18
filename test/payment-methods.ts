@@ -506,3 +506,498 @@ test(
         })
     }
 )
+
+function makeStripeListResponse (
+    methods:Array<{
+        id:string;
+        brand:string;
+        last4:string;
+        exp_month:number;
+        exp_year:number;
+    }>
+):unknown {
+    return {
+        object: 'list',
+        has_more: false,
+        data: methods.map(m => ({
+            id: m.id,
+            object: 'payment_method',
+            type: 'card',
+            card: {
+                brand: m.brand,
+                last4: m.last4,
+                exp_month: m.exp_month,
+                exp_year: m.exp_year
+            }
+        }))
+    }
+}
+
+test(
+    'DELETE /api/billing/payment-methods/:id removes non-default ' +
+    'and returns canonical refreshed list',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+        let detachCalled = false
+        let stripeListCalls = 0
+        await withFetch(async call => {
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/)) {
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer',
+                    invoice_settings: {
+                        default_payment_method: 'pm_mc'
+                    }
+                })
+            }
+            if (call.url.includes(
+                'api.stripe.com/v1/payment_methods/pm_visa/detach')) {
+                detachCalled = true
+                return jsonResponse({ id: 'pm_visa', detached: true })
+            }
+            if (call.url.includes(
+                'api.stripe.com/v1/payment_methods')) {
+                stripeListCalls++
+                return jsonResponse(makeStripeListResponse([
+                    {
+                        id: 'pm_mc',
+                        brand: 'mastercard',
+                        last4: '4444',
+                        exp_month: 6,
+                        exp_year: 2029
+                    }
+                ]))
+            }
+            return jsonResponse({}, 404)
+        }, async () => {
+            const res = await app.request(
+                'http://127.0.0.1/api/billing/payment-methods/pm_visa',
+                {
+                    method: 'DELETE',
+                    headers: authedHeaders(cookieHeader)
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as {
+                methods:Array<{ id:string }>;
+                defaultId:string|null;
+            }
+            t.equal(res.status, 200, '200 OK')
+            t.ok(detachCalled, 'called Stripe detach')
+            t.equal(body.defaultId, 'pm_mc', 'default unchanged')
+            t.equal(body.methods.length, 1, 'one method left')
+            t.equal(body.methods[0].id, 'pm_mc', 'mc remains')
+            t.equal(
+                body.methods.find(m => m.id === 'pm_visa'),
+                undefined,
+                'pm_visa is gone'
+            )
+        })
+    }
+)
+
+test(
+    'DELETE /api/billing/payment-methods/:id returns 409 ' +
+    'cannot_remove_default for the current default id',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+        let detachCalled = false
+        await withFetch(async call => {
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/)) {
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer',
+                    invoice_settings: {
+                        default_payment_method: 'pm_mc'
+                    }
+                })
+            }
+            if (call.url.includes(
+                '/v1/payment_methods/pm_mc/detach')) {
+                detachCalled = true
+                return jsonResponse({}, 200)
+            }
+            return jsonResponse({}, 404)
+        }, async () => {
+            const res = await app.request(
+                'http://127.0.0.1/api/billing/payment-methods/pm_mc',
+                {
+                    method: 'DELETE',
+                    headers: authedHeaders(cookieHeader)
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as { error?:string }
+            t.equal(res.status, 409, 'returns 409')
+            t.equal(body.error, 'cannot_remove_default', 'error code')
+            t.equal(detachCalled, false, 'did NOT call detach')
+        })
+    }
+)
+
+test(
+    'DELETE /api/billing/payment-methods/:id returns 404 ' +
+    'payment_method_not_found when Stripe says resource_missing',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+        await withFetch(async call => {
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/)) {
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer',
+                    invoice_settings: {
+                        default_payment_method: 'pm_mc'
+                    }
+                })
+            }
+            if (call.url.includes(
+                '/v1/payment_methods/pm_ghost/detach')) {
+                return jsonResponse({
+                    error: {
+                        type: 'invalid_request_error',
+                        code: 'resource_missing',
+                        message: 'No such payment method'
+                    }
+                }, 404)
+            }
+            return jsonResponse({}, 404)
+        }, async () => {
+            const res = await app.request(
+                'http://127.0.0.1/api/billing/payment-methods/pm_ghost',
+                {
+                    method: 'DELETE',
+                    headers: authedHeaders(cookieHeader)
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as { error?:string }
+            t.equal(res.status, 404, '404 returned')
+            t.equal(
+                body.error,
+                'payment_method_not_found',
+                'error code'
+            )
+        })
+    }
+)
+
+test(
+    'POST /api/billing/payment-methods/:id/default updates ' +
+    'customer + subscription and returns canonical list',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+        let customerUpdated = false
+        let subscriptionUpdated = false
+        await withFetch(async call => {
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/) &&
+                call.method === 'POST') {
+                customerUpdated = true
+                const rawBody = typeof call.body === 'string' ?
+                    call.body :
+                    ''
+                t.ok(
+                    rawBody.includes('pm_visa'),
+                    'customer update sets default to pm_visa'
+                )
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer'
+                })
+            }
+            if (call.url.includes(
+                'api.stripe.com/v1/subscriptions') &&
+                call.method === 'GET') {
+                return jsonResponse({
+                    object: 'list',
+                    data: [{
+                        id: 'sub_active1',
+                        object: 'subscription',
+                        status: 'active'
+                    }]
+                })
+            }
+            if (call.url.includes(
+                'api.stripe.com/v1/subscriptions/sub_active1') &&
+                call.method === 'POST') {
+                subscriptionUpdated = true
+                const rawBody = typeof call.body === 'string' ?
+                    call.body :
+                    ''
+                t.ok(
+                    rawBody.includes(
+                        'default_payment_method=pm_visa'),
+                    'subscription update sets default'
+                )
+                return jsonResponse({
+                    id: 'sub_active1',
+                    object: 'subscription'
+                })
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/) &&
+                call.method === 'GET') {
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer',
+                    invoice_settings: {
+                        default_payment_method: 'pm_visa'
+                    }
+                })
+            }
+            if (call.url.includes('api.stripe.com/v1/payment_methods')) {
+                return jsonResponse(makeStripeListResponse([
+                    {
+                        id: 'pm_visa',
+                        brand: 'visa',
+                        last4: '4242',
+                        exp_month: 12,
+                        exp_year: 2030
+                    },
+                    {
+                        id: 'pm_mc',
+                        brand: 'mastercard',
+                        last4: '4444',
+                        exp_month: 6,
+                        exp_year: 2029
+                    }
+                ]))
+            }
+            return jsonResponse({}, 404)
+        }, async () => {
+            const res = await app.request(
+                'http://127.0.0.1' +
+                '/api/billing/payment-methods/pm_visa/default',
+                {
+                    method: 'POST',
+                    headers: authedHeaders(cookieHeader)
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as {
+                methods:Array<{ id:string; isDefault:boolean }>;
+                defaultId:string|null;
+            }
+            t.equal(res.status, 200, '200 OK')
+            t.ok(customerUpdated, 'customer.invoice_settings updated')
+            t.ok(subscriptionUpdated, 'subscription default updated')
+            t.equal(body.defaultId, 'pm_visa', 'defaultId moved')
+            const visa = body.methods.find(m => m.id === 'pm_visa')
+            t.ok(visa?.isDefault, 'visa now isDefault')
+        })
+    }
+)
+
+test(
+    'POST /api/billing/payment-methods/:id/default returns 502 ' +
+    'with both states when subscription update fails',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+        let customerUpdated = false
+        await withFetch(async call => {
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/) &&
+                call.method === 'POST') {
+                customerUpdated = true
+                const rawBody = typeof call.body === 'string' ?
+                    call.body :
+                    ''
+                t.ok(
+                    rawBody.includes('pm_visa'),
+                    'customer.update sent default=pm_visa'
+                )
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer'
+                })
+            }
+            if (call.url.includes(
+                'api.stripe.com/v1/subscriptions') &&
+                call.method === 'GET') {
+                return jsonResponse({
+                    object: 'list',
+                    data: [{
+                        id: 'sub_active1',
+                        object: 'subscription',
+                        status: 'active'
+                    }]
+                })
+            }
+            if (call.url.includes(
+                'api.stripe.com/v1/subscriptions/sub_active1') &&
+                call.method === 'POST') {
+                return jsonResponse({
+                    error: {
+                        type: 'api_error',
+                        message: 'transient'
+                    }
+                }, 500)
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/)) {
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer',
+                    invoice_settings: {
+                        default_payment_method: 'pm_visa'
+                    }
+                })
+            }
+            if (call.url.includes('api.stripe.com/v1/payment_methods')) {
+                return jsonResponse(makeStripeListResponse([
+                    {
+                        id: 'pm_visa',
+                        brand: 'visa',
+                        last4: '4242',
+                        exp_month: 12,
+                        exp_year: 2030
+                    }
+                ]))
+            }
+            return jsonResponse({}, 404)
+        }, async () => {
+            const res = await app.request(
+                'http://127.0.0.1' +
+                '/api/billing/payment-methods/pm_visa/default',
+                {
+                    method: 'POST',
+                    headers: authedHeaders(cookieHeader)
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as {
+                error?:string;
+                customerDefaultUpdated?:boolean;
+                subscriptionDefaultUpdated?:boolean;
+                methods:Array<{ id:string }>;
+                defaultId:string|null;
+            }
+            t.equal(res.status, 502, 'returns 502')
+            t.equal(body.error, 'stripe_error', 'error code')
+            t.ok(customerUpdated, 'customer.update was actually called')
+            t.equal(
+                body.customerDefaultUpdated,
+                true,
+                'customer step succeeded'
+            )
+            t.equal(
+                body.subscriptionDefaultUpdated,
+                false,
+                'subscription step failed'
+            )
+            t.equal(body.defaultId, 'pm_visa', 'canonical list included')
+        })
+    }
+)
+
+test(
+    'POST /api/billing/payment-methods/:id/default returns 404 ' +
+    'for unknown PM',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+        await withFetch(async call => {
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            if (call.url.match(/api\.stripe\.com\/v1\/customers\/[^/]+$/) &&
+                call.method === 'POST') {
+                return jsonResponse({
+                    error: {
+                        type: 'invalid_request_error',
+                        code: 'resource_missing',
+                        message: 'No such payment method'
+                    }
+                }, 404)
+            }
+            return jsonResponse({}, 404)
+        }, async () => {
+            const res = await app.request(
+                'http://127.0.0.1' +
+                '/api/billing/payment-methods/pm_ghost/default',
+                {
+                    method: 'POST',
+                    headers: authedHeaders(cookieHeader)
+                },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as { error?:string }
+            t.equal(res.status, 404, 'returns 404')
+            t.equal(
+                body.error,
+                'payment_method_not_found',
+                'error code'
+            )
+        })
+    }
+)
