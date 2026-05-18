@@ -4,36 +4,10 @@ import {
     getStripe,
     getStripeCustomerId
 } from '../src/server/stripe-billing.js'
-import { didToCustomerId } from '../src/server/autumn-billing.js'
-
-function customerBody (
-    did:string,
-    stripeId:string|null
-) {
-    return {
-        id: didToCustomerId(did),
-        name: 'reader.test',
-        email: null,
-        created_at: 1700000000000,
-        fingerprint: null,
-        stripe_id: stripeId,
-        env: 'live',
-        metadata: {},
-        send_email_receipts: true,
-        billing_controls: {},
-        subscriptions: [],
-        purchases: [],
-        balances: {},
-        flags: {}
-    }
-}
-
-function jsonResponse (body:unknown):Response {
-    return new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { 'content-type': 'application/json' }
-    })
-}
+import {
+    customerBody,
+    jsonResponse
+} from './autumn-fixtures.js'
 
 test('stripeUseLive is false when STRIPE_SECRET_KEY is unset', t => {
     t.equal(
@@ -85,7 +59,7 @@ test('getStripeCustomerId returns stripe_id from Autumn', async t => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () => {
         return jsonResponse(
-            customerBody('did:plc:alice', 'cus_test_abc')
+            customerBody('did:plc:alice', null, [], 'cus_test_abc')
         )
     }) as typeof fetch
     try {
@@ -108,7 +82,7 @@ test(
         const originalFetch = globalThis.fetch
         globalThis.fetch = (async () => {
             return jsonResponse(
-                customerBody('did:plc:alice', null)
+                customerBody('did:plc:alice', null, [], null)
             )
         }) as typeof fetch
         let threw = false
@@ -124,8 +98,8 @@ test(
             threw = true
             const msg = err instanceof Error ? err.message : String(err)
             t.ok(
-                msg.includes('stripe_id'),
-                'error message mentions stripe_id'
+                msg.includes('stripeId'),
+                'error message mentions stripeId'
             )
         } finally {
             globalThis.fetch = originalFetch
