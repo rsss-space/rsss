@@ -69,6 +69,13 @@ export const PaymentMethodModal:FunctionComponent<
     const [elements, setElements] = useState<StripeElements|null>(null)
     const [addError, setAddError] = useState<string|null>(null)
     const [adding, setAdding] = useState(false)
+    const [removeCandidate, setRemoveCandidate] = useState<string|null>(
+        null
+    )
+    const [rowPending, setRowPending] = useState<Record<string, boolean>>(
+        {}
+    )
+    const [opError, setOpError] = useState<string|null>(null)
     const stripeRef = useRef<StripeLib|null>(null)
     const elementsRef = useRef<StripeElements|null>(null)
     const elementHostRef = useRef<HTMLDivElement|null>(null)
@@ -80,6 +87,9 @@ export const PaymentMethodModal:FunctionComponent<
         setElements(null)
         setAddError(null)
         setAdding(false)
+        setRemoveCandidate(null)
+        setRowPending({})
+        setOpError(null)
         const el = elementsRef.current
         if (el) {
             try {
@@ -207,6 +217,58 @@ export const PaymentMethodModal:FunctionComponent<
         elementsRef.current = null
     }, [])
 
+    const handleAskRemove = useCallback((id:string) => {
+        setRemoveCandidate(id)
+        setOpError(null)
+        setMode('confirming-remove')
+    }, [])
+
+    const handleCancelRemove = useCallback(() => {
+        setRemoveCandidate(null)
+        setOpError(null)
+        setMode('list')
+    }, [])
+
+    const handleConfirmRemove = useCallback(async () => {
+        const id = removeCandidate
+        if (!id) return
+        setRowPending(s => ({ ...s, [id]: true }))
+        setOpError(null)
+        try {
+            await State.removePaymentMethod(id)
+            setRemoveCandidate(null)
+            setMode('list')
+        } catch (err) {
+            setOpError(err instanceof Error ?
+                err.message :
+                'remove_failed')
+        } finally {
+            setRowPending(s => {
+                const copy = { ...s }
+                delete copy[id]
+                return copy
+            })
+        }
+    }, [removeCandidate])
+
+    const handleSetDefault = useCallback(async (id:string) => {
+        setRowPending(s => ({ ...s, [id]: true }))
+        setOpError(null)
+        try {
+            await State.setDefaultPaymentMethod(id)
+        } catch (err) {
+            setOpError(err instanceof Error ?
+                err.message :
+                'set_default_failed')
+        } finally {
+            setRowPending(s => {
+                const copy = { ...s }
+                delete copy[id]
+                return copy
+            })
+        }
+    }, [])
+
     const methods = paymentMethods.value
     const defaultId = defaultMethodId.value
     const globalError = paymentMethodsError.value
@@ -230,16 +292,19 @@ export const PaymentMethodModal:FunctionComponent<
                             <${Row}
                                 method=${m}
                                 isDefault=${m.id === defaultId}
+                                pending=${Boolean(rowPending[m.id])}
+                                onRemove=${handleAskRemove}
+                                onSetDefault=${handleSetDefault}
                             />
                         `)}
                     </ul>
-                    ${(addError || globalError) && html`
+                    ${(opError || addError || globalError) && html`
                         <p
                             id=${ERROR_ID}
                             class="pm-error"
                             role="alert"
                         >
-                            ${addError || globalError}
+                            ${opError ?? addError ?? globalError}
                         </p>
                     `}
                     <div class="pm-actions">
@@ -285,6 +350,44 @@ export const PaymentMethodModal:FunctionComponent<
                         </button>
                     </div>
                 `}
+                ${mode === 'confirming-remove' && html`
+                    <p class="pm-confirm-text">
+                        Remove this card?
+                    </p>
+                    ${opError && html`
+                        <p
+                            id=${ERROR_ID}
+                            class="pm-error"
+                            role="alert"
+                        >
+                            ${opError}
+                        </p>
+                    `}
+                    <div class="pm-actions">
+                        <button
+                            type="button"
+                            class="btn-link"
+                            onClick=${handleCancelRemove}
+                            disabled=${removeCandidate ?
+                                Boolean(rowPending[removeCandidate]) :
+                                false}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            class="btn-link"
+                            onClick=${handleConfirmRemove}
+                            disabled=${removeCandidate ?
+                                Boolean(rowPending[removeCandidate]) :
+                                false}
+                        >
+                            ${removeCandidate && rowPending[removeCandidate] ?
+                                'Removing...' :
+                                'Remove'}
+                        </button>
+                    </div>
+                `}
             </div>
         </modal-window>
     `
@@ -293,7 +396,12 @@ export const PaymentMethodModal:FunctionComponent<
 const Row:FunctionComponent<{
     method:PaymentMethodSummary;
     isDefault:boolean;
-}> = function ({ method, isDefault }) {
+    pending:boolean;
+    onRemove:(id:string) => void;
+    onSetDefault:(id:string) => void;
+}> = function ({
+    method, isDefault, pending, onRemove, onSetDefault
+}) {
     return html`
         <li class="pm-row">
             <span class="pm-brand-line">
@@ -305,6 +413,29 @@ const Row:FunctionComponent<{
             ${isDefault && html`
                 <span class="pm-default-badge">Default</span>
             `}
+            <div class="pm-row-actions">
+                ${!isDefault && html`
+                    <button
+                        type="button"
+                        class="btn-link"
+                        onClick=${() => onSetDefault(method.id)}
+                        disabled=${pending || undefined}
+                    >
+                        ${pending ? 'Working...' : 'Set as default'}
+                    </button>
+                `}
+                <button
+                    type="button"
+                    class="btn-link"
+                    onClick=${() => onRemove(method.id)}
+                    disabled=${isDefault || pending || undefined}
+                    title=${isDefault ?
+                        'Set another card as default first.' :
+                        undefined}
+                >
+                    Remove
+                </button>
+            </div>
         </li>
     `
 }
