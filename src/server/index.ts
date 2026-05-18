@@ -1009,6 +1009,93 @@ app.delete(
     }
 )
 
+app.post(
+    '/api/billing/payment-methods/:id/default',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        const id = c.req.param('id')
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        const stripe = getStripe(c.env)
+        let customerId:string
+        try {
+            customerId = await getStripeCustomerId(c.env, session.did)
+        } catch (err) {
+            console.error('default lookup error:', err)
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+
+        // Step 1: customer-level default.
+        let customerDefaultUpdated = false
+        try {
+            await stripe.customers.update(customerId, {
+                invoice_settings: { default_payment_method: id }
+            })
+            customerDefaultUpdated = true
+        } catch (err) {
+            if (isStripeNotFoundError(err)) {
+                return c.json({
+                    error: 'payment_method_not_found'
+                }, 404)
+            }
+            console.error(
+                'customers.update default error:',
+                err
+            )
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+
+        // Step 2: subscription-level default (best-effort).
+        let subscriptionDefaultUpdated = false
+        try {
+            const subs = await stripe.subscriptions.list({
+                customer: customerId,
+                status: 'active',
+                limit: 1
+            })
+            const sub = subs.data[0]
+            if (sub) {
+                await stripe.subscriptions.update(sub.id, {
+                    default_payment_method: id
+                })
+                subscriptionDefaultUpdated = true
+            } else {
+                // No active subscription — nothing to update at the
+                // subscription level. Treat as success.
+                subscriptionDefaultUpdated = true
+            }
+        } catch (err) {
+            console.error(
+                'subscriptions.update default error:',
+                err
+            )
+            // Partial failure: customer updated, subscription not.
+            // Return 502 with both states so the client can render
+            // a precise inline banner.
+            const payload = await listPaymentMethodsPayload(
+                c.env,
+                session.did
+            )
+            return c.json({
+                error: 'stripe_error',
+                customerDefaultUpdated,
+                subscriptionDefaultUpdated,
+                methods: payload.methods,
+                defaultId: payload.defaultId
+            }, 502)
+        }
+
+        // Both succeeded: return canonical refreshed list.
+        const payload = await listPaymentMethodsPayload(
+            c.env,
+            session.did
+        )
+        return c.json(payload)
+    }
+)
+
 async function readPendingDeletion (
     env:Env,
     did:string
