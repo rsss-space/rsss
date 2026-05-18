@@ -156,6 +156,11 @@ const commands = [
         'esbuild ./test/settings-route.ts --bundle',
         '--loader:.css=text',
         '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/dialog.ts --bundle',
+        '--loader:.css=text',
+        '| tapout'
     ].join(' ')
 ]
 
