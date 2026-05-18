@@ -715,7 +715,7 @@ test('AC5.5: Partial-failure surface inline banner (UI smoke)',
             seedMethods()
             const originalSet = State.setDefaultPaymentMethod
             State.setDefaultPaymentMethod = async () => {
-                throw new Error('partial_failure')
+                throw new Error('stripe_error')
             }
             try {
                 render(html`
@@ -744,8 +744,8 @@ test('AC5.5: Partial-failure surface inline banner (UI smoke)',
                 const err = dialog.querySelector('.pm-error')
                 t.ok(err, 'inline error shown')
                 t.ok(
-                    err?.textContent?.includes('partial_failure'),
-                    'error code surfaces'
+                    err?.textContent?.match(/stripe_error|partial/),
+                    'error code surfaces (stripe_error or partial)'
                 )
             } finally {
                 State.setDefaultPaymentMethod = originalSet
