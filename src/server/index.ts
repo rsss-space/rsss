@@ -53,6 +53,8 @@ export interface Env {
     OAUTH_CLIENT_ID?:string;
     AUTUMN_SECRET_KEY?:string;
     AUTUMN_DISABLED?:string;
+    STRIPE_SECRET_KEY?:string;
+    STRIPE_PUBLISHABLE_KEY?:string;
     RESEND_API_KEY?:string;
     RESEND_DISABLED?:string;
     RESEND_FROM?:string;
