@@ -13,7 +13,11 @@ import {
 import { billingStatus } from '../src/client/billing-status.js'
 import { State } from '../src/client/state.js'
 // Indirect — the alias in run-all-tests.mjs swaps the real package.
-import { setNextConfirmSetupResult } from './stripe-js-stub.js'
+import {
+    setNextConfirmSetupResult,
+    getMountCallCount,
+    resetMountCallCount
+} from './stripe-js-stub.js'
 
 function nextTask ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
@@ -246,6 +250,7 @@ test('AC3.3 / AC8.1: Successful confirmSetup refreshes the list',
         try {
             seedBilling(true)
             seedMethods()
+            resetMountCallCount()
             setNextConfirmSetupResult({})  // success
             let reloadCalls = 0
             const originalLoad = State.loadPaymentMethods
@@ -293,6 +298,11 @@ test('AC3.3 / AC8.1: Successful confirmSetup refreshes the list',
                     reloadCalls,
                     1,
                     'loadPaymentMethods called once'
+                )
+                // Verify PaymentElement mounted to the host
+                t.ok(
+                    getMountCallCount() > 0,
+                    'PaymentElement.mount() was invoked on the host'
                 )
                 // Returned to list mode
                 t.ok(

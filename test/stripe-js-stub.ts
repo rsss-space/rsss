@@ -5,9 +5,18 @@
 type ConfirmResult = { error?:{ message:string } }
 
 let nextResult:ConfirmResult = {}
+let mountCallCount = 0
 
 export function setNextConfirmSetupResult (r:ConfirmResult):void {
     nextResult = r
+}
+
+export function getMountCallCount ():number {
+    return mountCallCount
+}
+
+export function resetMountCallCount ():void {
+    mountCallCount = 0
 }
 
 export async function loadStripe (_pk:string) {
@@ -15,7 +24,9 @@ export async function loadStripe (_pk:string) {
         elements: (_opts:{ clientSecret:string }) => {
             return {
                 create: (_type:string) => ({
-                    mount: (_node:Element) => {},
+                    mount: (_node:Element) => {
+                        mountCallCount++
+                    },
                     unmount: () => {}
                 }),
                 getElement: (_type:string) => ({

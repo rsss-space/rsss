@@ -11,7 +11,6 @@ import {
     type Stripe as StripeLib,
     type StripeElements
 } from '@stripe/stripe-js'
-import { batch } from '@preact/signals'
 import { ModalWindow } from '@substrate-system/dialog'
 import '@substrate-system/dialog/css'
 import { State } from '../state.js'
@@ -67,7 +66,7 @@ export const PaymentMethodModal:FunctionComponent<
     PaymentMethodModalProps
 > = function ({ open, onClose }) {
     const [mode, setMode] = useState<Mode>('list')
-    const [setupSecret, setSetupSecret] = useState<string|null>(null)
+    const [elements, setElements] = useState<StripeElements|null>(null)
     const [addError, setAddError] = useState<string|null>(null)
     const [adding, setAdding] = useState(false)
     const stripeRef = useRef<StripeLib|null>(null)
@@ -77,12 +76,8 @@ export const PaymentMethodModal:FunctionComponent<
 
     // Reset modal-scoped state whenever the dialog closes.
     const handleClose = useCallback(() => {
-        batch(() => {
-            // Modal-local signals: clear them so a re-open starts
-            // clean.
-        })
         setMode('list')
-        setSetupSecret(null)
+        setElements(null)
         setAddError(null)
         setAdding(false)
         const el = elementsRef.current
@@ -112,17 +107,17 @@ export const PaymentMethodModal:FunctionComponent<
         setAddError(null)
         try {
             const secret = await State.createSetupIntent()
-            setSetupSecret(secret)
             const stripeLib = await loadStripe(pk)
             if (!stripeLib) {
                 setAddError('failed_to_load_stripe_js')
                 return
             }
             stripeRef.current = stripeLib
-            const elements = stripeLib.elements({
+            const els = stripeLib.elements({
                 clientSecret: secret
             })
-            elementsRef.current = elements
+            elementsRef.current = els
+            setElements(els)
             // The element mounts in a useEffect below once the
             // host node is on screen (mode === 'adding').
         } catch (err) {
@@ -138,7 +133,6 @@ export const PaymentMethodModal:FunctionComponent<
     useEffect(() => {
         if (mode !== 'adding') return
         const host = elementHostRef.current
-        const elements = elementsRef.current
         if (!host || !elements) return
         const pm = elements.create('payment')
         pm.mount(host)
@@ -149,7 +143,7 @@ export const PaymentMethodModal:FunctionComponent<
                 // Best-effort cleanup.
             }
         }
-    }, [mode, setupSecret])
+    }, [mode, elements])
 
     // Forward the modal-window's `close` event to the parent's onClose.
     useEffect(() => {
@@ -186,12 +180,8 @@ export const PaymentMethodModal:FunctionComponent<
             // Success: refresh canonical list (AC3.3, AC8.1), drop
             // back to list mode.
             await State.loadPaymentMethods()
-            batch(() => {
-                // Phase 2 setters already use batch() internally;
-                // wrapping here keeps modal-local resets atomic.
-            })
             setMode('list')
-            setSetupSecret(null)
+            setElements(null)
             setAdding(false)
         } catch (err) {
             setAddError(err instanceof Error ?
@@ -203,7 +193,7 @@ export const PaymentMethodModal:FunctionComponent<
 
     const handleCancelAdd = useCallback(() => {
         setMode('list')
-        setSetupSecret(null)
+        setElements(null)
         setAddError(null)
         const el = elementsRef.current
         if (el) {
@@ -221,14 +211,16 @@ export const PaymentMethodModal:FunctionComponent<
     const defaultId = defaultMethodId.value
     const globalError = paymentMethodsError.value
 
+    const describedBy = mode === 'list' ?
+        (globalError ? ERROR_ID : undefined) :
+        (addError ? ERROR_ID : undefined)
+
     return html`
         <modal-window
             ref=${modalRef}
             class="payment-method-modal"
             active=${open ? 'true' : 'false'}
-            aria-describedby=${
-                addError || globalError ? ERROR_ID : undefined
-            }
+            aria-describedby=${describedBy}
         >
             <h2 id=${TITLE_ID}>Payment methods</h2>
             <div class="payment-method-modal-body">
