@@ -106,9 +106,12 @@ export const PaymentMethodModal:FunctionComponent<
         elementsRef.current = null
     }, [])
 
-    // Reset modal-scoped state whenever the dialog closes.
+    // Reset modal-scoped state whenever the dialog closes via user
+    // action (Escape, backdrop, .close()). Updating prevOpenRef here
+    // pre-empts the parent-driven effect so resetState() only runs once.
     const handleClose = useCallback(() => {
         resetState()
+        prevOpenRef.current = false
         onClose()
     }, [resetState, onClose])
 
