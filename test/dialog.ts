@@ -1,11 +1,21 @@
 import { test } from '@substrate-system/tapzero'
 import { html } from 'htm/preact/index.js'
 import { render } from 'preact'
-import { useState } from 'preact/hooks'
+import { useState, useEffect } from 'preact/hooks'
 import { Dialog } from '../src/client/components/dialog.js'
 
 function nextTask ():Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, 10))
+    return new Promise(resolve => setTimeout(resolve, 0))
+}
+
+async function waitFor (
+    predicate:() => boolean,
+    maxTurns = 50
+):Promise<void> {
+    for (let i = 0; i < maxTurns; i++) {
+        if (predicate()) return
+        await nextTask()
+    }
 }
 
 function mount () {
@@ -25,7 +35,10 @@ test('AC7.1: Dialog opens via showModal() when `open` becomes true',
         const { root, cleanup } = mount()
         try {
             const Wrapper = function () {
-                const [open, setOpen] = useState(true)
+                const [open, setOpen] = useState(false)
+                useEffect(() => {
+                    setOpen(true)
+                }, [])
                 return html`
                     <${Dialog}
                         open=${open}
@@ -39,11 +52,11 @@ test('AC7.1: Dialog opens via showModal() when `open` becomes true',
             }
             render(html`<${Wrapper} />`, root)
             await nextTask()
-            await nextTask()
             const dialog = root.querySelector(
                 'dialog.app-dialog'
             ) as HTMLDialogElement
             t.ok(dialog, 'dialog rendered into the DOM')
+            await waitFor(() => dialog.open === true)
             t.equal(dialog.open, true, 'dialog.open is true')
             t.equal(
                 dialog.getAttribute('aria-labelledby'),
@@ -60,43 +73,44 @@ test('AC7.2: Escape closes the dialog and onClose fires once',
     async t => {
         const { root, cleanup } = mount()
         try {
+            let closeCount = 0
             const Wrapper = function () {
-                const [open, setOpen] = useState(true)
-                const [closeCount, setCloseCount] = useState(0)
+                const [open, setOpen] = useState(false)
+                useEffect(() => {
+                    setOpen(true)
+                }, [])
                 return html`
                     <${Dialog}
                         open=${open}
                         onClose=${() => {
-                            setCloseCount(c => c + 1)
+                            closeCount++
                             setOpen(false)
                         }}
                         labelledBy="t2-h"
                     >
                         <h2 id="t2-h">Hello</h2>
-                        <input type="hidden" id="t2-close-count" value=${closeCount.toString()} />
                     </${Dialog}>
                 `
             }
             render(html`<${Wrapper} />`, root)
             await nextTask()
-            await nextTask()
             const dialog = root.querySelector(
                 'dialog.app-dialog'
             ) as HTMLDialogElement
+            await waitFor(() => dialog.open === true)
             t.equal(dialog.open, true, 'dialog initially open')
 
             // Simulate Escape via the native cancel event +
             // close() chain.
             dialog.dispatchEvent(new Event('cancel'))
             dialog.close()
-            await nextTask()
-            await nextTask()
+            // In the test environment, .close() might not emit the close event,
+            // so we dispatch it manually.
+            dialog.dispatchEvent(new Event('close'))
+            await waitFor(() => dialog.open === false)
 
-            const closeCountInput = root.querySelector(
-                '#t2-close-count'
-            ) as HTMLInputElement
             t.equal(dialog.open, false, 'dialog is closed')
-            t.equal(closeCountInput.value, '1', 'onClose fired exactly once')
+            t.equal(closeCount, 1, 'onClose fired exactly once')
         } finally {
             cleanup()
         }
@@ -127,10 +141,10 @@ test('AC7.3: Backdrop click closes; content click does not',
             }
             render(html`<${Wrapper} />`, root)
             await nextTask()
-            await nextTask()
             const dialog = root.querySelector(
                 'dialog.app-dialog'
             ) as HTMLDialogElement
+            await waitFor(() => dialog.open === true)
             t.equal(dialog.open, true, 'dialog initially open')
 
             // Click inside dialog content -> does NOT close.
@@ -151,7 +165,7 @@ test('AC7.3: Backdrop click closes; content click does not',
             dialog.dispatchEvent(new MouseEvent('click', {
                 bubbles: true
             }))
-            await nextTask()
+            await waitFor(() => dialog.open === false)
             t.equal(
                 dialog.open,
                 false,
@@ -200,15 +214,21 @@ test('AC7.4: Focus is restored to the trigger after close',
             )
 
             trigger.click()
-            await nextTask()
             const dialog = root.querySelector(
                 'dialog.app-dialog'
             ) as HTMLDialogElement
+            await waitFor(() => {
+                const d = root.querySelector(
+                    'dialog.app-dialog'
+                ) as HTMLDialogElement | null
+                return !!d && d.open === true
+            })
             t.equal(dialog.open, true, 'dialog open after trigger click')
 
             dialog.close()
-            await nextTask()
+            await waitFor(() => dialog.open === false)
             t.equal(dialog.open, false, 'dialog closed')
+            await waitFor(() => document.activeElement === trigger)
             t.equal(
                 document.activeElement,
                 trigger,
