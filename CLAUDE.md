@@ -1,6 +1,6 @@
 # rsss Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-05-10
+Auto-generated from all feature plans. Last updated: 2026-05-18
 
 ## Active Technologies
 - Per-user Durable Object SQLite (server-authoritative); local (002-full-article-fetch)
@@ -44,6 +44,7 @@ npm test && npm run lint
 TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Recent Changes
+- 2026-05-17-payment-method-modal: Added Stripe SDK boundary (`src/server/stripe-billing.ts`) and `/api/billing/payment-methods*` routes; client gains `src/client/payment-methods.ts` signals and `<PaymentMethodModal>` (uses `@substrate-system/dialog`); new deps `stripe`, `@stripe/stripe-js`, `@substrate-system/dialog`; new env vars `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY`. See `src/server/CLAUDE.md` for the billing-domain contract.
 - 018-fix-feed-resolving-stuck: Added TypeScript (browser, ES2022 lib via Vite for the + Hono (worker router), `@cloudflare/durable-objects`,
 - 016-fix-dev-server-fouc: Added TypeScript (browser, ES2022 lib via Vite for + Preact + `@preact/signals`, `htm/preact`,
 - 016-fix-dev-server-fouc: Added TypeScript (browser, ES2022 lib via Vite for the + Vite 7 + `@cloudflare/vite-plugin` (build

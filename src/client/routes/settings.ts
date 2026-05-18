@@ -52,6 +52,8 @@ import {
 } from '../db/storage-usage.js'
 import { NBSP } from '../constants.js'
 import { formatBytes } from '../util.js'
+import { PaymentMethodModal } from
+    '../components/payment-method-modal.js'
 import './settings.css'
 import '@substrate-system/radio-input/css'
 
@@ -67,6 +69,7 @@ export const SettingsRoute:FunctionComponent<{
         isLocalFirstSupported()
         if (state.isAuthenticated.value) {
             State.loadBillingStatus()
+            State.loadPaymentMethods()
         }
     }, [])
 
@@ -91,6 +94,7 @@ export const SettingsRoute:FunctionComponent<{
     }, [feeds.value, syncSubscriptions.value])
 
     const [subscriptionPending, setSubscriptionPending] = useState(false)
+    const [pmModalOpen, setPmModalOpen] = useState(false)
 
     const supported = localFirstSupported.value
     const inProgress = bootstrapInProgress.value
@@ -176,9 +180,13 @@ export const SettingsRoute:FunctionComponent<{
         }
     }, [])
 
-    const handleUpdatePaymentMethod = useCallback((e:MouseEvent) => {
+    const handleOpenPaymentMethods = useCallback((e:MouseEvent) => {
         e.preventDefault()
-        State.openPaymentMethodUpdate()
+        setPmModalOpen(true)
+    }, [])
+
+    const handleClosePaymentMethods = useCallback(() => {
+        setPmModalOpen(false)
     }, [])
 
     function confirmTerminalBootstrapReset (message:string):boolean {
@@ -498,13 +506,10 @@ export const SettingsRoute:FunctionComponent<{
                         `}
                         ${billing.value?.useLive ? html`
                             <button class="btn-link"
-                                onClick=${handleUpdatePaymentMethod}
+                                onClick=${handleOpenPaymentMethods}
                             >
-                                Update payment method
+                                Manage payment methods
                             </button>
-                            <p class="hint">
-                                This will open page on stripe.com.
-                            </p>
                         ` : null}
                     </div>
                     ${billingError.value ? html`
@@ -867,5 +872,9 @@ export const SettingsRoute:FunctionComponent<{
                 </a>
             `}
         </section>
+        <${PaymentMethodModal}
+            open=${pmModalOpen}
+            onClose=${handleClosePaymentMethods}
+        />
     </div>`
 }

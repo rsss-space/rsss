@@ -79,6 +79,7 @@ const commands = [
         'esbuild ./test/session-record.ts --bundle --platform=node',
         '--format=esm',
         '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '| node --input-type=module | tap-spec'
     ].join(' '),
@@ -86,6 +87,7 @@ const commands = [
         'esbuild ./test/logout.ts --bundle --platform=node',
         '--format=esm',
         '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '| node --input-type=module | tap-spec'
     ].join(' '),
@@ -93,6 +95,7 @@ const commands = [
         'esbuild ./test/account-deletion.ts --bundle --platform=node',
         '--format=esm',
         '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '| node --input-type=module | tap-spec'
     ].join(' '),
@@ -123,6 +126,20 @@ const commands = [
     [
         'esbuild ./test/billing-management.ts --bundle',
         '--platform=node --format=esm',
+        '--external:stripe',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '--loader:.wasm=dataurl',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
+        'esbuild ./test/stripe-billing.ts --bundle',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/payment-methods.ts --bundle',
+        '--platform=node --format=esm',
+        '--external:stripe',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
         '--loader:.wasm=dataurl',
         '| node --input-type=module | tap-spec'
@@ -138,6 +155,12 @@ const commands = [
     [
         'esbuild ./test/settings-route.ts --bundle',
         '--loader:.css=text',
+        '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/payment-method-modal.ts --bundle',
+        '--loader:.css=text',
+        '--alias:@stripe/stripe-js=./test/stripe-js-stub.ts',
         '| tapout'
     ].join(' ')
 ]

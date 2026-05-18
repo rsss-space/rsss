@@ -28,9 +28,16 @@ import {
     getSubscriptionSnapshot,
     cancelSubscription,
     resumeSubscription,
-    getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
+import {
+    getStripePublishableKey,
+    stripeUseLive,
+    getStripe,
+    getStripeCustomerId,
+    isStripeNotFoundError
+} from './stripe-billing.js'
+import type Stripe from 'stripe'
 import {
     sendSubscriptionStarted,
     sendPaymentFailed,
@@ -53,6 +60,8 @@ export interface Env {
     OAUTH_CLIENT_ID?:string;
     AUTUMN_SECRET_KEY?:string;
     AUTUMN_DISABLED?:string;
+    STRIPE_SECRET_KEY?:string;
+    STRIPE_PUBLISHABLE_KEY?:string;
     RESEND_API_KEY?:string;
     RESEND_DISABLED?:string;
     RESEND_FROM?:string;
@@ -68,6 +77,20 @@ interface CachedBilling {
     refreshedAt:number;
     currentPeriodEnd:number|null;
     canceledAt:number|null;
+}
+
+export interface PaymentMethodSummary {
+    id:string;
+    brand:string;
+    last4:string;
+    expMonth:number;
+    expYear:number;
+    isDefault:boolean;
+}
+
+export interface PaymentMethodsPayload {
+    methods:PaymentMethodSummary[];
+    defaultId:string|null;
 }
 
 const BILLING_CACHE_TTL_SECONDS = 600
@@ -210,6 +233,44 @@ async function resolveBilling (
     }
     await writeCachedBilling(env, did, fresh)
     return fresh
+}
+
+async function listPaymentMethodsPayload (
+    env:Env,
+    did:string
+):Promise<PaymentMethodsPayload> {
+    const stripe = getStripe(env)
+    const customerId = await getStripeCustomerId(env, did)
+    const [list, customer] = await Promise.all([
+        stripe.paymentMethods.list({
+            customer: customerId,
+            type: 'card'
+        }),
+        stripe.customers.retrieve(customerId)
+    ])
+    const defaultId = customer.deleted ?
+        null :
+        normalizeDefaultId(
+            (customer as Stripe.Customer)
+                .invoice_settings?.default_payment_method
+        )
+    const methods:PaymentMethodSummary[] = list.data.map(pm => ({
+        id: pm.id,
+        brand: pm.card?.brand ?? 'unknown',
+        last4: pm.card?.last4 ?? '????',
+        expMonth: pm.card?.exp_month ?? 0,
+        expYear: pm.card?.exp_year ?? 0,
+        isDefault: pm.id === defaultId
+    }))
+    return { methods, defaultId }
+}
+
+function normalizeDefaultId (
+    raw:string|Stripe.PaymentMethod|null|undefined
+):string|null {
+    if (!raw) return null
+    if (typeof raw === 'string') return raw
+    return raw.id
 }
 
 type Variables = {
@@ -860,7 +921,8 @@ app.get('/api/billing/status', requireAuth, async (c) => {
             pendingDeletion,
             currentPeriodEnd: billing.currentPeriodEnd,
             canceledAt: billing.canceledAt,
-            contactEmail
+            contactEmail,
+            stripePublishableKey: getStripePublishableKey(c.env)
         })
     } catch (err) {
         console.error('billing/status error:', err)
@@ -869,6 +931,200 @@ app.get('/api/billing/status', requireAuth, async (c) => {
         }, 503)
     }
 })
+
+app.get(
+    '/api/billing/payment-methods',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        try {
+            const payload = await listPaymentMethodsPayload(
+                c.env,
+                session.did
+            )
+            return c.json(payload)
+        } catch (err) {
+            console.error('billing/payment-methods error:', err)
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+    }
+)
+
+app.delete(
+    '/api/billing/payment-methods/:id',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        const id = c.req.param('id')
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        try {
+            const stripe = getStripe(c.env)
+            const customerId = await getStripeCustomerId(
+                c.env,
+                session.did
+            )
+            // Defense-in-depth: refuse to detach the current default.
+            const customer = await stripe.customers.retrieve(customerId)
+            if (customer.deleted) {
+                return c.json({ error: 'stripe_error' }, 502)
+            }
+            const currentDefault = (
+                customer as Stripe.Customer
+            ).invoice_settings?.default_payment_method
+            const defaultId = typeof currentDefault === 'string' ?
+                currentDefault :
+                currentDefault?.id ?? null
+            if (defaultId === id) {
+                return c.json({
+                    error: 'cannot_remove_default'
+                }, 409)
+            }
+            try {
+                await stripe.paymentMethods.detach(id)
+            } catch (err) {
+                if (isStripeNotFoundError(err)) {
+                    return c.json({
+                        error: 'payment_method_not_found'
+                    }, 404)
+                }
+                throw err
+            }
+            const payload = await listPaymentMethodsPayload(
+                c.env,
+                session.did
+            )
+            return c.json(payload)
+        } catch (err) {
+            console.error(
+                'billing/payment-methods DELETE error:',
+                err
+            )
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+    }
+)
+
+app.post(
+    '/api/billing/payment-methods/:id/default',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        const id = c.req.param('id')
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        const stripe = getStripe(c.env)
+        let customerId:string
+        try {
+            customerId = await getStripeCustomerId(c.env, session.did)
+        } catch (err) {
+            console.error('default lookup error:', err)
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+
+        // Step 1: customer-level default.
+        let customerDefaultUpdated = false
+        try {
+            await stripe.customers.update(customerId, {
+                invoice_settings: { default_payment_method: id }
+            })
+            customerDefaultUpdated = true
+        } catch (err) {
+            if (isStripeNotFoundError(err)) {
+                return c.json({
+                    error: 'payment_method_not_found'
+                }, 404)
+            }
+            console.error(
+                'customers.update default error:',
+                err
+            )
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+
+        // Step 2: subscription-level default (best-effort).
+        let subscriptionDefaultUpdated = false
+        try {
+            const subs = await stripe.subscriptions.list({
+                customer: customerId,
+                status: 'active',
+                limit: 1
+            })
+            const sub = subs.data[0]
+            if (sub) {
+                await stripe.subscriptions.update(sub.id, {
+                    default_payment_method: id
+                })
+                subscriptionDefaultUpdated = true
+            } else {
+                // No active subscription — nothing to update at the
+                // subscription level. Treat as success.
+                subscriptionDefaultUpdated = true
+            }
+        } catch (err) {
+            console.error(
+                'subscriptions.update default error:',
+                err
+            )
+            // Partial failure: customer updated, subscription not.
+            // Return 502 with both states so the client can render
+            // a precise inline banner.
+            let payload
+            try {
+                payload = await listPaymentMethodsPayload(
+                    c.env,
+                    session.did
+                )
+            } catch (payloadErr) {
+                console.error(
+                    'listPaymentMethodsPayload error (partial failure):',
+                    payloadErr
+                )
+                // If we can't refresh the list in a partial-failure
+                // scenario, return 502 with the states we know,
+                // omitting the methods list.
+                return c.json({
+                    error: 'stripe_error',
+                    customerDefaultUpdated,
+                    subscriptionDefaultUpdated,
+                    methods: [],
+                    defaultId: null
+                }, 502)
+            }
+            return c.json({
+                error: 'stripe_error',
+                customerDefaultUpdated,
+                subscriptionDefaultUpdated,
+                methods: payload.methods,
+                defaultId: payload.defaultId
+            }, 502)
+        }
+
+        // Both succeeded: return canonical refreshed list.
+        let payload
+        try {
+            payload = await listPaymentMethodsPayload(
+                c.env,
+                session.did
+            )
+        } catch (err) {
+            console.error(
+                'listPaymentMethodsPayload error (success case):',
+                err
+            )
+            // After customer + subscription updates succeeded,
+            // if we can't fetch the canonical list, return 502.
+            // Client will refetch on next render.
+            return c.json({ error: 'stripe_error' }, 502)
+        }
+        return c.json(payload)
+    }
+)
 
 async function readPendingDeletion (
     env:Env,
@@ -1456,30 +1712,35 @@ app.post('/api/billing/resume', requireAuth, async (c) => {
  * or update their payment method. Replaces the kitchen-sink
  * `openCustomerPortal` flow for in-app card updates.
  */
-app.post('/api/billing/payment-method', requireAuth, async (c) => {
-    const session = c.get('session')!
-
-    if (!billingUseLive(c.env)) {
-        return c.json({
-            error: 'portal_unavailable_in_dev'
-        }, 503)
+app.post(
+    '/api/billing/payment-methods/setup-intent',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        try {
+            const stripe = getStripe(c.env)
+            const customerId = await getStripeCustomerId(
+                c.env,
+                session.did
+            )
+            const intent = await stripe.setupIntents.create({
+                customer: customerId,
+                usage: 'off_session',
+                automatic_payment_methods: { enabled: true }
+            })
+            return c.json({ clientSecret: intent.client_secret })
+        } catch (err) {
+            console.error(
+                'billing/payment-methods/setup-intent error:',
+                err
+            )
+            return c.json({ error: 'stripe_error' }, 502)
+        }
     }
-
-    try {
-        const baseUrl = new URL(c.req.url).origin
-        const url = await getPaymentSetupUrl(
-            c.env,
-            session.did,
-            `${baseUrl}/settings`
-        )
-        return c.json({ url })
-    } catch (err) {
-        console.error('billing/payment-method error:', err)
-        return c.json({
-            error: 'billing_unavailable'
-        }, 503)
-    }
-})
+)
 
 export const dataRouter = new Hono<{
     Bindings:Env;

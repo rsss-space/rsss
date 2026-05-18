@@ -78,6 +78,8 @@ export interface TestEnv {
     AUTUMN_DISABLED?:string;
     RESEND_API_KEY?:string;
     RESEND_DISABLED?:string;
+    STRIPE_SECRET_KEY?:string;
+    STRIPE_PUBLISHABLE_KEY?:string;
     NODE_ENV:string;
     APP_ORIGIN?:string;
 }

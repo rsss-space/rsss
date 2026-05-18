@@ -64,6 +64,13 @@ import {
     resetBilling
 } from './billing-status.js'
 import {
+    setPaymentMethodsState,
+    setPaymentMethodsLoading,
+    setPaymentMethodsError,
+    resetPaymentMethods,
+    type PaymentMethodSummary
+} from './payment-methods.js'
+import {
     recomputeCacheStatus,
     cacheStatus,
     cacheActionInProgress,
@@ -1227,6 +1234,137 @@ State.loadBillingStatus = async function (
     }
 }
 
+State.loadPaymentMethods = async function (
+):Promise<void> {
+    setPaymentMethodsLoading(true)
+    try {
+        const res = await api.get('billing/payment-methods', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{ error?:string }>().catch(
+                () => ({} as { error?:string })
+            )
+            const code = body.error || `status_${res.status}`
+            batch(() => {
+                setPaymentMethodsError(code)
+                setPaymentMethodsLoading(false)
+            })
+            return
+        }
+        const data = await res.json<{
+            methods:PaymentMethodSummary[];
+            defaultId:string|null;
+        }>()
+        batch(() => {
+            setPaymentMethodsState(data.methods, data.defaultId)
+            setPaymentMethodsError(null)
+            setPaymentMethodsLoading(false)
+        })
+    } catch (err) {
+        debug('loadPaymentMethods error:', err)
+        batch(() => {
+            setPaymentMethodsError(err instanceof Error ?
+                err.message :
+                'failed_to_load')
+            setPaymentMethodsLoading(false)
+        })
+    }
+}
+
+State.createSetupIntent = async function (
+):Promise<string> {
+    const res = await api.post(
+        'billing/payment-methods/setup-intent',
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{ error?:string }>().catch(
+            () => ({} as { error?:string })
+        )
+        throw new Error(
+            body.error || `setup_intent_${res.status}`
+        )
+    }
+    const data = await res.json<{ clientSecret:string }>()
+    return data.clientSecret
+}
+
+State.removePaymentMethod = async function (
+    id:string
+):Promise<void> {
+    const res = await api.delete(
+        `billing/payment-methods/${encodeURIComponent(id)}`,
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }>().catch(() => ({} as {
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }))
+        if (res.status === 404) {
+            // Refresh canonical truth so the now-gone row disappears.
+            await State.loadPaymentMethods()
+            throw new Error(body.error || 'payment_method_not_found')
+        }
+        throw new Error(
+            body.error || `remove_${res.status}`
+        )
+    }
+    const data = await res.json<{
+        methods:PaymentMethodSummary[];
+        defaultId:string|null;
+    }>()
+    setPaymentMethodsState(data.methods, data.defaultId)
+}
+
+State.setDefaultPaymentMethod = async function (
+    id:string
+):Promise<void> {
+    const res = await api.post(
+        `billing/payment-methods/${encodeURIComponent(id)}/default`,
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }>().catch(() => ({} as {
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }))
+        if (res.status === 404) {
+            await State.loadPaymentMethods()
+            throw new Error(body.error || 'payment_method_not_found')
+        }
+        if (res.status === 502 &&
+            Array.isArray(body.methods) &&
+            body.defaultId !== undefined) {
+            // Partial-failure: server included canonical list.
+            setPaymentMethodsState(
+                body.methods,
+                body.defaultId ?? null
+            )
+            throw new Error(body.error || 'partial_failure')
+        }
+        throw new Error(
+            body.error || `set_default_${res.status}`
+        )
+    }
+    const data = await res.json<{
+        methods:PaymentMethodSummary[];
+        defaultId:string|null;
+    }>()
+    setPaymentMethodsState(data.methods, data.defaultId)
+}
+
 /**
  * Start checkout. In live mode this navigates the browser to
  * the Autumn-hosted checkout page; in dev mode the server
@@ -1491,32 +1629,6 @@ State.resumeSubscription = async function ():Promise<void> {
 }
 
 /**
- * Fetch a single-purpose Stripe URL the user can visit to update
- * their payment method, then navigate to it.
- */
-State.openPaymentMethodUpdate = async function ():Promise<void> {
-    try {
-        const res = await api.post('billing/payment-method', {
-            throwHttpErrors: false
-        })
-        if (!res.ok) {
-            const body = await res.json<{
-                error?:string
-            }>().catch(() => ({} as { error?:string }))
-            throw new Error(
-                body.error || `payment_method_${res.status}`
-            )
-        }
-        const data = await res.json<{ url:string }>()
-        window.location.assign(data.url)
-    } catch (err) {
-        setBillingError(err instanceof Error ?
-            err.message :
-            'Failed to open payment-method page')
-    }
-}
-
-/**
  * Logout
  */
 State.logout = async function (
@@ -1542,9 +1654,10 @@ State.logout = async function (
             null :
             'Logout may not have completed. Please clear cookies' +
                 ' if you continue to see your account.'
+        resetBilling()
+        resetPaymentMethods()
     })
     State.closeEventStream()
-    resetBilling()
     state._setRoute('/login')
 }
 
