@@ -28,7 +28,6 @@ import {
     getSubscriptionSnapshot,
     cancelSubscription,
     resumeSubscription,
-    getPaymentSetupUrl,
     type BillingPlanId
 } from './autumn-billing.js'
 import {
@@ -1539,30 +1538,35 @@ app.post('/api/billing/resume', requireAuth, async (c) => {
  * or update their payment method. Replaces the kitchen-sink
  * `openCustomerPortal` flow for in-app card updates.
  */
-app.post('/api/billing/payment-method', requireAuth, async (c) => {
-    const session = c.get('session')!
-
-    if (!billingUseLive(c.env)) {
-        return c.json({
-            error: 'portal_unavailable_in_dev'
-        }, 503)
+app.post(
+    '/api/billing/payment-methods/setup-intent',
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        if (!stripeUseLive(c.env)) {
+            return c.json({ error: 'stripe_unconfigured' }, 503)
+        }
+        try {
+            const stripe = getStripe(c.env)
+            const customerId = await getStripeCustomerId(
+                c.env,
+                session.did
+            )
+            const intent = await stripe.setupIntents.create({
+                customer: customerId,
+                usage: 'off_session',
+                automatic_payment_methods: { enabled: true }
+            })
+            return c.json({ clientSecret: intent.client_secret })
+        } catch (err) {
+            console.error(
+                'billing/payment-methods/setup-intent error:',
+                err
+            )
+            return c.json({ error: 'stripe_error' }, 502)
+        }
     }
-
-    try {
-        const baseUrl = new URL(c.req.url).origin
-        const url = await getPaymentSetupUrl(
-            c.env,
-            session.did,
-            `${baseUrl}/settings`
-        )
-        return c.json({ url })
-    } catch (err) {
-        console.error('billing/payment-method error:', err)
-        return c.json({
-            error: 'billing_unavailable'
-        }, 503)
-    }
-})
+)
 
 export const dataRouter = new Hono<{
     Bindings:Env;
