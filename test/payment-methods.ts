@@ -544,7 +544,6 @@ test(
         })
         const { session, cookieHeader } = await makeSession(env)
         let detachCalled = false
-        let stripeListCalls = 0
         await withFetch(async call => {
             if (call.url.includes('/v1/customers') &&
                 !call.url.includes('api.stripe.com')) {
@@ -569,7 +568,6 @@ test(
             }
             if (call.url.includes(
                 'api.stripe.com/v1/payment_methods')) {
-                stripeListCalls++
                 return jsonResponse(makeStripeListResponse([
                     {
                         id: 'pm_mc',

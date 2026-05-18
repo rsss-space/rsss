@@ -632,79 +632,79 @@ test('AC4.6: Removing the last non-default leaves only the default',
 
 test('AC5.4 + AC5.7: Set as default moves the badge; ' +
     'is not rendered on the current default', async t => {
-        const { root, cleanup } = mountRoot()
+    const { root, cleanup } = mountRoot()
+    try {
+        seedBilling(true)
+        seedMethods()
+        const originalSet = State.setDefaultPaymentMethod
+        State.setDefaultPaymentMethod = async (id:string) => {
+            batch(() => {
+                paymentMethods.value = paymentMethods.value.map(
+                    m => ({ ...m, isDefault: m.id === id })
+                )
+                defaultMethodId.value = id
+            })
+        }
         try {
-            seedBilling(true)
-            seedMethods()
-            const originalSet = State.setDefaultPaymentMethod
-            State.setDefaultPaymentMethod = async (id:string) => {
-                batch(() => {
-                    paymentMethods.value = paymentMethods.value.map(
-                        m => ({ ...m, isDefault: m.id === id })
-                    )
-                    defaultMethodId.value = id
-                })
-            }
-            try {
-                render(html`
+            render(html`
                     <${PaymentMethodModal}
                         open=${true}
                         onClose=${() => {}}
                     />
                 `, root)
-                await nextTask()
-                const dialog = document.body.querySelector(
-                    'modal-window.payment-method-modal'
-                ) as HTMLElement
-                // AC5.7: The default row should NOT have a
-                // "Set as default" button.
-                const defaultRow = Array.from(
-                    dialog.querySelectorAll('.pm-row')
-                ).find(r =>
-                    r.textContent?.includes('4444')
-                ) as HTMLElement
-                const setOnDefault = Array.from(
-                    defaultRow.querySelectorAll('button')
-                ).find(b =>
-                    (b.textContent ?? '').match(/set as default/i)
-                )
-                t.equal(
-                    setOnDefault,
-                    undefined,
-                    'no "Set as default" on default row'
-                )
-                // Click "Set as default" on visa.
-                const visaRow = Array.from(
-                    dialog.querySelectorAll('.pm-row')
-                ).find(r =>
-                    r.textContent?.includes('4242')
-                ) as HTMLElement
-                const setBtn = Array.from(
-                    visaRow.querySelectorAll('button')
-                ).find(b =>
-                    (b.textContent ?? '').match(/set as default/i)
-                ) as HTMLButtonElement
-                setBtn.click()
-                await nextTask()
-                await nextTask()
-                // Default badge should now be on the visa row.
-                const newVisaRow = Array.from(
-                    dialog.querySelectorAll('.pm-row')
-                ).find(r =>
-                    r.textContent?.includes('4242')
-                ) as HTMLElement
-                t.ok(
-                    newVisaRow.querySelector('.pm-default-badge'),
-                    'visa row now has Default badge'
-                )
-            } finally {
-                State.setDefaultPaymentMethod = originalSet
-            }
+            await nextTask()
+            const dialog = document.body.querySelector(
+                'modal-window.payment-method-modal'
+            ) as HTMLElement
+            // AC5.7: The default row should NOT have a
+            // "Set as default" button.
+            const defaultRow = Array.from(
+                dialog.querySelectorAll('.pm-row')
+            ).find(r =>
+                r.textContent?.includes('4444')
+            ) as HTMLElement
+            const setOnDefault = Array.from(
+                defaultRow.querySelectorAll('button')
+            ).find(b =>
+                (b.textContent ?? '').match(/set as default/i)
+            )
+            t.equal(
+                setOnDefault,
+                undefined,
+                'no "Set as default" on default row'
+            )
+            // Click "Set as default" on visa.
+            const visaRow = Array.from(
+                dialog.querySelectorAll('.pm-row')
+            ).find(r =>
+                r.textContent?.includes('4242')
+            ) as HTMLElement
+            const setBtn = Array.from(
+                visaRow.querySelectorAll('button')
+            ).find(b =>
+                (b.textContent ?? '').match(/set as default/i)
+            ) as HTMLButtonElement
+            setBtn.click()
+            await nextTask()
+            await nextTask()
+            // Default badge should now be on the visa row.
+            const newVisaRow = Array.from(
+                dialog.querySelectorAll('.pm-row')
+            ).find(r =>
+                r.textContent?.includes('4242')
+            ) as HTMLElement
+            t.ok(
+                newVisaRow.querySelector('.pm-default-badge'),
+                'visa row now has Default badge'
+            )
         } finally {
-            resetState()
-            cleanup()
+            State.setDefaultPaymentMethod = originalSet
         }
+    } finally {
+        resetState()
+        cleanup()
     }
+}
 )
 
 test('AC5.5: Partial-failure surface inline banner (UI smoke)',
@@ -759,64 +759,64 @@ test('AC5.5: Partial-failure surface inline banner (UI smoke)',
 
 test('AC5.5: State.setDefaultPaymentMethod handles 502 partial-failure ' +
     'shape by replacing signals from the body and throwing',
-    async t => {
-        // No State override: exercise the real client action against
-        // a stubbed fetch that returns the server's 502
-        // partial-failure shape from Task 3.
-        seedBilling(true)
-        seedMethods()
-        const originalFetch = globalThis.fetch
-        globalThis.fetch = async () => {
-            return new Response(JSON.stringify({
-                error: 'stripe_error',
-                customerDefaultUpdated: true,
-                subscriptionDefaultUpdated: false,
-                methods: [
-                    {
-                        id: 'pm_visa',
-                        brand: 'visa',
-                        last4: '4242',
-                        expMonth: 12,
-                        expYear: 2030,
-                        isDefault: true
-                    },
-                    {
-                        id: 'pm_mc',
-                        brand: 'mastercard',
-                        last4: '4444',
-                        expMonth: 6,
-                        expYear: 2029,
-                        isDefault: false
-                    }
-                ],
-                defaultId: 'pm_visa'
-            }), {
-                status: 502,
-                headers: { 'content-type': 'application/json' }
-            })
-        }
-        let threw = false
-        try {
-            await State.setDefaultPaymentMethod('pm_visa')
-        } catch (err) {
-            threw = true
-            t.ok(
-                err instanceof Error &&
-                    /stripe_error|partial/.test(err.message),
-                'throws with partial-failure error code'
-            )
-        } finally {
-            globalThis.fetch = originalFetch
-        }
-        t.ok(threw, 'action threw')
-        // Signals reflect canonical (partial) truth from the body.
-        t.equal(
-            defaultMethodId.value,
-            'pm_visa',
-            'defaultMethodId reflects partial state'
-        )
-        const visa = paymentMethods.value.find(m => m.id === 'pm_visa')
-        t.ok(visa?.isDefault, 'visa isDefault flipped')
-        resetState()
+async t => {
+    // No State override: exercise the real client action against
+    // a stubbed fetch that returns the server's 502
+    // partial-failure shape from Task 3.
+    seedBilling(true)
+    seedMethods()
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => {
+        return new Response(JSON.stringify({
+            error: 'stripe_error',
+            customerDefaultUpdated: true,
+            subscriptionDefaultUpdated: false,
+            methods: [
+                {
+                    id: 'pm_visa',
+                    brand: 'visa',
+                    last4: '4242',
+                    expMonth: 12,
+                    expYear: 2030,
+                    isDefault: true
+                },
+                {
+                    id: 'pm_mc',
+                    brand: 'mastercard',
+                    last4: '4444',
+                    expMonth: 6,
+                    expYear: 2029,
+                    isDefault: false
+                }
+            ],
+            defaultId: 'pm_visa'
+        }), {
+            status: 502,
+            headers: { 'content-type': 'application/json' }
+        })
     }
+    let threw = false
+    try {
+        await State.setDefaultPaymentMethod('pm_visa')
+    } catch (err) {
+        threw = true
+        t.ok(
+            err instanceof Error &&
+                    /stripe_error|partial/.test(err.message),
+            'throws with partial-failure error code'
+        )
+    } finally {
+        globalThis.fetch = originalFetch
+    }
+    t.ok(threw, 'action threw')
+    // Signals reflect canonical (partial) truth from the body.
+    t.equal(
+        defaultMethodId.value,
+        'pm_visa',
+        'defaultMethodId reflects partial state'
+    )
+    const visa = paymentMethods.value.find(m => m.id === 'pm_visa')
+    t.ok(visa?.isDefault, 'visa isDefault flipped')
+    resetState()
+}
 )
