@@ -8,7 +8,6 @@ import { PaymentMethodModal } from
 import {
     paymentMethods,
     defaultMethodId,
-    paymentMethodsError,
     resetPaymentMethods
 } from '../src/client/payment-methods.js'
 import { billingStatus } from '../src/client/billing-status.js'
@@ -305,66 +304,66 @@ test('AC3.3 / AC8.1: Successful confirmSetup refreshes the list',
 
 test('AC3.4 / AC8.3: Declined card surfaces error and stays in adding ' +
     'mode', async t => {
-        const { root, cleanup } = mountRoot()
+    const { root, cleanup } = mountRoot()
+    try {
+        seedBilling(true)
+        seedMethods()
+        setNextConfirmSetupResult({
+            error: { message: 'Your card was declined.' }
+        })
+        const originalCreate = State.createSetupIntent
+        State.createSetupIntent = async () => 'seti_test_secret'
         try {
-            seedBilling(true)
-            seedMethods()
-            setNextConfirmSetupResult({
-                error: { message: 'Your card was declined.' }
-            })
-            const originalCreate = State.createSetupIntent
-            State.createSetupIntent = async () => 'seti_test_secret'
-            try {
-                render(html`
+            render(html`
                     <${PaymentMethodModal}
                         open=${true}
                         onClose=${() => {}}
                     />
                 `, root)
-                await nextTask()
-                const dialog = document.body.querySelector(
-                    'dialog.app-dialog.payment-method-modal'
-                ) as HTMLDialogElement
-                const addBtn = Array.from(
-                    dialog.querySelectorAll('button')
-                ).find(b =>
-                    (b.textContent ?? '').match(/add a card/i)
-                ) as HTMLButtonElement
-                addBtn.click()
-                await waitFor(() => !!dialog.querySelector(
-                    '.pm-element-host'
-                ), 100)
-                const saveBtn = Array.from(
-                    dialog.querySelectorAll('button')
-                ).find(b =>
-                    (b.textContent ?? '').match(/save card/i)
-                ) as HTMLButtonElement
-                saveBtn.click()
-                await waitFor(() => !!dialog.querySelector(
-                    '.pm-error'
-                ), 100)
-                const err = dialog.querySelector(
-                    '.pm-error'
-                ) as HTMLElement|null
-                t.ok(err, 'inline error shown')
-                t.ok(
-                    err?.textContent?.includes(
-                        'Your card was declined'),
-                    'error message preserved'
-                )
-                // Element host still rendered = still in adding mode.
-                t.ok(
-                    dialog.querySelector('.pm-element-host'),
-                    'still in adding mode (element host present)'
-                )
-            } finally {
-                State.createSetupIntent = originalCreate
-            }
+            await nextTask()
+            const dialog = document.body.querySelector(
+                'dialog.app-dialog.payment-method-modal'
+            ) as HTMLDialogElement
+            const addBtn = Array.from(
+                dialog.querySelectorAll('button')
+            ).find(b =>
+                (b.textContent ?? '').match(/add a card/i)
+            ) as HTMLButtonElement
+            addBtn.click()
+            await waitFor(() => !!dialog.querySelector(
+                '.pm-element-host'
+            ), 100)
+            const saveBtn = Array.from(
+                dialog.querySelectorAll('button')
+            ).find(b =>
+                (b.textContent ?? '').match(/save card/i)
+            ) as HTMLButtonElement
+            saveBtn.click()
+            await waitFor(() => !!dialog.querySelector(
+                '.pm-error'
+            ), 100)
+            const err = dialog.querySelector(
+                '.pm-error'
+            ) as HTMLElement|null
+            t.ok(err, 'inline error shown')
+            t.ok(
+                err?.textContent?.includes(
+                    'Your card was declined'),
+                'error message preserved'
+            )
+            // Element host still rendered = still in adding mode.
+            t.ok(
+                dialog.querySelector('.pm-element-host'),
+                'still in adding mode (element host present)'
+            )
         } finally {
-            resetState()
-            cleanup()
+            State.createSetupIntent = originalCreate
         }
+    } finally {
+        resetState()
+        cleanup()
     }
+}
 )
 
 test('AC3.6: Closing the modal mid-flow resets to list on next open',
