@@ -1074,10 +1074,28 @@ app.post(
             // Partial failure: customer updated, subscription not.
             // Return 502 with both states so the client can render
             // a precise inline banner.
-            const payload = await listPaymentMethodsPayload(
-                c.env,
-                session.did
-            )
+            let payload
+            try {
+                payload = await listPaymentMethodsPayload(
+                    c.env,
+                    session.did
+                )
+            } catch (payloadErr) {
+                console.error(
+                    'listPaymentMethodsPayload error (partial failure):',
+                    payloadErr
+                )
+                // If we can't refresh the list in a partial-failure
+                // scenario, return 502 with the states we know,
+                // omitting the methods list.
+                return c.json({
+                    error: 'stripe_error',
+                    customerDefaultUpdated,
+                    subscriptionDefaultUpdated,
+                    methods: [],
+                    defaultId: null
+                }, 502)
+            }
             return c.json({
                 error: 'stripe_error',
                 customerDefaultUpdated,
@@ -1088,10 +1106,22 @@ app.post(
         }
 
         // Both succeeded: return canonical refreshed list.
-        const payload = await listPaymentMethodsPayload(
-            c.env,
-            session.did
-        )
+        let payload
+        try {
+            payload = await listPaymentMethodsPayload(
+                c.env,
+                session.did
+            )
+        } catch (err) {
+            console.error(
+                'listPaymentMethodsPayload error (success case):',
+                err
+            )
+            // After customer + subscription updates succeeded,
+            // if we can't fetch the canonical list, return 502.
+            // Client will refetch on next render.
+            return c.json({ error: 'stripe_error' }, 502)
+        }
         return c.json(payload)
     }
 )
