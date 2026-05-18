@@ -1290,6 +1290,81 @@ State.createSetupIntent = async function (
     return data.clientSecret
 }
 
+State.removePaymentMethod = async function (
+    id:string
+):Promise<void> {
+    const res = await api.delete(
+        `billing/payment-methods/${encodeURIComponent(id)}`,
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }>().catch(() => ({} as {
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }))
+        if (res.status === 404) {
+            // Refresh canonical truth so the now-gone row disappears.
+            await State.loadPaymentMethods()
+            throw new Error(body.error || 'payment_method_not_found')
+        }
+        throw new Error(
+            body.error || `remove_${res.status}`
+        )
+    }
+    const data = await res.json<{
+        methods:PaymentMethodSummary[];
+        defaultId:string|null;
+    }>()
+    setPaymentMethodsState(data.methods, data.defaultId)
+}
+
+State.setDefaultPaymentMethod = async function (
+    id:string
+):Promise<void> {
+    const res = await api.post(
+        `billing/payment-methods/${encodeURIComponent(id)}/default`,
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }>().catch(() => ({} as {
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }))
+        if (res.status === 404) {
+            await State.loadPaymentMethods()
+            throw new Error(body.error || 'payment_method_not_found')
+        }
+        if (res.status === 502 &&
+            Array.isArray(body.methods) &&
+            body.defaultId !== undefined) {
+            // Partial-failure: server included canonical list.
+            setPaymentMethodsState(
+                body.methods,
+                body.defaultId ?? null
+            )
+            throw new Error(body.error || 'partial_failure')
+        }
+        throw new Error(
+            body.error || `set_default_${res.status}`
+        )
+    }
+    const data = await res.json<{
+        methods:PaymentMethodSummary[];
+        defaultId:string|null;
+    }>()
+    setPaymentMethodsState(data.methods, data.defaultId)
+}
+
 /**
  * Start checkout. In live mode this navigates the browser to
  * the Autumn-hosted checkout page; in dev mode the server
