@@ -64,6 +64,12 @@ import {
     resetBilling
 } from './billing-status.js'
 import {
+    setPaymentMethodsState,
+    setPaymentMethodsLoading,
+    setPaymentMethodsError,
+    type PaymentMethodSummary
+} from './payment-methods.js'
+import {
     recomputeCacheStatus,
     cacheStatus,
     cacheActionInProgress,
@@ -1224,6 +1230,44 @@ State.loadBillingStatus = async function (
             err.message :
             'Failed to load billing status')
         return null
+    }
+}
+
+State.loadPaymentMethods = async function (
+):Promise<void> {
+    setPaymentMethodsLoading(true)
+    try {
+        const res = await api.get('billing/payment-methods', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{ error?:string }>().catch(
+                () => ({} as { error?:string })
+            )
+            const code = body.error || `status_${res.status}`
+            batch(() => {
+                setPaymentMethodsError(code)
+                setPaymentMethodsLoading(false)
+            })
+            return
+        }
+        const data = await res.json<{
+            methods:PaymentMethodSummary[];
+            defaultId:string|null;
+        }>()
+        batch(() => {
+            setPaymentMethodsState(data.methods, data.defaultId)
+            setPaymentMethodsError(null)
+            setPaymentMethodsLoading(false)
+        })
+    } catch (err) {
+        debug('loadPaymentMethods error:', err)
+        batch(() => {
+            setPaymentMethodsError(err instanceof Error ?
+                err.message :
+                'failed_to_load')
+            setPaymentMethodsLoading(false)
+        })
     }
 }
 

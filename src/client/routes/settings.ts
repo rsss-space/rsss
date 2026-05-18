@@ -67,6 +67,7 @@ export const SettingsRoute:FunctionComponent<{
         isLocalFirstSupported()
         if (state.isAuthenticated.value) {
             State.loadBillingStatus()
+            State.loadPaymentMethods()
         }
     }, [])
 
