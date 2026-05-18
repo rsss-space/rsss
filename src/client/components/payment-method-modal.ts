@@ -80,9 +80,11 @@ export const PaymentMethodModal:FunctionComponent<
     const elementsRef = useRef<StripeElements|null>(null)
     const elementHostRef = useRef<HTMLDivElement|null>(null)
     const modalRef = useRef<HTMLElement|null>(null)
+    const prevOpenRef = useRef<boolean>(open)
 
-    // Reset modal-scoped state whenever the dialog closes.
-    const handleClose = useCallback(() => {
+    // Helper to reset internal state (shared by handleClose and
+    // parent-driven close detection).
+    const resetState = useCallback(() => {
         setMode('list')
         setElements(null)
         setAddError(null)
@@ -102,8 +104,13 @@ export const PaymentMethodModal:FunctionComponent<
             }
         }
         elementsRef.current = null
+    }, [])
+
+    // Reset modal-scoped state whenever the dialog closes.
+    const handleClose = useCallback(() => {
+        resetState()
         onClose()
-    }, [onClose])
+    }, [resetState, onClose])
 
     // Begin add-a-card flow: fetch a SetupIntent client_secret,
     // initialise Stripe Elements, mount PaymentElement.
@@ -154,6 +161,16 @@ export const PaymentMethodModal:FunctionComponent<
             }
         }
     }, [mode, elements])
+
+    // Detect parent-driven close (open prop transitioned from true to
+    // false) and reset internal state without calling onClose() to
+    // avoid loops.
+    useEffect(() => {
+        if (prevOpenRef.current && !open) {
+            resetState()
+        }
+        prevOpenRef.current = open
+    }, [open, resetState])
 
     // Forward the modal-window's `close` event to the parent's onClose.
     useEffect(() => {
@@ -274,8 +291,10 @@ export const PaymentMethodModal:FunctionComponent<
     const globalError = paymentMethodsError.value
 
     const describedBy = mode === 'list' ?
-        ((addError || globalError) ? ERROR_ID : undefined) :
-        (addError ? ERROR_ID : undefined)
+        ((opError || addError || globalError) ? ERROR_ID : undefined) :
+        mode === 'confirming-remove' ?
+            (opError ? ERROR_ID : undefined) :
+            (addError ? ERROR_ID : undefined)
 
     return html`
         <modal-window
