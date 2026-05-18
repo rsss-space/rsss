@@ -1272,6 +1272,24 @@ State.loadPaymentMethods = async function (
     }
 }
 
+State.createSetupIntent = async function (
+):Promise<string> {
+    const res = await api.post(
+        'billing/payment-methods/setup-intent',
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{ error?:string }>().catch(
+            () => ({} as { error?:string })
+        )
+        throw new Error(
+            body.error || `setup_intent_${res.status}`
+        )
+    }
+    const data = await res.json<{ clientSecret:string }>()
+    return data.clientSecret
+}
+
 /**
  * Start checkout. In live mode this navigates the browser to
  * the Autumn-hosted checkout page; in dev mode the server
