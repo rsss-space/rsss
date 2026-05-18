@@ -101,13 +101,13 @@ test('AC7.2: Escape closes the dialog and onClose fires once',
             t.equal(dialog.open, true, 'dialog initially open')
 
             // Simulate Escape via the native cancel event +
-            // close() chain.
+            // close() chain. The native `close` event is emitted by
+            // the browser after `.close()`; waitFor gives it the
+            // turns it needs to reach our listener.
             dialog.dispatchEvent(new Event('cancel'))
             dialog.close()
-            // In the test environment, .close() might not emit the close event,
-            // so we dispatch it manually.
-            dialog.dispatchEvent(new Event('close'))
             await waitFor(() => dialog.open === false)
+            await waitFor(() => closeCount === 1)
 
             t.equal(dialog.open, false, 'dialog is closed')
             t.equal(closeCount, 1, 'onClose fired exactly once')
