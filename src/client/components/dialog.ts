@@ -32,6 +32,13 @@ export const Dialog:FunctionComponent<DialogProps> = function ({
     children
 }) {
     const dialogRef = useRef<HTMLDialogElement>(null)
+    const onCloseRef = useRef<() => void>(onClose)
+
+    // Keep the onClose ref in sync so the close listener has access
+    // to the latest callback without requiring listener re-attachment.
+    useEffect(() => {
+        onCloseRef.current = onClose
+    }, [onClose])
 
     // Sync the open prop -> imperative showModal()/close()
     useEffect(() => {
@@ -46,17 +53,20 @@ export const Dialog:FunctionComponent<DialogProps> = function ({
 
     // Native close event -> onClose. Covers Escape (cancel -> close),
     // programmatic .close(), and form method="dialog" submits.
+    // The listener is attached once and never re-attached, using onCloseRef
+    // to access the latest callback. This prevents listener churn if onClose
+    // reference changes frequently (e.g., harness passes new arrow each render).
     useEffect(() => {
         const el = dialogRef.current
         if (!el) return undefined
         const handle = () => {
-            onClose()
+            onCloseRef.current()
         }
         el.addEventListener('close', handle)
         return () => {
             el.removeEventListener('close', handle)
         }
-    }, [onClose])
+    }, [])
 
     // Backdrop click: when the user clicks the dialog element itself
     // (i.e. not a descendant), it is the backdrop region.
