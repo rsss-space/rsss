@@ -245,6 +245,103 @@ test(
 )
 
 test(
+    'GET /api/billing/payment-methods returns methods with no ' +
+    'default when defaultId is null',
+    async t => {
+        const env = makeEnv({
+            NODE_ENV: 'production',
+            AUTUMN_SECRET_KEY: AUTUMN_KEY,
+            STRIPE_SECRET_KEY: STRIPE_KEY
+        })
+        const { session, cookieHeader } = await makeSession(env)
+
+        await withFetch(async call => {
+            // Autumn customer lookup -> returns stripe_id
+            if (call.url.includes('/v1/customers') &&
+                !call.url.includes('api.stripe.com')) {
+                return jsonResponse({
+                    ...customerBody(session.did, 'alice@example.com'),
+                    stripe_id: 'cus_test_alice'
+                })
+            }
+            // Stripe payment_methods.list
+            if (call.url.includes(
+                'api.stripe.com/v1/payment_methods')) {
+                return jsonResponse({
+                    object: 'list',
+                    has_more: false,
+                    data: [
+                        {
+                            id: 'pm_visa',
+                            object: 'payment_method',
+                            type: 'card',
+                            card: {
+                                brand: 'visa',
+                                last4: '4242',
+                                exp_month: 12,
+                                exp_year: 2030
+                            }
+                        },
+                        {
+                            id: 'pm_mastercard',
+                            object: 'payment_method',
+                            type: 'card',
+                            card: {
+                                brand: 'mastercard',
+                                last4: '4444',
+                                exp_month: 6,
+                                exp_year: 2029
+                            }
+                        }
+                    ]
+                })
+            }
+            // Stripe customers.retrieve -> default_payment_method is null
+            if (call.url.includes(
+                'api.stripe.com/v1/customers/cus_test_alice')) {
+                return jsonResponse({
+                    id: 'cus_test_alice',
+                    object: 'customer',
+                    invoice_settings: {
+                        default_payment_method: null
+                    }
+                })
+            }
+            return jsonResponse({}, 404)
+        }, async () => {
+            const res = await app.request(
+                'http://127.0.0.1/api/billing/payment-methods',
+                { method: 'GET', headers: authedHeaders(cookieHeader) },
+                env,
+                executionCtx
+            )
+            const body = await res.json() as {
+                methods:Array<{
+                    id:string;
+                    brand:string;
+                    last4:string;
+                    expMonth:number;
+                    expYear:number;
+                    isDefault:boolean;
+                }>;
+                defaultId:string|null;
+            }
+
+            t.equal(res.status, 200, 'returns 200')
+            t.equal(body.defaultId, null, 'defaultId is null')
+            t.equal(body.methods.length, 2, 'two methods returned')
+
+            const defaults = body.methods.filter(m => m.isDefault)
+            t.equal(
+                defaults.length,
+                0,
+                'no methods have isDefault=true'
+            )
+        })
+    }
+)
+
+test(
     'GET /api/billing/payment-methods returns 502 when Stripe ' +
     'list call fails',
     async t => {
