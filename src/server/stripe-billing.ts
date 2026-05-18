@@ -91,3 +91,14 @@ export function getStripePublishableKey (
 ):string|null {
     return env.STRIPE_PUBLISHABLE_KEY || null
 }
+
+/**
+ * Detect Stripe's "not found" error shape. `err.code === 'resource_missing'`
+ * is the canonical signal across all of Stripe's mutation APIs (detach,
+ * customer.update, subscription.update, retrieve, etc.).
+ */
+export function isStripeNotFoundError (err:unknown):boolean {
+    if (!err || typeof err !== 'object') return false
+    const e = err as { code?:unknown; statusCode?:unknown }
+    return e.code === 'resource_missing' || e.statusCode === 404
+}
