@@ -79,3 +79,15 @@ export async function getStripeCustomerId (
     }
     return stripeId
 }
+
+/**
+ * Returns the Stripe publishable key for the client, or null when it
+ * isn't configured. Distinct from `stripeUseLive()` because the secret
+ * key gates server-side functionality while the publishable key gates
+ * client-side Elements rendering.
+ */
+export function getStripePublishableKey (
+    env:StripeEnv
+):string|null {
+    return env.STRIPE_PUBLISHABLE_KEY || null
+}
