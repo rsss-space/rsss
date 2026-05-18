@@ -4,6 +4,36 @@ import {
     getStripe,
     getStripeCustomerId
 } from '../src/server/stripe-billing.js'
+import { didToCustomerId } from '../src/server/autumn-billing.js'
+
+function customerBody (
+    did:string,
+    stripeId:string|null
+) {
+    return {
+        id: didToCustomerId(did),
+        name: 'reader.test',
+        email: null,
+        created_at: 1700000000000,
+        fingerprint: null,
+        stripe_id: stripeId,
+        env: 'live',
+        metadata: {},
+        send_email_receipts: true,
+        billing_controls: {},
+        subscriptions: [],
+        purchases: [],
+        balances: {},
+        flags: {}
+    }
+}
+
+function jsonResponse (body:unknown):Response {
+    return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+    })
+}
 
 test('stripeUseLive is false when STRIPE_SECRET_KEY is unset', t => {
     t.equal(
@@ -54,15 +84,9 @@ test('getStripe returns a Stripe instance when configured', t => {
 test('getStripeCustomerId returns stripe_id from Autumn', async t => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () => {
-        return new Response(JSON.stringify({
-            id: 'did_plc_alice',
-            stripe_id: 'cus_test_abc',
-            email: null,
-            subscriptions: []
-        }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' }
-        })
+        return jsonResponse(
+            customerBody('did:plc:alice', 'cus_test_abc')
+        )
     }) as typeof fetch
     try {
         const id = await getStripeCustomerId(
@@ -83,15 +107,9 @@ test(
     async t => {
         const originalFetch = globalThis.fetch
         globalThis.fetch = (async () => {
-            return new Response(JSON.stringify({
-                id: 'did_plc_alice',
-                stripe_id: null,
-                email: null,
-                subscriptions: []
-            }), {
-                status: 200,
-                headers: { 'content-type': 'application/json' }
-            })
+            return jsonResponse(
+                customerBody('did:plc:alice', null)
+            )
         }) as typeof fetch
         let threw = false
         try {

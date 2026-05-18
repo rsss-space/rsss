@@ -70,12 +70,12 @@ export async function getStripeCustomerId (
     const customer = await (autumn as unknown as {
         customers:{
             getOrCreate:(args:{ customerId:string }) =>
-                Promise<{ stripe_id?:string|null }>;
+                Promise<{ stripeId?:string|null }>;
         };
     }).customers.getOrCreate({
         customerId: didToCustomerId(did)
     })
-    const stripeId = customer.stripe_id
+    const stripeId = customer.stripeId
     if (!stripeId) {
         throw new Error(
             'stripe-billing: autumn customer has no stripe_id'
