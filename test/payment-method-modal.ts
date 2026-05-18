@@ -472,3 +472,351 @@ test('AC3.6: Closing the modal mid-flow resets to list on next open',
         }
     }
 )
+
+test('AC4.1: Clicking Remove enters confirming-remove mode',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            seedBilling(true)
+            seedMethods()
+            render(html`
+                <${PaymentMethodModal}
+                    open=${true}
+                    onClose=${() => {}}
+                />
+            `, root)
+            await nextTask()
+            const dialog = document.body.querySelector(
+                'modal-window.payment-method-modal'
+            ) as HTMLElement
+            // Find the non-default row's Remove button.
+            const rows = Array.from(
+                dialog.querySelectorAll('.pm-row')
+            )
+            const nonDefault = rows.find(r =>
+                r.textContent?.includes('4242')
+            ) as HTMLElement
+            const removeBtn = Array.from(
+                nonDefault.querySelectorAll('button')
+            ).find(b =>
+                (b.textContent ?? '').trim() === 'Remove'
+            ) as HTMLButtonElement
+            t.ok(removeBtn, 'Remove button present on non-default')
+            t.equal(removeBtn.disabled, false, 'enabled')
+            removeBtn.click()
+            await nextTask()
+            t.ok(
+                dialog.querySelector('.pm-confirm-text'),
+                'now in confirming-remove mode'
+            )
+        } finally {
+            resetState()
+            cleanup()
+        }
+    }
+)
+
+test('AC4.3: Remove button is disabled on the default row',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            seedBilling(true)
+            seedMethods()
+            render(html`
+                <${PaymentMethodModal}
+                    open=${true}
+                    onClose=${() => {}}
+                />
+            `, root)
+            await nextTask()
+            const dialog = document.body.querySelector(
+                'modal-window.payment-method-modal'
+            ) as HTMLElement
+            const defaultRow = Array.from(
+                dialog.querySelectorAll('.pm-row')
+            ).find(r =>
+                r.textContent?.includes('4444')
+            ) as HTMLElement
+            const removeBtn = Array.from(
+                defaultRow.querySelectorAll('button')
+            ).find(b =>
+                (b.textContent ?? '').trim() === 'Remove'
+            ) as HTMLButtonElement
+            t.ok(removeBtn, 'Remove button rendered on default row')
+            t.equal(
+                removeBtn.disabled,
+                true,
+                'disabled on default'
+            )
+            t.equal(
+                removeBtn.title,
+                'Set another card as default first.',
+                'tooltip set'
+            )
+        } finally {
+            resetState()
+            cleanup()
+        }
+    }
+)
+
+test('AC4.6: Removing the last non-default leaves only the default',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            seedBilling(true)
+            seedMethods()
+            const originalRemove = State.removePaymentMethod
+            State.removePaymentMethod = async (id:string) => {
+                // Server-side has already detached; simulate canonical
+                // refresh by writing to the signals.
+                batch(() => {
+                    paymentMethods.value = paymentMethods.value
+                        .filter(m => m.id !== id)
+                })
+            }
+            try {
+                render(html`
+                    <${PaymentMethodModal}
+                        open=${true}
+                        onClose=${() => {}}
+                    />
+                `, root)
+                await nextTask()
+                const dialog = document.body.querySelector(
+                    'modal-window.payment-method-modal'
+                ) as HTMLElement
+                const nonDefault = Array.from(
+                    dialog.querySelectorAll('.pm-row')
+                ).find(r =>
+                    r.textContent?.includes('4242')
+                ) as HTMLElement
+                const removeBtn = Array.from(
+                    nonDefault.querySelectorAll('button')
+                ).find(b =>
+                    (b.textContent ?? '').trim() === 'Remove'
+                ) as HTMLButtonElement
+                removeBtn.click()
+                await nextTask()
+                const confirmBtn = Array.from(
+                    dialog.querySelectorAll('.pm-actions button')
+                ).find(b =>
+                    (b.textContent ?? '').match(/^Remove$/)
+                ) as HTMLButtonElement
+                confirmBtn.click()
+                await nextTask()
+                await nextTask()
+                t.equal(
+                    dialog.querySelectorAll('.pm-row').length,
+                    1,
+                    'one row remains'
+                )
+                t.ok(
+                    dialog.querySelector('.pm-list'),
+                    'returned to list mode'
+                )
+                t.equal(
+                    dialog.getAttribute('active'),
+                    'true',
+                    'modal still active'
+                )
+            } finally {
+                State.removePaymentMethod = originalRemove
+            }
+        } finally {
+            resetState()
+            cleanup()
+        }
+    }
+)
+
+test('AC5.4 + AC5.7: Set as default moves the badge; ' +
+    'is not rendered on the current default', async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            seedBilling(true)
+            seedMethods()
+            const originalSet = State.setDefaultPaymentMethod
+            State.setDefaultPaymentMethod = async (id:string) => {
+                batch(() => {
+                    paymentMethods.value = paymentMethods.value.map(
+                        m => ({ ...m, isDefault: m.id === id })
+                    )
+                    defaultMethodId.value = id
+                })
+            }
+            try {
+                render(html`
+                    <${PaymentMethodModal}
+                        open=${true}
+                        onClose=${() => {}}
+                    />
+                `, root)
+                await nextTask()
+                const dialog = document.body.querySelector(
+                    'modal-window.payment-method-modal'
+                ) as HTMLElement
+                // AC5.7: The default row should NOT have a
+                // "Set as default" button.
+                const defaultRow = Array.from(
+                    dialog.querySelectorAll('.pm-row')
+                ).find(r =>
+                    r.textContent?.includes('4444')
+                ) as HTMLElement
+                const setOnDefault = Array.from(
+                    defaultRow.querySelectorAll('button')
+                ).find(b =>
+                    (b.textContent ?? '').match(/set as default/i)
+                )
+                t.equal(
+                    setOnDefault,
+                    undefined,
+                    'no "Set as default" on default row'
+                )
+                // Click "Set as default" on visa.
+                const visaRow = Array.from(
+                    dialog.querySelectorAll('.pm-row')
+                ).find(r =>
+                    r.textContent?.includes('4242')
+                ) as HTMLElement
+                const setBtn = Array.from(
+                    visaRow.querySelectorAll('button')
+                ).find(b =>
+                    (b.textContent ?? '').match(/set as default/i)
+                ) as HTMLButtonElement
+                setBtn.click()
+                await nextTask()
+                await nextTask()
+                // Default badge should now be on the visa row.
+                const newVisaRow = Array.from(
+                    dialog.querySelectorAll('.pm-row')
+                ).find(r =>
+                    r.textContent?.includes('4242')
+                ) as HTMLElement
+                t.ok(
+                    newVisaRow.querySelector('.pm-default-badge'),
+                    'visa row now has Default badge'
+                )
+            } finally {
+                State.setDefaultPaymentMethod = originalSet
+            }
+        } finally {
+            resetState()
+            cleanup()
+        }
+    }
+)
+
+test('AC5.5: Partial-failure surface inline banner (UI smoke)',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            seedBilling(true)
+            seedMethods()
+            const originalSet = State.setDefaultPaymentMethod
+            State.setDefaultPaymentMethod = async () => {
+                throw new Error('partial_failure')
+            }
+            try {
+                render(html`
+                    <${PaymentMethodModal}
+                        open=${true}
+                        onClose=${() => {}}
+                    />
+                `, root)
+                await nextTask()
+                const dialog = document.body.querySelector(
+                    'modal-window.payment-method-modal'
+                ) as HTMLElement
+                const visaRow = Array.from(
+                    dialog.querySelectorAll('.pm-row')
+                ).find(r =>
+                    r.textContent?.includes('4242')
+                ) as HTMLElement
+                const setBtn = Array.from(
+                    visaRow.querySelectorAll('button')
+                ).find(b =>
+                    (b.textContent ?? '').match(/set as default/i)
+                ) as HTMLButtonElement
+                setBtn.click()
+                await nextTask()
+                await nextTask()
+                const err = dialog.querySelector('.pm-error')
+                t.ok(err, 'inline error shown')
+                t.ok(
+                    err?.textContent?.includes('partial_failure'),
+                    'error code surfaces'
+                )
+            } finally {
+                State.setDefaultPaymentMethod = originalSet
+            }
+        } finally {
+            resetState()
+            cleanup()
+        }
+    }
+)
+
+test('AC5.5: State.setDefaultPaymentMethod handles 502 partial-failure ' +
+    'shape by replacing signals from the body and throwing',
+    async t => {
+        // No State override: exercise the real client action against
+        // a stubbed fetch that returns the server's 502
+        // partial-failure shape from Task 3.
+        seedBilling(true)
+        seedMethods()
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = async () => {
+            return new Response(JSON.stringify({
+                error: 'stripe_error',
+                customerDefaultUpdated: true,
+                subscriptionDefaultUpdated: false,
+                methods: [
+                    {
+                        id: 'pm_visa',
+                        brand: 'visa',
+                        last4: '4242',
+                        expMonth: 12,
+                        expYear: 2030,
+                        isDefault: true
+                    },
+                    {
+                        id: 'pm_mc',
+                        brand: 'mastercard',
+                        last4: '4444',
+                        expMonth: 6,
+                        expYear: 2029,
+                        isDefault: false
+                    }
+                ],
+                defaultId: 'pm_visa'
+            }), {
+                status: 502,
+                headers: { 'content-type': 'application/json' }
+            })
+        }
+        let threw = false
+        try {
+            await State.setDefaultPaymentMethod('pm_visa')
+        } catch (err) {
+            threw = true
+            t.ok(
+                err instanceof Error &&
+                    /stripe_error|partial/.test(err.message),
+                'throws with partial-failure error code'
+            )
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+        t.ok(threw, 'action threw')
+        // Signals reflect canonical (partial) truth from the body.
+        t.equal(
+            defaultMethodId.value,
+            'pm_visa',
+            'defaultMethodId reflects partial state'
+        )
+        const visa = paymentMethods.value.find(m => m.id === 'pm_visa')
+        t.ok(visa?.isDefault, 'visa isDefault flipped')
+        resetState()
+    }
+)
