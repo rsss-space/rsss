@@ -47,6 +47,9 @@ import { handleBlurhashQueueBatch } from './blurhash-consumer.js'
 import { handleLazyHtmlRequest } from './lazy-html-handler.js'
 import { shouldSkipLazyHtml } from './lazy-html.js'
 import { reportError } from './lib/report-error.js'
+import {
+    createRateLimitMiddleware
+} from './middleware/rate-limit.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
@@ -767,6 +770,13 @@ const requireAuth = async (c:Context<{
     await next()
 }
 
+const didRateLimit = createRateLimitMiddleware<Env, Variables>({
+    bucketSize: 30,
+    windowSeconds: 60,
+    prefix: 'edge:did',
+    key: (c) => c.get('session')?.did ?? null
+})
+
 const requireEntitlement = async (c:Context<{
     Bindings:Env;
     Variables:Variables
@@ -793,6 +803,20 @@ const requireEntitlement = async (c:Context<{
 
     await next()
 }
+
+const adminRateLimit = createRateLimitMiddleware<Env, Variables>({
+    bucketSize: 30,
+    windowSeconds: 60,
+    prefix: 'edge:admin',
+    key: (c) => {
+        const session = c.get('session')
+        if (session) return session.did
+
+        const header = c.req.header('authorization') || ''
+        const match = header.match(/^Bearer\s+(.+)$/i)
+        return match ? `admin:${match[1]}` : null
+    }
+})
 
 /**
  * Constant-time comparison for admin token verification.
@@ -900,6 +924,8 @@ app.post('/api/auth/dev-login', async (c) => {
 
     return c.json({ success: true, session })
 })
+
+app.use('/api/billing/*', requireAuth, didRateLimit)
 
 /**
  * Billing: get current entitlement.
@@ -1778,6 +1804,9 @@ export const dataRouter = new Hono<{
 }>()
 
 dataRouter.use('*', requireAuth)
+dataRouter.use('/feeds/refresh', didRateLimit)
+dataRouter.use('/feeds/:id/refresh', didRateLimit)
+dataRouter.use('/items/:id/fetch-full', didRateLimit)
 
 /**
  * Local-first sync infrastructure (`/api/sync`) is paid-only.
@@ -1848,6 +1877,8 @@ dataRouter.all('*', async (c) => {
 })
 
 app.route('/api', dataRouter)
+
+app.use('/admin/*', requireAdmin, adminRateLimit)
 
 /**
  * Admin: list all tracked users.

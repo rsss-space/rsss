@@ -1,5 +1,11 @@
 ## Codebase Patterns
 
+- Edge route rate limits use
+  `createRateLimitMiddleware()` from
+  `src/server/middleware/rate-limit.ts`. It stores hashed bucket keys in
+  `SESSIONS` KV with `expirationTtl` equal to the configured window and
+  returns generic `429 { error: 'rate_limited' }` responses with
+  `Retry-After`.
 - Server-side caught errors that should reach operations use
   `reportError(err, area, context)` from
   `src/server/lib/report-error.ts`. The helper sends Sentry
@@ -144,6 +150,25 @@
   exact `stripe` dependency version and `getStripe()` passes the reviewed
   `apiVersion`. The `test/stripe-billing.ts` suite runs under Node because
   it includes static package/source assertions.
+
+## 2026-05-18 23:00 PDT - US-005
+Thread: https://ampcode.com/threads/unknown
+- What was implemented: Added a reusable KV-backed token-bucket rate-limit
+  middleware and applied 30/minute limits to billing routes, targeted data
+  refresh/fetch-full proxy routes, and admin routes.
+- Files changed:
+  - `src/server/middleware/rate-limit.ts`
+  - `src/server/index.ts`
+  - `test/rate-limit.ts`
+  - `test/index.ts`
+  - `specs/prd.json`
+  - `progress.log`
+- **Learnings for future iterations:**
+  - Rate-limit buckets should use hashed logical keys so DIDs or admin
+    credentials are not copied directly into KV key names.
+  - Focused server route tests that import `src/server/index.ts` need the
+    Cloudflare and Sentry aliases plus the `.wasm=dataurl` esbuild loader.
+---
 
 ## 2026-05-18 22:45 PDT - US-003
 Thread: https://ampcode.com/threads/unknown
