@@ -96,14 +96,8 @@ test(
             env,
             executionCtx
         )
-        const body = await res.json() as { error?:string }
 
-        t.equal(res.status, 403, 'returns 403')
-        t.equal(
-            body.error,
-            'Not allowed in production',
-            'unset NODE_ENV is not treated as development'
-        )
+        t.equal(res.status, 404, 'returns 404')
     }
 )
 

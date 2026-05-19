@@ -844,10 +844,7 @@ function getUserDO (
 app.post('/api/auth/dev-login', async (c) => {
     // Only allow in development mode
     if (c.env.NODE_ENV !== 'development') {
-        return c.json(
-            { error: 'Not allowed in production' },
-            403
-        )
+        return c.notFound()
     }
 
     if (!isLoopbackHostname(new URL(c.req.url).hostname)) {

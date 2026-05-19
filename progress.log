@@ -1,5 +1,12 @@
 ## Codebase Patterns
 
+- Production and staging deploys are environment-scoped through
+  `wrangler.jsonc` `env` blocks. Use `npm run deploy:staging` or
+  `npm run deploy:production`; both call `script/deploy.mjs`, which builds
+  first and then runs Wrangler with `--config wrangler.jsonc --env ...`.
+  This bypasses the Cloudflare Vite generated-config redirect during
+  deploys. Production also runs `script/predeploy-production.mjs` so
+  `env.production` keeps `NODE_ENV=production`.
 - First-page client bootstrap data is consumed through
   `src/client/initial-feed.ts`. `consumeInitialFeed()` is single-use:
   it reads and clears `window.__INITIAL_FEED__` first, then falls back to
@@ -139,6 +146,44 @@ Thread: https://ampcode.com/threads/unknown
   - The feed-create test is included through `test/index.ts`, but it can be
     run directly with an esbuild Node bundle and the Cloudflare/Sentry test
     aliases for focused verification.
+---
+
+## 2026-05-18 22:34 PDT - US-002
+Thread: https://ampcode.com/threads/unknown
+- What was implemented: Split Wrangler deploy configuration into staging
+  and production env blocks, added env-scoped deploy scripts, and guarded
+  production deploys with a predeploy check for `NODE_ENV=production`.
+  Production `/api/auth/dev-login` now returns `404`, and the README deploy
+  workflow documents staging/production smoke tests instead of bare
+  `wrangler deploy`.
+- Files changed:
+  - `wrangler.jsonc`
+  - `worker-configuration.d.ts`
+  - `package.json`
+  - `script/deploy.mjs`
+  - `script/predeploy-production.mjs`
+  - `src/server/index.ts`
+  - `test/deploy-config.mjs`
+  - `test/readme-deploy.mjs`
+  - `test/signup.ts`
+  - `test/run-signup-server.mjs`
+  - `README.md`
+  - `specs/prd.json`
+  - `progress.log`
+- **Learnings for future iterations:**
+  - Static deploy config tests need to slice only the top-level Wrangler
+    config when checking for top-level `vars`; env-specific `vars` blocks
+    are valid and should not be treated as global.
+  - `test:signup:server` needs an esbuild WASM loader and a `createRequire`
+    banner when bundled as ESM under the current Node runtime.
+  - Regenerate `worker-configuration.d.ts` with `npx wrangler types` after
+    Wrangler env binding changes.
+  - Wrangler env blocks do not inherit `queues`; mirror queue bindings into
+    staging and production env blocks when splitting deployment config.
+  - Cloudflare Vite writes `.wrangler/deploy/config.json`, which redirects
+    bare `wrangler deploy` to `public/rsss/wrangler.json`. Use
+    `--config wrangler.jsonc` for env-scoped deploys that must honor the
+    source env blocks.
 ---
 
 ## 2026-05-09 22:41 PDT - US-023

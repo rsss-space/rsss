@@ -34,6 +34,24 @@ assert.doesNotMatch(
     'README does not use deprecated Wrangler KV namespace syntax'
 )
 
+assert.match(
+    deploy,
+    /npm run deploy:staging/,
+    'README documents staging deployment'
+)
+
+assert.match(
+    deploy,
+    /npm run deploy:production/,
+    'README documents production deployment'
+)
+
+assert.doesNotMatch(
+    deploy,
+    /(?<!npm run )wrangler deploy(?! --env)/,
+    'README does not document bare wrangler deploy'
+)
+
 for (const text of [
     '/api/health',
     '/oauth/client-metadata.json',

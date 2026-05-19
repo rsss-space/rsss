@@ -34,7 +34,7 @@
     "test:lazy-html-handler": "node test/run-lazy-html-handler.mjs",
     "test:lazy-html-routing": "node test/run-lazy-html-routing.mjs",
     "test:initial-feed": "esbuild ./test/initial-feed.ts --bundle | tapout",
-    "test:signup:server": "esbuild ./test/signup.ts --bundle --platform=node --format=esm --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts | node --input-type=module | tap-spec",
+    "test:signup:server": "node test/run-signup-server.mjs",
     "test:signup:ui": "esbuild ./test/signup-ui.ts --bundle --loader:.css=text | tapout",
     "test:signup": "npm run test:signup:server && npm run test:signup:ui",
     "test:headers": "node test/run-header-tests.mjs",
@@ -45,6 +45,9 @@
     "version": "auto-changelog --template keepachangelog --breaking-pattern 'BREAKING CHANGE' && git add CHANGELOG.md",
     "postversion": "git push --follow-tags",
     "prepublishOnly": "npm run build",
+    "predeploy:production": "node script/predeploy-production.mjs",
+    "deploy:staging": "node script/deploy.mjs staging",
+    "deploy:production": "node script/deploy.mjs production",
     "db:reset": "rm -rf .wrangler/state"
   },
   "dependencies": {

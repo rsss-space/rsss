@@ -270,17 +270,38 @@ Keep secret bindings out of `wrangler.jsonc` `vars`. In production,
 `AUTUMN_SECRET_KEY` must be set with `wrangler secret put` or
 `/api/health` returns a configuration error.
 
-4. Deploy:
+4. Deploy to staging:
 
 ```sh
-wrangler deploy
+npm run deploy:staging
 ```
 
-5. Verify the deployment:
+5. Smoke test staging:
 
 ```sh
 curl https://<your-domain>/api/health
 curl https://<your-domain>/oauth/client-metadata.json
+curl -i -X POST https://<your-domain>/api/auth/dev-login
+curl -i -X POST https://<your-domain>/api/billing/checkout
+```
+
+6. Deploy to production:
+
+```sh
+npm run deploy:production
+```
+
+The production deploy script first checks that `env.production` in
+`wrangler.jsonc` sets `NODE_ENV=production`. Production must return `404`
+for `/api/auth/dev-login` and must not use the dev billing shortcut.
+
+7. Smoke test production:
+
+```sh
+curl https://<your-domain>/api/health
+curl https://<your-domain>/oauth/client-metadata.json
+curl -i -X POST https://<your-domain>/api/auth/dev-login
+curl -i -X POST https://<your-domain>/api/billing/checkout
 ```
 
 ### Rotate `SESSION_SECRET`
@@ -289,7 +310,7 @@ Generate a replacement secret, then run:
 
 ```sh
 wrangler secret put SESSION_SECRET
-wrangler deploy
+npm run deploy:production
 ```
 
 Rotating `SESSION_SECRET` invalidates active sessions because existing
@@ -357,7 +378,6 @@ user for repeated requests.
 ```
 
 --------------------------------------------------------------
-
 
 
 
