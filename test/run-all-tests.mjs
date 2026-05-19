@@ -133,8 +133,12 @@ const commands = [
     ].join(' '),
     [
         'esbuild ./test/stripe-billing.ts --bundle',
+        '--platform=node --format=esm',
+        '--banner:js="import { createRequire } from ' +
+        '\'node:module\'; const require = ' +
+        'createRequire(import.meta.url);"',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
-        '| tapout'
+        '| node --input-type=module | tap-spec'
     ].join(' '),
     [
         'esbuild ./test/payment-methods.ts --bundle',

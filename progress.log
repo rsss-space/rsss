@@ -133,6 +133,32 @@
   feeds client state after the JS bundle runs, while the seeded `#root`
   markup gives first-page thumbnails a paintable HTML surface before the
   bundle finishes loading.
+- Stripe SDK behavior is pinned in two places: `package.json` uses an
+  exact `stripe` dependency version and `getStripe()` passes the reviewed
+  `apiVersion`. The `test/stripe-billing.ts` suite runs under Node because
+  it includes static package/source assertions.
+
+## 2026-05-18 22:45 PDT - US-003
+Thread: https://ampcode.com/threads/unknown
+- What was implemented: Pinned the Stripe SDK dependency to exact
+  `17.7.0` and passed the reviewed `2025-02-24.acacia` API version when
+  constructing the Workers Stripe client.
+- Files changed:
+  - `package.json`
+  - `package-lock.json`
+  - `src/server/stripe-billing.ts`
+  - `test/stripe-billing.ts`
+  - `test/run-all-tests.mjs`
+  - `specs/prd.json`
+  - `progress.log`
+- **Learnings for future iterations:**
+  - Stripe billing static assertions need the focused suite to run under
+    Node with a `createRequire` banner because the bundled Stripe SDK pulls
+    CommonJS dependencies that use dynamic `require`.
+  - `npm install` on this machine warns that Node v25.8.2 does not match
+    the repo's declared Node 22.x engine, but it completed cleanly and
+    updated the lockfile pin.
+---
 
 ## 2026-05-18 22:28 PDT - US-001
 Thread: https://ampcode.com/threads/unknown

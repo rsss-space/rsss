@@ -1,4 +1,6 @@
 import { test } from '@substrate-system/tapzero'
+import fs from 'node:fs'
+import path from 'node:path'
 import {
     stripeUseLive,
     getStripe,
@@ -8,6 +10,27 @@ import {
     customerBody,
     jsonResponse
 } from './autumn-fixtures.js'
+
+test('Stripe SDK dependency is pinned to an exact version', t => {
+    const pkgPath = path.join(process.cwd(), 'package.json')
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+        dependencies?:Record<string, string>;
+    }
+    const version = pkg.dependencies?.stripe
+    t.equal(version, '17.7.0', 'stripe dependency is exact')
+})
+
+test('getStripe passes an explicit Stripe API version', t => {
+    const sourcePath = path.join(
+        process.cwd(),
+        'src/server/stripe-billing.ts'
+    )
+    const source = fs.readFileSync(sourcePath, 'utf8')
+    t.ok(
+        source.includes("apiVersion: '2025-02-24.acacia'"),
+        'Stripe constructor pins the reviewed API version'
+    )
+})
 
 test('stripeUseLive is false when STRIPE_SECRET_KEY is unset', t => {
     t.equal(
