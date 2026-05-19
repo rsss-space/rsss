@@ -1,444 +1,564 @@
 {
   "project": "RSSS",
-  "branchName": "ralph/lazy-blurhash-html",
-  "description": "Lazy Per-User BlurHash HTML - Generate per-user index.html on first request with first-page items and blurhash strings embedded as a JSON bootstrap, cached in KV keyed by a DO-tracked feed_version. Cache invalidates via version bumps when ingest writes new items or new blurhash data. Includes prior cache-indicator and blurhash-infrastructure work.",
+  "branchName": "ralph/production-readiness-audit",
+  "description": "Production-Readiness Audit Remediation (P0 + P1) — close the audit gaps before public launch: Stripe/Autumn webhook handling with signature verification and de-dup, entitlement cache invalidation, split wrangler envs, R2-backed account deletion, server-side verified-email flow, idempotency keys on Stripe mutations, per-DID/per-IP/per-handle rate limiting, full security-header set + CSP, SSRF blocklist extensions, Sentry coverage of swallowed errors, PII scrubbing, and a sweep of P1 frontend a11y / lazy-load / preconnect fixes. Tracks tasks/prd-production-readiness-audit.md.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Show cache indicator on all authenticated routes",
-      "description": "As a logged-in user, I want the cache status indicator visible on every authenticated page so I can monitor my cache state without navigating back to a feed.",
+      "title": "Fix failing lint on staging",
+      "description": "As a developer, I want `npm run lint` to pass on the `staging` branch so CI signals real failures again.",
       "acceptanceCriteria": [
-        "Remove the `isFeedReaderRoute` guard from the visibility gate in `src/client/components/cache-status.ts`",
-        "Delete the `isFeedReaderRoute` helper if it has no other callers",
-        "Indicator renders on `/`, `/starred`, `/feed/*`, `/settings`, `/about`, `/add-feed`, and any other authenticated route",
-        "Indicator does not render on unauthenticated routes (gated by `state.user.value`) — existing behavior preserved",
-        "Existing 'free / non-entitled user' hide behavior preserved",
-        "Existing 'no local DB / not bootstrapped' hide behavior preserved",
-        "No errors on routes where `state.selectedFeedId` is null (recompute logic already handles `feedId: null`)",
-        "Typecheck passes",
-        "Lint passes",
-        "Verify in browser using dev-browser skill: indicator appears on `/settings` and `/about` in addition to feed reader routes"
+        "Remove or use the unused `waitFor` import at `test/feed-create.ts:81`",
+        "`npm run lint` exits 0 on `staging`",
+        "No new lint warnings introduced",
+        "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-002",
-      "title": "Hide cache indicator when sync or article caching is off",
-      "description": "As a user who has turned off local-first sync or article caching, I want the cache indicator to disappear so it doesn't falsely claim my content is cached.",
+      "title": "Split wrangler.jsonc into staging and production env blocks",
+      "description": "As an operator, I want separate env blocks in wrangler.jsonc so a `wrangler deploy` cannot ship dev-login or dev-billing to production.",
       "acceptanceCriteria": [
-        "In `src/client/components/cache-status.ts`, import `syncSubscriptions` and `storeContent` signals from `../local-first-settings.js`",
-        "Extend the visibility gate to return null when `syncSubscriptions.value` is false",
-        "Extend the visibility gate to return null when `storeContent.value` is false (even if `syncSubscriptions` is true)",
-        "Component subscribes to both signals so toggling either in `/settings` immediately updates the header without a page refresh",
-        "If sequentially setting multiple signals anywhere as part of this change, use `batch()` from `@preact/signals`",
-        "Lines stay within 80 columns",
-        "Typecheck passes",
-        "Lint passes",
-        "Verify in browser using dev-browser skill: toggle off 'Sync subscriptions and read state to this device' → indicator disappears; toggle off 'Store article content locally' with sync on → indicator disappears"
+        "Add `[env.staging]` and `[env.production]` blocks to `wrangler.jsonc` with their own KV namespace ids and DO bindings (shared bindings only if intentional and documented)",
+        "Remove `NODE_ENV: \"development\"` from the top-level `vars`; each env block sets its own `NODE_ENV`",
+        "Update deploy scripts in `package.json` to use `wrangler deploy --env staging` and `wrangler deploy --env production`",
+        "Bare `wrangler deploy` either errors out or is removed from documented workflow",
+        "Add a predeploy check (script or CI step) that asserts `NODE_ENV=production` before a production deploy and fails otherwise",
+        "`canUseDevBillingShortcut` and `/api/auth/dev-login` return 404 under the production env (documented smoke test)",
+        "Typecheck and lint pass"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-003",
-      "title": "Show neutral 'No items yet' state when totalCount is 0",
-      "description": "As a user with sync and article caching enabled but no items locally yet, I want a neutral indicator rather than a misleading '100% cached' so I understand there is nothing actually cached yet.",
+      "title": "Pin Stripe SDK and set explicit apiVersion",
+      "description": "As an operator, I want Stripe SDK upgrades to be deliberate so a minor bump cannot ship behavior changes without review.",
       "acceptanceCriteria": [
-        "In `src/client/components/cache-status.ts`, split the existing `uncachedCount === 0` branch into two branches: `totalCount === 0` (neutral) and `totalCount > 0 && uncachedCount === 0` (existing green '100% cached')",
-        "Neutral state renders a gray dot and label 'No items yet'",
-        "Neutral state reuses the existing `Dot` component; if a gray color variant does not exist, add it minimally and reuse an existing CSS variable from `_variables.css` (do not introduce new color tokens unnecessarily)",
-        "Neutral state has `aria-label` such as 'Cache status: no items yet' for screen readers",
-        "Neutral state uses the same `cache-status-legend` markup as the synced state for consistent layout",
-        "Neutral state is non-interactive in v1",
-        "When `totalCount > 0 && uncachedCount === 0`, the existing green '100% cached' state still renders unchanged",
-        "When `uncachedCount > 0`, the existing yellow 'N uncached' state with action popover still renders unchanged",
-        "Update the comment in `src/client/components/cache-status-state.ts` (around lines 67-73) about 'EMPTY_SNAPSHOT' from '100% cached' to 'neutral / hidden' for accuracy",
-        "Lines stay within 80 columns",
-        "Do not change unrelated CSS",
-        "Typecheck passes",
-        "Lint passes",
-        "Verify in browser using dev-browser skill: with sync + article cache enabled and no items yet, header shows the gray 'No items yet' state, not green '100% cached'"
+        "`package.json` pins `stripe` to an exact version (no caret/tilde)",
+        "`getStripe()` in `src/server/stripe-billing.ts` passes an explicit `apiVersion` in the constructor options",
+        "`npm install` runs cleanly and the lockfile is updated",
+        "Existing billing tests still pass",
+        "Typecheck and lint pass"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-004",
-      "title": "Verify header indicator and /settings agree across all states",
-      "description": "As a user, I want the header indicator and the `/settings` cache section to never contradict each other so I can trust both views.",
+      "title": "Add reportError helper and replace bare console.error sites in server",
+      "description": "As an operator, I want operationally important server failures to reach Sentry so silently swallowed errors stop hiding regressions.",
       "acceptanceCriteria": [
-        "When `/settings` shows 'Total storage used: 0 B' with both toggles off, the header has no cache indicator at all",
-        "When `/settings` shows both toggles on with no items cached, the header shows the neutral 'No items yet' state",
-        "When `/settings` shows both toggles on with items partially cached, the header shows the yellow 'N uncached' state with action button (existing behavior)",
-        "When `/settings` shows both toggles on with all items cached, the header shows green '100% cached' (existing behavior)",
-        "Typecheck passes",
-        "Lint passes",
-        "Verify in browser using dev-browser skill: walk through all four state combinations and confirm header/settings agree in each"
+        "Create `src/server/lib/report-error.ts` exporting `reportError(err: unknown, area: string, context?: Record<string, unknown>): void` that calls `Sentry.captureException(err, { tags: { area }, extra: context })` and `console.error(...)`",
+        "Replace bare `console.error(err)` sites in `src/server/index.ts`, `src/server/stripe-billing.ts`, `src/server/email.ts`, `src/server/feed-fetch.ts`, and `src/server/auth/*.ts` with `reportError(err, '<area>')`",
+        "Pass a stable `area` string per file (e.g. `'billing'`, `'auth'`, `'feed-fetch'`, `'email'`)",
+        "Add a unit test verifying `reportError` calls `Sentry.captureException` with the right tags (mock Sentry)",
+        "Sentry mock is wired into the test harness so production assertions do not double-fire in tests",
+        "Typecheck and lint pass"
       ],
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-005",
-      "title": "Add tests for new visibility and empty-state rules",
-      "description": "As a developer, I want unit/integration tests that encode the new visibility and empty-state rules so future regressions are caught automatically.",
+      "title": "Build rate-limit middleware factory and apply per-DID buckets",
+      "description": "As an operator, I need a single rate-limit middleware factory applied to authenticated edge endpoints so one user cannot fan out unbounded billing, refresh, or admin calls.",
       "acceptanceCriteria": [
-        "Tests in `test/cache-status.ts` cover: indicator hidden when `syncSubscriptions` is false",
-        "Tests cover: indicator hidden when `storeContent` is false (with `syncSubscriptions` true)",
-        "Tests cover: indicator shows neutral empty state when `totalCount` is 0 with both toggles on",
-        "Tests cover: indicator renders on `/settings` and `/about` routes (not just feed reader routes)",
-        "Tests cover: existing behavior preserved — yellow 'N uncached' when `uncachedCount > 0`, green '100% cached' when `totalCount > 0 && uncachedCount === 0`",
-        "`npm test` passes",
-        "`npm run lint` passes",
-        "Typecheck passes"
+        "Add `src/server/middleware/rate-limit.ts` exporting a Hono middleware factory parameterized by bucket size, window seconds, and a key-resolution function",
+        "Token-bucket state is stored in KV with a TTL equal to the window",
+        "Apply a per-DID 30/min bucket to `/api/billing/*`, `/api/feeds/refresh`, `/api/feeds/:id/refresh`, `/api/items/:id/fetch-full`, `/admin/*`",
+        "Over-limit responses return 429 with `Retry-After` header and a generic body that does not leak bucket internals",
+        "Regression test: 31st request inside the window returns 429; first request in the next window returns 200",
+        "Typecheck and lint pass"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-006",
-      "title": "Add og_image_url, blurhash, image_width, image_height columns to feed_items",
-      "description": "As a developer, I need columns on `feed_items` to denormalize the OG image URL, its BlurHash, and its intrinsic dimensions so the render path is a single SELECT with no per-item KV lookup.",
+      "title": "Apply per-IP and per-handle rate limits to /api/auth/login",
+      "description": "As an operator, I want both per-IP and per-handle buckets on the OAuth-start endpoint so an unauthenticated caller cannot enumerate handles or amplify outbound fetches.",
       "acceptanceCriteria": [
-        "Migration adds `og_image_url TEXT NULL` to `feed_items`",
-        "Migration adds `blurhash TEXT NULL` to `feed_items`",
-        "Migration adds `image_width INTEGER NULL` to `feed_items`",
-        "Migration adds `image_height INTEGER NULL` to `feed_items`",
-        "No index added on the new columns (read with the row, never filtered on)",
-        "Migration applies cleanly on a fresh DB (no existing rows)",
-        "Migration applies cleanly on an existing DB with rows (existing rows take NULL defaults)",
-        "Typecheck passes",
-        "Lint passes"
+        "Apply the rate-limit middleware twice to `/api/auth/login`: per-IP bucket keyed off `cf-connecting-ip` at 10/min, and per-handle bucket keyed off the lowercased `handle` field from request input at 10/min",
+        "Both buckets must pass for the request to proceed; either over-limit returns 429",
+        "Per-handle bucket key normalizes by trimming and lower-casing the handle before hashing",
+        "Regression test: 11 attempts from the same IP with different handles → 429 (per-IP exhausted)",
+        "Regression test: 11 attempts against the same handle from different IPs → 429 (per-handle exhausted)",
+        "Typecheck and lint pass"
       ],
       "priority": 6,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-007",
-      "title": "Provision BLURHASH_KV namespace and blurhash-jobs queue infrastructure",
-      "description": "As a developer, I need the KV namespace and queue (with DLQ) declared in wrangler configuration so the producer (poller) and consumer workers can bind to them.",
+      "title": "Scrub PII (DIDs and emails) from server logs",
+      "description": "As a privacy-conscious operator, I want server logs free of raw DIDs and email addresses so access to logs is not equivalent to access to PII.",
       "acceptanceCriteria": [
-        "`BLURHASH_KV` KV namespace declared in `wrangler.toml` (or equivalent)",
-        "`BLURHASH_KV` bound for both poller and consumer workers",
-        "`blurhash-jobs` queue declared as a producer binding for the poller",
-        "`blurhash-jobs` queue declared as a consumer binding with `max_batch_size = 10`, `max_batch_timeout = 30`, `max_retries = 3`",
-        "`blurhash-dlq` declared as the `dead_letter_queue` for `blurhash-jobs`",
-        "`wrangler types` (or project equivalent) regenerated and types compile",
-        "Typecheck passes",
-        "Lint passes"
+        "Add a `hashDid(did)` helper (first 8 chars of `sha256(did)`) and use it in all log lines that previously emitted raw DIDs",
+        "Update `src/server/email.ts:137-141, 160-166` and the `[proxy]` / `[DO]` write-path logs to use the hashed form",
+        "Strip email addresses from logs entirely (omit, or replace with the domain part only)",
+        "Gate `[proxy]` and `[DO]` write-path logs behind a `LOG_LEVEL=debug` env var; default to `info` in staging/production",
+        "Regression test: a billing failure log line does not contain a raw DID or recipient email",
+        "Typecheck and lint pass"
       ],
       "priority": 7,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-008",
-      "title": "Extract og:image in feed poller and persist og_image_url",
-      "description": "As a developer, I need the existing feed poller to extract the og:image meta tag from each new item's article URL and write it to `og_image_url`, so subsequent stages have a URL to hash.",
+      "title": "Extend SSRF blocklist (IPv4 CGNAT, benchmark, multicast, reserved + IPv6 multicast)",
+      "description": "As the feed and article fetcher, I need to refuse non-public ranges so I cannot scan or attack internal infrastructure.",
       "acceptanceCriteria": [
-        "When the poller ingests a new item, it fetches the article URL and parses `<meta property=\"og:image\">`",
-        "Falls back to `<meta name=\"og:image\">` if the property form is absent",
-        "If the feed payload itself carries an image (e.g. `media:thumbnail`, `enclosure`), prefer that to avoid an extra round trip",
-        "The extracted absolute URL is stored in `og_image_url` on the item row",
-        "If the article fetch fails, times out, or no og:image is found, `og_image_url` stays NULL and the item still ingests successfully",
-        "Fetch uses the same redirect-handling and User-Agent conventions already used by `001-fix-og-image-redirects` (do not regress that fix)",
-        "Typecheck passes",
-        "Lint passes"
+        "Extend `isBlockedIpv4` in `src/server/feed-fetch.ts:329-364` to add: `100.64.0.0/10`, `198.18.0.0/15`, `224.0.0.0/4`, `240.0.0.0/4`",
+        "Extend `isBlockedIpv6` to add `ff00::/8` (multicast)",
+        "Regression test: one address inside each new range is rejected",
+        "Regression test: an address just outside each range is still accepted (where it would have been before)",
+        "Typecheck and lint pass"
       ],
       "priority": 8,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-009",
-      "title": "Check BLURHASH_KV in poller; write directly on hit, enqueue on miss",
-      "description": "As a developer, I want the poller to read `BLURHASH_KV` for each new item's image URL so that, if another user's poll has already produced a hash for that URL, we can write the hash straight to D1 and skip the queue entirely.",
+      "title": "Make DoH the unconditional default in fetchValidatedResponse",
+      "description": "As a feed fetcher, I want DoH resolution to be the default whenever a custom fetchFn is passed so a caller cannot silently disable DNS-rebinding protection.",
       "acceptanceCriteria": [
-        "KV key derived as `blurhash:<sha256(og_image_url).slice(0, 32)>`",
-        "On KV hit: write `blurhash`, `image_width`, `image_height` to the item row in D1; do NOT enqueue",
-        "On KV miss: insert the item with `blurhash = NULL` and enqueue `{ imageUrl, itemId }` onto `blurhash-jobs`",
-        "If the item has no `og_image_url`, no KV read and no enqueue happens",
-        "Hot-path KV read is exactly one round trip per new item",
-        "Typecheck passes",
-        "Lint passes"
+        "In `src/server/feed-fetch.ts:166-168`, default `resolveHostname` to `resolveHostnameWithDoh` whenever `fetchFn` is provided",
+        "Opting out requires an explicit `resolveHostname: null` flag (used only in tests)",
+        "Update any internal callers that relied on the implicit-undefined behavior",
+        "Regression test: passing a custom `fetchFn` without `resolveHostname` results in DoH resolution being attempted",
+        "Typecheck and lint pass"
       ],
       "priority": 9,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-010",
-      "title": "Implement blurhash-jobs consumer happy path (fetch, decode, encode, write)",
-      "description": "As a developer, I need a queue consumer worker that takes a job, safely fetches the image, decodes and resizes it with @cf-wasm/photon, encodes a BlurHash, captures intrinsic dimensions, and writes the result to KV and D1.",
+      "title": "Derive Secure cookie flag from APP_ORIGIN",
+      "description": "As an operator, I want session cookies to be Secure whenever the origin is HTTPS so a misconfigured hostname check cannot drop the flag in production.",
       "acceptanceCriteria": [
-        "Consumer registered for the `blurhash-jobs` queue using the bindings from US-007",
-        "On batch receive, for each job: re-check `BLURHASH_KV` first (another worker may have hashed it); on hit, write hash + dimensions to D1 and ack without re-encoding",
-        "Image fetch uses `AbortController` with a 10 second timeout",
-        "Image fetch uses a browser-like User-Agent header",
-        "Reject images with `Content-Length` greater than 5 MB before reading the body",
-        "Backstop check rejects images whose actual received bytes exceed 5 MB",
-        "Decode → resize to 32×32 (nearest-neighbor) with Photon → encode with `blurhash` at 4×4 components",
-        "Capture `image_width` and `image_height` from the original decoded image (before resize)",
-        "Photon image instance's `.free()` is called in a `finally` block",
-        "Write hash to `BLURHASH_KV` with 90-day TTL",
-        "Write `blurhash`, `image_width`, `image_height` to the item's row in D1",
-        "Successful jobs ack the message",
-        "Typecheck passes",
-        "Lint passes"
+        "Rewrite `shouldUseSecureSessionCookie` to return `APP_ORIGIN.startsWith('https://')`, replacing the hostname-based check at `src/server/index.ts:313-315, 707-713, 887-893`",
+        "Local dev (`http://localhost:8888`) still issues non-Secure cookies",
+        "Regression test: with `APP_ORIGIN=https://example.com`, `Set-Cookie` includes `Secure`; with `APP_ORIGIN=http://localhost:8888`, it does not",
+        "Typecheck and lint pass"
       ],
       "priority": 10,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-011",
-      "title": "Implement blurhash-jobs consumer failure-mode policy",
-      "description": "As a developer, I need the consumer to map each failure mode to the correct retry/skip/DLQ outcome per the table in `DOCS/PRD-blurhash.md` §7.5, so transient errors retry and permanent errors stop wasting CPU.",
+      "title": "Extend security headers with CSP, XCTO, Referrer-Policy, X-Frame-Options, Permissions-Policy",
+      "description": "As a user loading the app, I want full browser-level defenses on by default so XSS and clickjacking surfaces are minimized.",
       "acceptanceCriteria": [
-        "4xx fetch response → permanent skip; ack the message; item row stays NULL",
-        "Decode failure (Photon throws on the bytes) → permanent skip; ack the message; item row stays NULL",
-        "Oversized image (Content-Length or actual bytes > 5 MB) → permanent skip; ack the message; item row stays NULL",
-        "5xx fetch response → throw to trigger retry",
-        "Fetch timeout (AbortController fires) → throw to trigger retry",
-        "KV write failure → throw to trigger retry",
-        "D1 write failure → throw to trigger retry",
-        "Photon crash mid-encode (other than decode-rejection) → throw to trigger retry",
-        "After the queue's `max_retries = 3` exhausts, the message lands in `blurhash-dlq` (verified by config, not behavior change)",
-        "Permanent-skip cases never enter the retry path",
-        "Typecheck passes",
-        "Lint passes"
+        "Update `src/server/isolation-headers.ts` to add: `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`",
+        "CSP directives: `default-src 'self'`; `script-src 'self' https://js.stripe.com`; `connect-src 'self' https://api.stripe.com <SENTRY_INGEST_HOST>` (resolved from `VITE_SENTRY_DSN` at build/start time); `frame-src https://js.stripe.com`; `img-src 'self' data: https:`; `style-src 'self'` (or `'self' 'unsafe-inline'` only if inline styles cannot be eliminated); `base-uri 'none'`; `form-action 'self'`; `frame-ancestors 'none'`",
+        "CSP either removes inline scripts or attaches a per-response nonce/hash",
+        "Headers applied to HTML responses from the worker",
+        "Regression test: response headers from `/` contain each header; Sentry ingest host appears in `connect-src`",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: Stripe Elements still loads in the payment-method modal, Sentry browser SDK posts events successfully, no CSP-violation messages in the console"
       ],
       "priority": 11,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-012",
-      "title": "Render <blur-hash> in SSR with graceful fallback",
-      "description": "As a reader, when I open my feed list I want to see a blurred preview of each article's image immediately, and when the encoder hasn't caught up yet I still want a sensible fallback (no broken UI).",
+      "title": "Add R2 bucket binding and back account deletion to R2",
+      "description": "As a paying user deleted in error, I want my data exported to R2 before destruction so it can be restored within 30 days.",
       "acceptanceCriteria": [
-        "For items where `blurhash`, `og_image_url`, `image_width`, and `image_height` are all present: SSR emits `<blur-hash placeholder=\"…\" src=\"…\" width=\"…\" height=\"…\" alt=\"…\">`",
-        "For items with `og_image_url` but missing `blurhash`/dimensions: SSR emits a plain `<img src loading=\"lazy\" alt>`",
-        "For items with no `og_image_url`: no image element rendered",
-        "Fallback `<img>` uses the same intrinsic rendering box (e.g. CSS `aspect-ratio`) as the `<blur-hash>` element so layout does not flicker when the encoder catches up",
-        "No new client-side fetch is introduced for the placeholder — the hash is in the initial HTML",
-        "No layout shift or flash of blank space on items that have a hash, on a throttled-network reload",
-        "Lines stay within 80 columns",
-        "Do not change unrelated CSS",
-        "Typecheck passes",
-        "Lint passes",
-        "Verify in browser using dev-browser skill: load the feed list, throttle the network, confirm placeholders paint immediately and crossfade to real images, and confirm fallback `<img>` renders for items missing a hash"
+        "Add R2 bucket binding (`DELETED_ACCOUNTS`) to both `[env.staging]` and `[env.production]` blocks in `wrangler.jsonc`",
+        "In `executeAccountDeletion` (`src/server/durable-objects/index.ts:2661-2669`), dump `items`, `feeds`, and `dead_letter_outbox` rows to R2 at key `deleted/<did>/<iso-timestamp>.json` *before* `DROP TABLE` / `storage.deleteAll()`",
+        "If R2 write fails, account deletion aborts and the user-facing operation surfaces a retry-able error",
+        "Configure lifecycle rule on the bucket to retain exports for 30 days then delete",
+        "Document the restore procedure in `README.md`: bucket name, key naming, restore command, expected duration",
+        "Regression test: triggering deletion produces an R2 object at the expected key, and the export contains the items rows that were present pre-deletion",
+        "Typecheck and lint pass"
       ],
       "priority": 12,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-013",
-      "title": "Add user_state.feed_version counter to per-user DO SQLite",
-      "description": "As a developer, I need a single-row counter table in each user's DO SQLite so the worker can detect when feed contents have changed and invalidate the cached HTML.",
+      "title": "Add idempotency keys to all Stripe mutations",
+      "description": "As a user clicking a button twice, I want my second duplicate request to not produce a second Stripe-side mutation.",
       "acceptanceCriteria": [
-        "Append `USER_STATE_SQL` export to `src/shared/schema.ts` after `DEAD_LETTER_OUTBOX_SQL`",
-        "`USER_STATE_SQL` defines `user_state` table with `id INTEGER PRIMARY KEY CHECK (id = 1)` and `feed_version INTEGER NOT NULL DEFAULT 0`",
-        "`USER_STATE_SQL` includes `INSERT OR IGNORE INTO user_state (id, feed_version) VALUES (1, 0)`",
-        "Import `USER_STATE_SQL` in `src/server/durable-objects/index.ts` alongside other schema imports",
-        "Call `this.sql.exec(USER_STATE_SQL)` in DO init block after `DEAD_LETTER_OUTBOX_SQL` exec",
-        "Schema applies cleanly on a fresh DO (no rows yet) and on an existing DO (table created idempotently)",
-        "Typecheck passes",
-        "Lint passes"
+        "Add `{ idempotencyKey: '<did>:<op>:<resource-id>' }` as the second argument to `paymentMethods.detach`, `customers.update`, `subscriptions.update`, and `setupIntents.create` at `src/server/index.ts:988, 1033, 1060, 1729`",
+        "Idempotency key is deterministic for the same logical request and varies for distinct logical requests (the resource id is the payment-method id or subscription id, not a random nonce)",
+        "Regression test: the same logical request issued twice produces a single Stripe-side effect (mocked Stripe client asserts only one call with the same idempotencyKey is observed)",
+        "Typecheck and lint pass"
       ],
       "priority": 13,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-014",
-      "title": "Add bumpFeedVersion and getFeedVersion DO helpers",
-      "description": "As a developer, I need private helpers on `UserDO` to read and atomically increment `feed_version` so write paths can bump the counter and the worker can read the current version.",
+      "title": "Persist Stripe customer-id → DID mapping at checkout completion",
+      "description": "As the webhook handler, I need a durable lookup from Stripe customer id to DID so I can resolve which user an event belongs to.",
       "acceptanceCriteria": [
-        "`bumpFeedVersion()` private method on `UserDO` runs `UPDATE user_state SET feed_version = feed_version + 1 WHERE id = 1 RETURNING feed_version` and returns the new value (or 0 on null)",
-        "`getFeedVersion()` private method on `UserDO` runs `SELECT feed_version FROM user_state WHERE id = 1` and returns the value (or 0 on null)",
-        "Both helpers are placed near other private helpers like `rowsWritten`",
-        "Both helpers use the existing `this.sql.exec(...).one()` pattern",
-        "Typecheck passes",
-        "Lint passes"
+        "Investigate first whether the existing Autumn customer record or a DO/KV write at checkout-completion time already persists a customer-id → DID mapping. Document the finding in `src/server/CLAUDE.md`",
+        "If no durable mapping exists, write a KV index entry `stripe-cust:<customerId>` → `<did>` (no TTL) at the point where a Stripe customer is first created or associated with the DID (likely inside `/api/billing/checkout` or the checkout-return handler)",
+        "Expose a helper `getDidForStripeCustomer(customerId): Promise<string | null>` in `src/server/stripe-billing.ts` (or a new `src/server/billing/customer-index.ts`)",
+        "Helper returns null gracefully for unknown customer ids (never throws)",
+        "Regression test: after a successful checkout-completion, the KV lookup resolves to the expected DID; an unknown customer id resolves to null",
+        "Typecheck and lint pass"
       ],
       "priority": 14,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-015",
-      "title": "Bump feed_version at the three write sites",
-      "description": "As a developer, I need each write site that changes the user's feed contents or blurhash data to bump `feed_version` so the cached HTML is invalidated.",
+      "title": "Add POST /api/billing/webhook with signature verification",
+      "description": "As the billing system, I need a signature-verified webhook endpoint so external Stripe state changes can reach the worker without trust shortcuts.",
       "acceptanceCriteria": [
-        "After the new-items insert loop in `src/server/durable-objects/index.ts` (~line 1602-1617): call `this.bumpFeedVersion()` once if `newItems.length > 0`",
-        "Inside `updateBlurhashFromCacheOrQueue` (~line 1791-1823): call `this.bumpFeedVersion()` after the `UPDATE items SET blurhash = COALESCE(...)` exec, before the existing `return`",
-        "Inside `POST /internal/blurhash/items/:id` handler (~line 617-649): call `this.bumpFeedVersion()` after the `UPDATE items SET blurhash = ?, ...` exec, before the 204 response",
-        "Bumps are unconditional within the `if (newItems.length > 0)` guard for the insert path",
-        "Typecheck passes",
-        "Lint passes"
+        "Add `POST /api/billing/webhook` route in `src/server/index.ts`, declared *before* any JSON-parsing middleware so the raw body is available",
+        "Read the raw body via `c.req.raw.text()` and verify with `stripe.webhooks.constructEvent(body, sig, env.STRIPE_WEBHOOK_SECRET)`",
+        "Add the route to `isCsrfExemptPath` and bypass session lookup",
+        "Signature failures return 400 with no body; missing `Stripe-Signature` header returns 400; successful verification returns 200 (handler body added in a later story is a no-op for now)",
+        "Add `STRIPE_WEBHOOK_SECRET` to `.dev.vars.example` and document as a required wrangler secret in `README.md`",
+        "Regression test: valid signed event returns 200; tampered body returns 400; missing signature header returns 400",
+        "Typecheck and lint pass"
       ],
       "priority": 15,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-016",
-      "title": "Add /internal/feed-version and /internal/lazy-html-data DO endpoints",
-      "description": "As a developer, I need two internal endpoints on the DO so the worker can read the current `feed_version` cheaply and fetch the version + first-page items in one round-trip on cache miss.",
+      "title": "Implement webhook event routing and entitlement cache invalidation",
+      "description": "As a paying user whose subscription is cancelled, refunded, or disputed, I want my entitlement to flip within seconds so paid features stop the moment Stripe says I have stopped paying.",
       "acceptanceCriteria": [
-        "`GET /internal/feed-version` returns `{ version: number }` JSON via `c.json()`, value from `this.getFeedVersion()`",
-        "`GET /internal/lazy-html-data` returns `{ version: number, items: Item[] }` JSON in a single response (no torn read)",
-        "`/internal/lazy-html-data` reads version via `getFeedVersion()` first, then queries items with the existing `ITEM_COLUMNS` constant and the same join shape used by the existing `/items` handler",
-        "Items query uses `ORDER BY items.pub_date DESC, items.id DESC LIMIT 50`",
-        "Both endpoints registered next to the existing `/internal/blurhash/items/:id` route in the DO Hono app",
-        "Typecheck passes",
-        "Lint passes"
+        "Create `src/server/billing/webhook.ts` exporting `handleStripeEvent(event, env, c): Promise<void>`",
+        "Handler routes: `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`, `charge.dispute.created`, `charge.refunded`, `payment_method.attached`, `payment_method.detached`",
+        "Each routed event resolves the DID via `getDidForStripeCustomer` (US-014) and calls `SESSIONS.delete(billingCacheKey(did))`",
+        "Unknown customer id returns 200 (so Stripe does not retry) and logs at warn level via `reportError`",
+        "`invoice.payment_failed` additionally triggers `sendPaymentFailed` mail, subject to existing dedupe rules in `src/server/email.ts`",
+        "After cache delete, the next `requireEntitlement` call refetches from Autumn and returns the current state",
+        "Regression test: simulated `customer.subscription.deleted` removes the cache entry; subsequent `requireEntitlement` denies access",
+        "Regression test: webhook with unknown customer id returns 200 with no `SESSIONS.delete` call",
+        "Typecheck and lint pass"
       ],
       "priority": 16,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-017",
-      "title": "Add lazy-html generator with safe JSON bootstrap injection",
-      "description": "As a developer, I need a pure HTML generator module with cache-key, JSON serializer, and shell-injection helpers, plus tests, so the lazy-html handler can be built on a fully unit-tested foundation.",
+      "title": "Add webhook event de-dup via KV",
+      "description": "As the webhook handler, I need to ignore Stripe retries so duplicate events do not double-process cache invalidation or mail.",
       "acceptanceCriteria": [
-        "Create `src/server/lazy-html.ts` exporting `buildLazyHtmlCacheKey(did, version)`, `serializeInitialFeed(payload)`, `injectInitialFeed(html, payload)`, and `InitialFeedPayload` interface",
-        "`buildLazyHtmlCacheKey` returns `html:${did}:${version}` (deterministic, version-keyed)",
-        "`serializeInitialFeed` returns `JSON.stringify(payload).replace(/</g, '\\\\u003c')` so `</script>` cannot break out",
-        "`injectInitialFeed` inserts `<script id=\"initial-feed\" type=\"application/json\">{json}</script>` before `</head>`; returns input unchanged when `</head>` is absent",
-        "`InitialFeedPayload` has `version:number`, `items:Item[]`, `has_more:boolean`",
-        "Create `test/lazy-html.ts` with tapzero tests covering: cache-key determinism + version-keying, serialize round-trip via JSON.parse, `<` escaping prevents script-tag breakout, injectInitialFeed inserts a parseable bootstrap before `</head>`, idempotent when `</head>` missing",
-        "Add `test:lazy-html` script to `package.json` using `esbuild ./test/lazy-html.ts --bundle | tapout`",
-        "`npm run test:lazy-html` passes (5 tests)",
-        "Typecheck passes",
-        "Lint passes",
-        "Tests parse JSON out of the injected tag rather than asserting on raw HTML text shapes (per project test-brittleness guidance)"
+        "Before routing, the handler checks KV for key `stripe-event:<event.id>`; if present, returns 200 and skips side effects",
+        "After successful event handling, the handler writes `stripe-event:<event.id>` with a 7-day TTL as the *last* step",
+        "Mid-handler failures do not poison the dedupe set (no write on error path)",
+        "Regression test: same `event.id` posted twice → second response is 200 with no second `SESSIONS.delete` call",
+        "Regression test: failure during handling does not write the dedupe key, so a retry can succeed",
+        "Typecheck and lint pass"
       ],
       "priority": 17,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-018",
-      "title": "Provision HTML_KV namespace binding in wrangler config",
-      "description": "As a developer, I need an `HTML_KV` Workers KV namespace bound to the worker so the lazy-html handler can cache rendered shells per (did, version).",
+      "title": "Add verified_email storage to per-user DO",
+      "description": "As the email-verification flow, I need server-side storage for the verified email so the address is anchored to the DID and never client-writable.",
       "acceptanceCriteria": [
-        "`HTML_KV` entry added to `kv_namespaces` array in `wrangler.jsonc` next to `BLURHASH_KV`",
-        "Both `id` and `preview_id` populated with values from `npx wrangler kv namespace create HTML_KV` and `--preview`",
-        "`worker-configuration.d.ts` regenerated via `npx wrangler types` (or hand-edited) so `Env` includes `HTML_KV: KVNamespace`",
-        "Typecheck passes",
-        "Lint passes"
+        "Add a `verified_email` column to the per-user DO profile table (or a small `verified_emails` table keyed by DID — pick one and document)",
+        "Add a DO endpoint or method `setVerifiedEmail(email)` writable only from the server worker and `getVerifiedEmail(): string | null` readable likewise",
+        "Schema migration applied at DO initialization; no backfill needed",
+        "Storage is per-DID and isolated by the existing per-user DO boundary",
+        "Regression test: `setVerifiedEmail` then `getVerifiedEmail` round-trips the value; default before set is null",
+        "Typecheck and lint pass"
       ],
       "priority": 18,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-019",
-      "title": "Add lazy-html handler with KV+DO cache lookup",
-      "description": "As a developer, I need a handler module that reads the DO's current `feed_version`, looks up `HTML_KV` for a cached shell, and on miss fetches first-page data + the static shell, injects the bootstrap, writes to KV, and returns the body.",
+      "title": "Add server endpoints for sending and confirming email verification codes",
+      "description": "As a user without a verified email on file, I want to receive a verification code by email and confirm it so I can proceed to checkout.",
       "acceptanceCriteria": [
-        "Create `src/server/lazy-html-handler.ts` exporting `handleLazyHtmlRequest(input)` and `LazyHtmlInput` interface",
-        "`LazyHtmlInput` has `did`, `kv`, `doStub`, `assets`, `request` fields with appropriate types",
-        "Non-HTML / non-GET requests bypass to `assets.fetch(request)` (`accept` header check)",
-        "On HTML GET: fetch `/internal/feed-version` from `doStub`; on non-OK fall through to `assets.fetch`",
-        "Build cache key via `buildLazyHtmlCacheKey(did, version)`; on KV hit return body with `content-type: text/html;charset=utf-8` and skip the data endpoint and shell fetch",
-        "On KV miss: fetch `/internal/lazy-html-data`, fetch `/index.html` via `assets.fetch`, inject payload via `injectInitialFeed`, store in KV with 30-day `expirationTtl`, return body",
-        "Payload `has_more` set to `data.items.length >= 50`",
-        "Create `test/lazy-html-handler.ts` with tapzero tests covering: cache miss writes correct key + injects bootstrap, cache hit returns body verbatim and does NOT call data endpoint or put, version bump invalidates (new key written, data endpoint called), non-HTML accept bypasses lazy logic",
-        "Tests use minimal KV/DO/ASSETS stubs and assert on observable side-effects (KV calls, DO fetch list) rather than raw HTML text shape",
-        "Add `test:lazy-html-handler` script to `package.json`",
-        "`npm run test:lazy-html-handler` passes (4 tests)",
-        "Typecheck passes",
-        "Lint passes"
+        "Add `POST /api/billing/verify-email/start` which accepts `{ email }`, generates a 6-digit code, stores `verify-email:<did>` → `{ codeHash, email, expiresAt }` in KV with a 10-minute TTL, and sends the code via Resend",
+        "Add `POST /api/billing/verify-email/confirm` which accepts `{ code }`, compares against the KV entry, and on success calls the DO `setVerifiedEmail` and deletes the KV entry",
+        "Codes are stored hashed (`sha256(code)`) — never plaintext",
+        "Both endpoints are CSRF-protected and session-authenticated",
+        "Both endpoints are rate-limited per DID using the middleware from US-005 (5/min)",
+        "Codes expire after 10 minutes; expired codes return a generic 400",
+        "Wrong code returns 400; repeated wrong attempts (>= 5) invalidate the code",
+        "Regression test: start → confirm with correct code persists the verified email; wrong code does not; expired code does not",
+        "Typecheck and lint pass"
       ],
       "priority": 19,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-020",
-      "title": "Wire lazy-html handler into worker route table",
-      "description": "As a developer, I need the worker's catch-all route to consult the lazy-html handler for authenticated HTML GETs so signed-in users get the embedded bootstrap and anonymous users still get the bare static shell.",
+      "title": "Add client UI for the email verification flow",
+      "description": "As a user starting checkout without a verified email, I want a clear in-app flow to enter my email and confirm the code so I can complete the purchase.",
       "acceptanceCriteria": [
-        "Import `handleLazyHtmlRequest` at top of `src/server/index.ts`",
-        "Replace catch-all `app.all('*', ...)` (~lines 1465-1472) with logic that: returns `c.notFound()` if no `ASSETS`, reads `session?.did`, and if `did && c.env.HTML_KV && c.env.USER_DO` calls `handleLazyHtmlRequest` with `getUserDO(c.env, did)` as `doStub`",
-        "Anonymous requests still fall through to `c.env.ASSETS.fetch(c.req.raw)` (no DO call)",
-        "Reuse the existing helper for resolving the user DO stub (e.g. `getUserDO`) — confirm exact name/import",
-        "Non-HTML asset requests (`.js`, `.css`, `.png`) still served by ASSETS via the handler's internal `wantsHtml` guard",
-        "Smoke test: authenticated `curl -H 'cookie: session=...' -H 'accept: text/html' /` response contains `<script id=\"initial-feed\" type=\"application/json\">` with feed JSON",
-        "Smoke test: unauthenticated `curl -H 'accept: text/html' /` returns shell without the bootstrap script",
-        "Typecheck passes",
-        "Lint passes"
+        "Add a `<VerifyEmailModal>` (or route component) that presents two steps: enter email (calls `/api/billing/verify-email/start`) and enter code (calls `/api/billing/verify-email/confirm`)",
+        "Built on `@substrate-system/dialog`, consistent with the existing payment-method modal",
+        "State managed via `@preact/signals`; sequential signal updates use `batch()`",
+        "Errors from the start/confirm endpoints are surfaced inline; rate-limit 429 shows a 'try again soon' message",
+        "On successful confirmation, the modal closes and the checkout call is retried automatically",
+        "Lines stay within 80 columns; uses existing CSS variables (no new color tokens)",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: end-to-end flow from checkout start → verify-email modal → enter code → return to checkout works without a full page reload"
       ],
       "priority": 20,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-021",
-      "title": "Consume window.__INITIAL_FEED__ on first paint in client state",
-      "description": "As a user, I want the first feed paint to render synchronously from the embedded bootstrap so blurhash placeholders appear before the JS bundle finishes its first /api/items round-trip.",
+      "title": "Block /api/billing/checkout when no verified email; remove client-supplied email from body",
+      "description": "As a logged-in attacker, I must not be able to route checkout mail to an arbitrary recipient by passing a chosen `email` in the request body.",
       "acceptanceCriteria": [
-        "Create `src/client/initial-feed.ts` exporting `consumeInitialFeed()`, `readInitialFeedFromDom()`, `_resetConsumedForTests()`, and `InitialFeedPayload` interface (with `Window` augmentation for `__INITIAL_FEED__`)",
-        "`readInitialFeedFromDom` parses `#initial-feed` script `textContent` as JSON; returns null if missing or unparseable",
-        "`consumeInitialFeed` returns the global once (deleting it after read) then falls through to DOM; subsequent calls return null (module-level `consumed` flag)",
-        "Create `test/initial-feed.ts` with tapzero tests covering: DOM read parses payload, returns null when absent, global is read-and-cleared, falls through to DOM when global missing — using `_resetConsumedForTests()` between cases",
-        "Add `test:initial-feed` script to `package.json`",
-        "`npm run test:initial-feed` passes (4 tests)",
-        "In `src/client/state.ts` `State.loadItems` (~lines 1491-1515): call `consumeInitialFeed()` first; if it returns a payload with items, set `state.items`, `state.itemsTotal`, `state.itemsLoading=false` inside `batch()` from `@preact/signals` and return without the API call",
-        "Existing API-fetch path preserved as fallback (when bootstrap absent or empty)",
-        "`recomputeCacheStatus(state).catch(() => {})` still called on the bootstrap path",
-        "Lines stay within 80 columns",
-        "Use the existing TypeScript style (no space between colon and type annotation)",
-        "Typecheck passes",
-        "Lint passes",
-        "Verify in browser using dev-browser skill: throttle network, hard-reload `/` while signed in — blurhash placeholders for first-page items paint before the JS bundle loads"
+        "`/api/billing/checkout` (`src/server/index.ts:1252-1336`) no longer reads or trusts `email` from the request body",
+        "Handler calls DO `getVerifiedEmail()`; if null, returns a structured response (e.g. `{ code: 'EMAIL_VERIFICATION_REQUIRED' }`) that the client uses to open the verify-email modal",
+        "If a verified email is present, it is used as the Autumn customer email and as the mail destination",
+        "No code path stores a client-supplied email on the Autumn customer record",
+        "Regression test: POST `/api/billing/checkout` with `{ email: 'attacker@example.com' }` does not result in any outbound mail to `attacker@example.com`",
+        "Regression test: a DID without a verified email cannot reach Stripe checkout — the response routes the user to verification instead",
+        "Typecheck and lint pass"
       ],
       "priority": 21,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-022",
-      "title": "Register lazy-html and initial-feed test scripts in npm test",
-      "description": "As a developer, I need the three new test scripts wired into the all-tests runner so `npm test` covers them in CI and locally.",
+      "title": "Add aria-labelledby to payment-method modal",
+      "description": "As a screen-reader user, I want the payment-method dialog to announce its title when it opens.",
       "acceptanceCriteria": [
-        "`test/run-all-tests.mjs` lists `test:lazy-html`, `test:lazy-html-handler`, and `test:initial-feed` alongside the existing test scripts, in the same style/place",
-        "`npm test` runs all three new suites and they pass",
-        "Typecheck passes",
-        "Lint passes"
+        "Add `aria-labelledby=\"payment-method-modal-title\"` (or use the existing `TITLE_ID` constant at line 51) to the `<modal-window>` element at `src/client/components/payment-method-modal.ts:303`",
+        "The element referenced by `TITLE_ID` exists in the rendered tree and contains the dialog title",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: macOS VoiceOver (or equivalent) announces the modal title when the modal opens"
       ],
       "priority": 22,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-023",
-      "title": "End-to-end sanity verification of lazy-html cache pipeline",
-      "description": "As a developer, I want to verify the full pipeline (DO version bump → KV cache → client bootstrap consumption) works in dev so we can ship with confidence.",
+      "title": "Lazy-load PaymentMethodModal in Settings",
+      "description": "As a Settings visitor who never opens the payment-method modal, I want Stripe.js and the dialog component out of my initial JS bundle.",
       "acceptanceCriteria": [
-        "After resetting local state and starting dev, the response body for `/` (signed in) contains a `<script id=\"initial-feed\" type=\"application/json\">` with at least one item carrying a non-empty `blurhash`",
-        "A second hard reload at the same `feed_version` does NOT log a hit on `/internal/lazy-html-data` (cache hit path)",
-        "After ingesting a new item with `og_image_url`, a new `HTML_KV` key `html:{did}:{newVersion}` is written on the next request (verified via `wrangler kv list`)",
-        "Anonymous reload of `/` returns the bare shell with no `id=\"initial-feed\"` script and no DO call",
-        "On Slow 3G throttling, blurhash placeholders for first-page items are visible before the JS bundle finishes loading",
-        "Typecheck passes",
-        "Lint passes",
-        "Verify in browser using dev-browser skill: walk through signed-in cache-miss, signed-in cache-hit, post-ingest invalidation, and anonymous fallthrough"
+        "Remove the static import of `PaymentMethodModal` at `src/client/routes/settings.ts:55-56`",
+        "`handleOpenPaymentMethods` performs a dynamic `import()` of the modal module on first invocation and caches the resolved module for subsequent opens",
+        "The modal element is only rendered into the DOM after the dynamic import resolves (no eager `<PaymentMethodModal />` at `settings.ts:875-878`)",
+        "Build output: a separate chunk exists for the payment-method modal; Stripe.js is not in the Settings entry chunk",
+        "Build assertion or grep against the dist bundle confirms `js.stripe.com` is absent from the Settings entry chunk",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: Settings page network tab shows no Stripe.js request until the modal is opened"
       ],
       "priority": 23,
-      "passes": true,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Add preconnect and dns-prefetch for js.stripe.com",
+      "description": "As a user opening the payment-method modal, I want the TLS handshake to Stripe to start in parallel with the dynamic import.",
+      "acceptanceCriteria": [
+        "Add `<link rel=\"preconnect\" href=\"https://js.stripe.com\" crossorigin>` to `index.html`",
+        "Add `<link rel=\"dns-prefetch\" href=\"https://js.stripe.com\">` as a fallback",
+        "Tags placed in `<head>` before any module scripts",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: network waterfall shows the preconnect/dns-prefetch firing on initial page load, before the modal is opened"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Create ConfirmDialog component on @substrate-system/dialog",
+      "description": "As a developer, I want a reusable confirm-dialog component so destructive flows can replace native `confirm()` consistently.",
+      "acceptanceCriteria": [
+        "Add `src/client/components/confirm-dialog.ts` exporting `<ConfirmDialog>` built on `@substrate-system/dialog`",
+        "Props: `title`, `message`, `confirmLabel`, `cancelLabel`, `onConfirm: () => Promise<void> | void`, `onCancel?: () => void`, `destructive?: boolean`",
+        "Escape key cancels; focus is trapped while open; focus returns to the trigger element on close",
+        "Destructive variant styles the confirm button using existing danger-color CSS variables",
+        "State managed with `@preact/signals`; sequential signal updates use `batch()`",
+        "Lines stay within 80 columns; uses existing CSS variables (no new color tokens)",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: a smoke harness/route renders ConfirmDialog, Escape cancels, confirm runs the callback, focus returns correctly"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Replace confirm()/alert() in settings.ts with ConfirmDialog",
+      "description": "As a user on a screen reader or polished UI, I want billing and destructive flows in Settings to use the in-app dialog instead of native modals.",
+      "acceptanceCriteria": [
+        "Replace each `confirm()` / `alert()` call in `src/client/routes/settings.ts:117, 160, 193, 202, 250, 259, 270, 435` with `<ConfirmDialog>` invocations",
+        "Each replacement preserves the original copy and the original destructive vs informational intent",
+        "No new native `confirm()` or `alert()` calls remain in `settings.ts`",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: each replaced flow opens the in-app dialog; Escape cancels; confirm performs the destructive action"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "Replace confirm()/alert() in sidebar.ts and cache-settings.ts",
+      "description": "As a user, I want the remaining native modals in the sidebar and cache-settings to use the in-app dialog.",
+      "acceptanceCriteria": [
+        "Replace the `confirm()` / `alert()` calls at `src/client/components/sidebar.ts:38` and `src/client/components/cache-settings.ts:108` with `<ConfirmDialog>` invocations",
+        "Preserve original copy and intent",
+        "No native `confirm()` or `alert()` remain in `sidebar.ts` or `cache-settings.ts`",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: removing a feed (sidebar) and clearing the cache (cache-settings) both open the in-app dialog"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-028",
+      "title": "localStorage cleanup: clear rsss_checkout_email on logout and gate DEBUG setItem on diff",
+      "description": "As a user on a shared device, I want my checkout email cleared on logout, and I do not want the DEBUG localStorage value rewritten on every page load.",
+      "acceptanceCriteria": [
+        "Either move `rsss_checkout_email` to `sessionStorage` (`src/client/state.ts:86, 236-258`) or remove the key inside `State.logout()`",
+        "Regression test: after `State.logout()`, the storage key is absent",
+        "Gate `localStorage.setItem('DEBUG', …)` at `src/client/index.ts:34-40` on a current-value diff (read existing, only write if it differs)",
+        "Sequential signal/storage updates inside `State.logout()` use `batch()` where applicable",
+        "Typecheck and lint pass"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-029",
+      "title": "Small a11y polish: label Add-feed input, aria-label page-size select, type=button on logout",
+      "description": "As a screen-reader user, I want the remaining unlabeled inputs and the logout buttons to be properly described and typed.",
+      "acceptanceCriteria": [
+        "Add `<label class=\"visually-hidden\" for=\"new-feed-url\">Feed URL</label>` before the input at `src/client/components/sidebar.ts:123-129`",
+        "Ensure `.visually-hidden` utility class exists in CSS (add to a shared stylesheet only if missing — do not change unrelated CSS)",
+        "Add `aria-label=\"Items per page\"` to the page-size `<select>` at `src/client/routes/feed-reader.ts:225-234`",
+        "Add `type=\"button\"` to the logout buttons at `src/client/components/header.ts:96, 127`",
+        "Typecheck and lint pass",
+        "Verify in browser using dev-browser skill: screen reader announces 'Feed URL' on the sidebar input and 'Items per page' on the select; logout buttons do not submit any ancestor form"
+      ],
+      "priority": 29,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-030",
+      "title": "Add /api/health?deep=1 with KV + DO + Autumn probes",
+      "description": "As an operator running uptime checks, I want a deep health probe that exercises real dependencies so half-broken state shows up before users notice.",
+      "acceptanceCriteria": [
+        "Extend `/api/health` (`src/server/index.ts:475-488`) so that `?deep=1` performs: a KV write+read+delete on a throwaway key; a DO ping (a no-op method on a system DO); an Autumn read-only call",
+        "Each probe is bounded by a 2s budget",
+        "Returns 200 with `{ kv: 'ok', do: 'ok', autumn: 'ok' }` only when all green; otherwise returns 503 with the failing dependency named",
+        "`/api/health` without `?deep=1` keeps its current env-presence-only behavior",
+        "Regression test: with mocked KV failure, `?deep=1` returns 503 naming `kv`; with all green, returns 200",
+        "Typecheck and lint pass"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-031",
+      "title": "Backfill tests for /api/auth/callback",
+      "description": "As a developer, I want regression coverage for the OAuth callback so future changes do not silently break login.",
+      "acceptanceCriteria": [
+        "Add `test/auth-callback.ts` covering: happy path (valid state, valid code → session cookie set, redirect to app)",
+        "Add coverage for state-mismatch (KV state-id missing or different) → error response, no cookie set",
+        "Add coverage for replay (same state used twice) → second attempt rejected",
+        "Mock upstream PDS / DoH where needed via existing test helpers",
+        "`npm test` passes; new tests fail before the fix landed and pass now",
+        "Typecheck and lint pass"
+      ],
+      "priority": 31,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-032",
+      "title": "Backfill tests for the Stripe webhook handler",
+      "description": "As a developer, I want regression coverage for webhook signature verification, dedupe, and entitlement invalidation so the highest-risk handler stays correct.",
+      "acceptanceCriteria": [
+        "Add `test/billing-webhook.ts` covering: valid signed event for `customer.subscription.deleted` invalidates the entitlement cache",
+        "Tampered body returns 400 with no cache delete",
+        "Missing `Stripe-Signature` header returns 400",
+        "Duplicate `event.id` returns 200 on the second call with no second cache delete",
+        "Unknown customer id returns 200 with `reportError` called at warn level",
+        "`npm test` passes",
+        "Typecheck and lint pass"
+      ],
+      "priority": 32,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-033",
+      "title": "Backfill tests for /api/billing/checkout/return live path",
+      "description": "As a developer, I want coverage for the live checkout-return code path so end-to-end checkout cannot regress silently.",
+      "acceptanceCriteria": [
+        "Add `test/billing-checkout-return.ts` covering: successful return → entitlement cache populated, customer-id index written",
+        "Cancelled return → no entitlement granted, appropriate response",
+        "Tampered session_id → request rejected",
+        "Mocks for Stripe and Autumn use existing fixture patterns",
+        "`npm test` passes",
+        "Typecheck and lint pass"
+      ],
+      "priority": 33,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-034",
+      "title": "Backfill tests for requireAdmin and CSRF middleware",
+      "description": "As a developer, I want explicit coverage for the admin gate and CSRF helpers so a regression cannot quietly open up a privilege or origin check.",
+      "acceptanceCriteria": [
+        "Add `test/require-admin.ts` covering: admin DID → allowed; non-admin DID → 403; missing session → 401",
+        "Add `test/csrf-middleware.ts` covering `isCrossOriginStateChange` (positive + negative cases) and `hasValidCsrfToken` (valid token, expired token, missing token, mismatched token)",
+        "`npm test` passes",
+        "Typecheck and lint pass"
+      ],
+      "priority": 34,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-035",
+      "title": "Backfill tests for Resend retry/dedupe",
+      "description": "As a developer, I want regression coverage for the mail retry and dedupe paths so transient Resend failures and duplicate sends cannot regress unnoticed.",
+      "acceptanceCriteria": [
+        "Add `test/email-retry.ts` covering: transient 5xx from Resend triggers retry; permanent 4xx does not retry; success path emits a single call",
+        "Add `test/email-dedupe.ts` covering: duplicate `sendPaymentFailed` for the same DID within the dedupe window is suppressed; outside the window it resends",
+        "`npm test` passes",
+        "Typecheck and lint pass"
+      ],
+      "priority": 35,
+      "passes": false,
       "notes": ""
     }
   ]
