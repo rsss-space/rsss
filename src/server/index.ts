@@ -577,45 +577,86 @@ app.get('/api/me', (c) => {
     })
 })
 
+const authLoginIpRateLimit = createRateLimitMiddleware<Env, Variables>({
+    bucketSize: 10,
+    windowSeconds: 60,
+    prefix: 'edge:auth-login-ip',
+    key: (c) => {
+        const ip = c.req.header('cf-connecting-ip')?.trim()
+        return ip ? `ip:${ip}` : null
+    }
+})
+
+async function authLoginHandleKey (c:Context<{
+    Bindings:Env;
+    Variables:Variables
+}>):Promise<string|null> {
+    try {
+        const body = await c.req.raw.clone().json() as {
+            handle?:unknown;
+        }
+        if (typeof body.handle !== 'string') return null
+
+        const handle = body.handle.trim().toLowerCase()
+        return handle ? `handle:${handle}` : null
+    } catch {
+        return null
+    }
+}
+
+const authLoginHandleRateLimit = createRateLimitMiddleware<Env, Variables>({
+    bucketSize: 10,
+    windowSeconds: 60,
+    prefix: 'edge:auth-login-handle',
+    key: authLoginHandleKey
+})
+
 /**
  * Start OAuth login flow
  */
-app.post('/api/auth/login', async (c) => {
-    try {
-        const body = await c.req.json<{ handle: string }>()
+app.post(
+    '/api/auth/login',
+    authLoginIpRateLimit,
+    authLoginHandleRateLimit,
+    async (c) => {
+        try {
+            const body = await c.req.json<{ handle: string }>()
 
-        if (!body.handle) {
-            return c.json({ error: 'Handle is required' }, 400)
+            if (!body.handle) {
+                return c.json({ error: 'Handle is required' }, 400)
+            }
+
+            const { clientId, redirectUri } = resolveOAuthClient(
+                c.req.url,
+                c.env.OAUTH_CLIENT_ID
+            )
+
+            const { authUrl, state } = await startOAuthFlow(
+                body.handle,
+                clientId,
+                redirectUri,
+                '/'
+            )
+
+            // Store state in KV with 10 minute expiry
+            const stateKey = `oauth:${state.nonce}`
+            await c.env.SESSIONS.put(stateKey, JSON.stringify(state), {
+                expirationTtl: 600
+            })
+
+            return c.json({ authUrl, state: state.nonce })
+        } catch (err) {
+            reportError(err, 'auth', {
+                route: '/api/auth/login'
+            })
+            return c.json({
+                error: err instanceof Error ?
+                    err.message :
+                    'Failed to start OAuth'
+            }, 500)
         }
-
-        const { clientId, redirectUri } = resolveOAuthClient(
-            c.req.url,
-            c.env.OAUTH_CLIENT_ID
-        )
-
-        const { authUrl, state } = await startOAuthFlow(
-            body.handle,
-            clientId,
-            redirectUri,
-            '/'
-        )
-
-        // Store state in KV with 10 minute expiry
-        const stateKey = `oauth:${state.nonce}`
-        await c.env.SESSIONS.put(stateKey, JSON.stringify(state), {
-            expirationTtl: 600
-        })
-
-        return c.json({ authUrl, state: state.nonce })
-    } catch (err) {
-        reportError(err, 'auth', {
-            route: '/api/auth/login'
-        })
-        return c.json({
-            error: err instanceof Error ? err.message : 'Failed to start OAuth'
-        }, 500)
     }
-})
+)
 
 /**
  * OAuth callback -- API endpoint.

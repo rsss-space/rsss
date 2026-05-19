@@ -6,6 +6,10 @@
   `SESSIONS` KV with `expirationTtl` equal to the configured window and
   returns generic `429 { error: 'rate_limited' }` responses with
   `Retry-After`.
+- Unauthenticated request-body rate limits should derive keys from
+  `c.req.raw.clone().json()` so middleware can inspect input without
+  consuming the body before the route handler. `/api/auth/login` applies
+  this pattern for its normalized per-handle bucket.
 - Server-side caught errors that should reach operations use
   `reportError(err, area, context)` from
   `src/server/lib/report-error.ts`. The helper sends Sentry
@@ -4686,4 +4690,22 @@ Thread: https://ampcode.com/threads/unknown
     helpers instead of importing the real SDK.
   - New focused npm test scripts should be added to `run-all-tests.mjs`
     and guarded by `run-all-coverage.mjs` so `npm test` cannot skip them.
+---
+
+## 2026-05-18 23:07 PDT - US-006
+Thread: https://ampcode.com/threads/unknown
+- What was implemented: Added stacked unauthenticated rate limits to
+  `/api/auth/login`: a 10/minute per-IP bucket keyed from
+  `cf-connecting-ip`, and a 10/minute per-handle bucket keyed from the
+  trimmed, lowercased request handle.
+- Files changed:
+  - `src/server/index.ts`
+  - `test/rate-limit.ts`
+  - `specs/prd.json`
+  - `progress.log`
+- **Learnings for future iterations:**
+  - Middleware that needs JSON body input before the route handler can use
+    `c.req.raw.clone().json()` to avoid consuming the request body.
+  - Auth login route tests can stub the OAuth discovery fetch chain and use
+    the real worker app to verify middleware order before OAuth starts.
 ---
