@@ -74,20 +74,6 @@ function createFeedSql () {
     }
 }
 
-function nextTask ():Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, 0))
-}
-
-async function waitFor (
-    predicate:() => boolean,
-    maxTurns = 25
-):Promise<void> {
-    for (let i = 0; i < maxTurns; i++) {
-        if (predicate()) return
-        await nextTask()
-    }
-}
-
 function createStorageStub () {
     let alarm:number|null = null
     return {

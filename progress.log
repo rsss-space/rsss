@@ -127,6 +127,20 @@
   markup gives first-page thumbnails a paintable HTML surface before the
   bundle finishes loading.
 
+## 2026-05-18 22:28 PDT - US-001
+Thread: https://ampcode.com/threads/unknown
+- What was implemented: Fixed the staging lint failure in the feed-create
+  test by removing the unused async wait helper.
+- Files changed:
+  - `test/feed-create.ts`
+  - `specs/prd.json`
+  - `progress.log`
+- **Learnings for future iterations:**
+  - The feed-create test is included through `test/index.ts`, but it can be
+    run directly with an esbuild Node bundle and the Cloudflare/Sentry test
+    aliases for focused verification.
+---
+
 ## 2026-05-09 22:41 PDT - US-023
 Thread: https://ampcode.com/threads/unknown
 - What was implemented: Completed end-to-end lazy HTML pipeline sanity
