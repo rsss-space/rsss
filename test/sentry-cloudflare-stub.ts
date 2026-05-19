@@ -30,7 +30,28 @@ export function sentryPagesPlugin (_optionsCallback:unknown):unknown {
     return () => undefined
 }
 
-export function captureException (_err:unknown):void {}
+export interface CapturedException {
+    err:unknown;
+    options?:unknown;
+}
+
+const capturedExceptions:CapturedException[] = []
+
+export function captureException (
+    err:unknown,
+    options?:unknown
+):void {
+    capturedExceptions.push({ err, options })
+}
+
+export function getCapturedExceptions ():CapturedException[] {
+    return capturedExceptions
+}
+
+export function resetCapturedExceptions ():void {
+    capturedExceptions.length = 0
+}
+
 export function captureMessage (_msg:unknown):void {}
 export function setUser (_user:unknown):void {}
 export function setTag (_key:string, _value:unknown):void {}

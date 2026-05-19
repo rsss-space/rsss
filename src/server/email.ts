@@ -14,6 +14,7 @@
  * instead of calling Resend.
  */
 import { Resend } from 'resend'
+import { reportError } from './lib/report-error.js'
 
 export interface EmailEnv {
     RESEND_API_KEY?:string;
@@ -157,12 +158,12 @@ async function sendOnce (
                 expirationTtl: EMAIL_DEDUPE_TTL_SECONDS
             }))
             .catch(retryErr => {
-                console.error('Resend retry failed:', {
+                reportError(retryErr, 'email', {
+                    operation: 'resendRetry',
                     did,
                     planId,
                     event,
-                    to: payload.to,
-                    error: retryErr
+                    to: payload.to
                 })
             })
 

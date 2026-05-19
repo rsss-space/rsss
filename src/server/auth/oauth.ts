@@ -1,6 +1,7 @@
 /**
  * Bluesky AT Protocol OAuth implementation for Cloudflare Workers
  */
+import { reportError } from '../lib/report-error.js'
 
 // DPoP key pair used during the PAR + token exchange. The pair is
 // discarded once the exchange completes because we never call the
@@ -391,7 +392,14 @@ export async function startOAuthFlow (
 
         // Log PAR failure for debugging
         const parError = await parResponse.text()
-        console.error('PAR request failed:', parError)
+        reportError(
+            new Error('PAR request failed'),
+            'auth',
+            {
+                status: parResponse.status,
+                body: parError
+            }
+        )
     }
 
     // Fall back to regular authorization URL (may not work with Bluesky)

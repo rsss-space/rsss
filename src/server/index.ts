@@ -46,6 +46,7 @@ import {
 import { handleBlurhashQueueBatch } from './blurhash-consumer.js'
 import { handleLazyHtmlRequest } from './lazy-html-handler.js'
 import { shouldSkipLazyHtml } from './lazy-html.js'
+import { reportError } from './lib/report-error.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
@@ -604,7 +605,9 @@ app.post('/api/auth/login', async (c) => {
 
         return c.json({ authUrl, state: state.nonce })
     } catch (err) {
-        console.error('OAuth start error:', err)
+        reportError(err, 'auth', {
+            route: '/api/auth/login'
+        })
         return c.json({
             error: err instanceof Error ? err.message : 'Failed to start OAuth'
         }, 500)
@@ -655,9 +658,10 @@ app.post('/api/auth/callback', async (c) => {
         )
 
         if (!storedStateJson) {
-            console.error(
-                'OAuth state not found in KV:',
-                stateKey
+            reportError(
+                new Error('OAuth state not found in KV'),
+                'auth',
+                { stateKey }
             )
             return c.json({
                 error: 'Invalid or expired OAuth state'
@@ -718,7 +722,9 @@ app.post('/api/auth/callback', async (c) => {
             returnTo: storedState.returnTo || '/'
         })
     } catch (err) {
-        console.error('OAuth callback error:', err)
+        reportError(err, 'auth', {
+            route: '/api/auth/callback'
+        })
         return c.json({
             error: err instanceof Error ?
                 err.message :
@@ -777,7 +783,9 @@ const requireEntitlement = async (c:Context<{
             return c.json({ error: 'Payment required' }, 402)
         }
     } catch (err) {
-        console.error('data entitlement error:', err)
+        reportError(err, 'billing', {
+            operation: 'requireEntitlement'
+        })
         return c.json({
             error: 'billing_unavailable'
         }, 503)
@@ -922,7 +930,9 @@ app.get('/api/billing/status', requireAuth, async (c) => {
             stripePublishableKey: getStripePublishableKey(c.env)
         })
     } catch (err) {
-        console.error('billing/status error:', err)
+        reportError(err, 'billing', {
+            route: '/api/billing/status'
+        })
         return c.json({
             error: 'billing_unavailable'
         }, 503)
@@ -944,7 +954,9 @@ app.get(
             )
             return c.json(payload)
         } catch (err) {
-            console.error('billing/payment-methods error:', err)
+            reportError(err, 'billing', {
+                route: '/api/billing/payment-methods'
+            })
             return c.json({ error: 'stripe_error' }, 502)
         }
     }
@@ -997,10 +1009,10 @@ app.delete(
             )
             return c.json(payload)
         } catch (err) {
-            console.error(
-                'billing/payment-methods DELETE error:',
-                err
-            )
+            reportError(err, 'billing', {
+                route: '/api/billing/payment-methods/:id',
+                method: 'DELETE'
+            })
             return c.json({ error: 'stripe_error' }, 502)
         }
     }
@@ -1020,7 +1032,10 @@ app.post(
         try {
             customerId = await getStripeCustomerId(c.env, session.did)
         } catch (err) {
-            console.error('default lookup error:', err)
+            reportError(err, 'billing', {
+                route: '/api/billing/payment-methods/:id/default',
+                step: 'getStripeCustomerId'
+            })
             return c.json({ error: 'stripe_error' }, 502)
         }
 
@@ -1037,10 +1052,10 @@ app.post(
                     error: 'payment_method_not_found'
                 }, 404)
             }
-            console.error(
-                'customers.update default error:',
-                err
-            )
+            reportError(err, 'billing', {
+                route: '/api/billing/payment-methods/:id/default',
+                step: 'customers.update'
+            })
             return c.json({ error: 'stripe_error' }, 502)
         }
 
@@ -1064,10 +1079,10 @@ app.post(
                 subscriptionDefaultUpdated = true
             }
         } catch (err) {
-            console.error(
-                'subscriptions.update default error:',
-                err
-            )
+            reportError(err, 'billing', {
+                route: '/api/billing/payment-methods/:id/default',
+                step: 'subscriptions.update'
+            })
             // Partial failure: customer updated, subscription not.
             // Return 502 with both states so the client can render
             // a precise inline banner.
@@ -1078,10 +1093,10 @@ app.post(
                     session.did
                 )
             } catch (payloadErr) {
-                console.error(
-                    'listPaymentMethodsPayload error (partial failure):',
-                    payloadErr
-                )
+                reportError(payloadErr, 'billing', {
+                    route: '/api/billing/payment-methods/:id/default',
+                    step: 'listPaymentMethodsPayload.partial'
+                })
                 // If we can't refresh the list in a partial-failure
                 // scenario, return 502 with the states we know,
                 // omitting the methods list.
@@ -1110,10 +1125,10 @@ app.post(
                 session.did
             )
         } catch (err) {
-            console.error(
-                'listPaymentMethodsPayload error (success case):',
-                err
-            )
+            reportError(err, 'billing', {
+                route: '/api/billing/payment-methods/:id/default',
+                step: 'listPaymentMethodsPayload.success'
+            })
             // After customer + subscription updates succeeded,
             // if we can't fetch the canonical list, return 502.
             // Client will refetch on next render.
@@ -1141,7 +1156,9 @@ async function readPendingDeletion (
         }
         return body.pendingDeletion ?? null
     } catch (err) {
-        console.error('readPendingDeletion error:', err)
+        reportError(err, 'account', {
+            operation: 'readPendingDeletion'
+        })
         return null
     }
 }
@@ -1166,7 +1183,9 @@ app.post('/api/account/delete', requireAuth, async (c) => {
                 scheduledFor = periodEnd
             }
         } catch (err) {
-            console.error('getCurrentPeriodEnd error:', err)
+            reportError(err, 'billing', {
+                operation: 'getCurrentPeriodEnd'
+            })
         }
     }
 
@@ -1185,9 +1204,10 @@ app.post('/api/account/delete', requireAuth, async (c) => {
         )
     )
     if (!res.ok) {
-        console.error(
-            'account/delete: DO returned',
-            res.status
+        reportError(
+            new Error('account/delete: DO returned non-ok status'),
+            'account',
+            { status: res.status }
         )
         return c.json({
             error: 'deletion_unavailable'
@@ -1214,7 +1234,9 @@ app.post('/api/account/delete', requireAuth, async (c) => {
             )
         }
     } catch (err) {
-        console.error('account/delete email error:', err)
+        reportError(err, 'email', {
+            route: '/api/account/delete'
+        })
     }
 
     return c.json({ scheduledFor })
@@ -1304,10 +1326,10 @@ app.post('/api/billing/checkout', requireAuth, async (c) => {
                     }
                 )
             } catch (err) {
-                console.error(
-                    'sendSubscriptionStarted (dev) error:',
-                    err
-                )
+                reportError(err, 'email', {
+                    route: '/api/billing/checkout',
+                    mode: 'dev'
+                })
             }
         }
 
@@ -1347,7 +1369,9 @@ app.post('/api/billing/checkout', requireAuth, async (c) => {
             planId
         })
     } catch (err) {
-        console.error('billing/checkout error:', err)
+        reportError(err, 'billing', {
+            route: '/api/billing/checkout'
+        })
         return c.json({
             error: 'billing_unavailable'
         }, 503)
@@ -1451,10 +1475,9 @@ app.post(
                     )
                 }
             } catch (err) {
-                console.error(
-                    'sendSubscriptionStarted error:',
-                    err
-                )
+                reportError(err, 'email', {
+                    route: '/api/billing/checkout/return'
+                })
             }
 
             return c.json({
@@ -1462,10 +1485,9 @@ app.post(
                 planId: verified.planId
             })
         } catch (err) {
-            console.error(
-                'billing/checkout/return error:',
-                err
-            )
+            reportError(err, 'billing', {
+                route: '/api/billing/checkout/return'
+            })
             return c.json({
                 error: 'billing_unavailable'
             }, 503)
@@ -1512,7 +1534,10 @@ app.post(
         try {
             to = await resolveContactEmail(c.env, session.did)
         } catch (err) {
-            console.error('resolveContactEmail error:', err)
+            reportError(err, 'email', {
+                route: '/api/billing/checkout/failed',
+                step: 'resolveContactEmail'
+            })
         }
 
         if (!to) {
@@ -1541,7 +1566,10 @@ app.post(
                 deduped: result.deduped
             })
         } catch (err) {
-            console.error('sendPaymentFailed error:', err)
+            reportError(err, 'email', {
+                route: '/api/billing/checkout/failed',
+                step: 'sendPaymentFailed'
+            })
             return c.json({
                 error: 'email_failed'
             }, 503)
@@ -1571,7 +1599,9 @@ app.post('/api/billing/portal', requireAuth, async (c) => {
         )
         return c.json({ url })
     } catch (err) {
-        console.error('billing/portal error:', err)
+        reportError(err, 'billing', {
+            route: '/api/billing/portal'
+        })
         return c.json({
             error: 'billing_unavailable'
         }, 503)
@@ -1643,7 +1673,9 @@ app.post('/api/billing/cancel', requireAuth, async (c) => {
             currentPeriodEnd: updated.currentPeriodEnd
         })
     } catch (err) {
-        console.error('billing/cancel error:', err)
+        reportError(err, 'billing', {
+            route: '/api/billing/cancel'
+        })
         return c.json({
             error: 'billing_unavailable'
         }, 503)
@@ -1697,7 +1729,9 @@ app.post('/api/billing/resume', requireAuth, async (c) => {
         await writeCachedBilling(c.env, session.did, updated)
         return c.json({ ok: true })
     } catch (err) {
-        console.error('billing/resume error:', err)
+        reportError(err, 'billing', {
+            route: '/api/billing/resume'
+        })
         return c.json({
             error: 'billing_unavailable'
         }, 503)
@@ -1730,10 +1764,9 @@ app.post(
             })
             return c.json({ clientSecret: intent.client_secret })
         } catch (err) {
-            console.error(
-                'billing/payment-methods/setup-intent error:',
-                err
-            )
+            reportError(err, 'billing', {
+                route: '/api/billing/payment-methods/setup-intent'
+            })
             return c.json({ error: 'stripe_error' }, 502)
         }
     }

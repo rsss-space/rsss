@@ -20,7 +20,8 @@ const requiredSuites = [
 const requiredScriptCommands = [
     'test:initial-feed',
     'test:lazy-html',
-    'test:lazy-html-handler'
+    'test:lazy-html-handler',
+    'test:report-error'
 ]
 
 const wasmSuites = [

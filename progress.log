@@ -1,5 +1,12 @@
 ## Codebase Patterns
 
+- Server-side caught errors that should reach operations use
+  `reportError(err, area, context)` from
+  `src/server/lib/report-error.ts`. The helper sends Sentry
+  `tags.area`, attaches optional `extra` context, and preserves a
+  local `console.error` trail. Browser-bundled server tests should alias
+  `@sentry/cloudflare` to `test/sentry-cloudflare-stub.ts` and reset the
+  captured exceptions between assertions.
 - Production and staging deploys are environment-scoped through
   `wrangler.jsonc` `env` blocks. Use `npm run deploy:staging` or
   `npm run deploy:production`; both call `script/deploy.mjs`, which builds
@@ -4628,4 +4635,30 @@ Thread: https://ampcode.com/threads/unknown
     client OPFS shared `SCHEMA_SQL`.
   - Constructor-level DO migration tests can assert idempotent table setup
     by recording `ctx.storage.sql.exec` statements and checking order.
+---
+
+## 2026-05-18 22:51 PDT - US-004
+Thread: https://ampcode.com/threads/unknown
+- What was implemented: Added the shared server `reportError` helper and
+  replaced direct server error logs in the worker, OAuth auth helper, and
+  email retry path with Sentry-backed reporting.
+- Files changed:
+  - `src/server/lib/report-error.ts`
+  - `src/server/index.ts`
+  - `src/server/auth/oauth.ts`
+  - `src/server/email.ts`
+  - `test/report-error.ts`
+  - `test/sentry-cloudflare-stub.ts`
+  - `package.json`
+  - `test/run-report-error.mjs`
+  - `test/run-all-tests.mjs`
+  - `test/run-all-coverage.mjs`
+  - `specs/prd.json`
+  - `progress.log`
+- **Learnings for future iterations:**
+  - Browser-bundled tests that need Sentry assertions should use the
+    existing `@sentry/cloudflare` alias and the stub's captured-exception
+    helpers instead of importing the real SDK.
+  - New focused npm test scripts should be added to `run-all-tests.mjs`
+    and guarded by `run-all-coverage.mjs` so `npm test` cannot skip them.
 ---
