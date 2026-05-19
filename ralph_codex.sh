@@ -6,7 +6,7 @@ MAX_ITERATIONS=${1:-10}
 STALEMATE_THRESHOLD=3
 ITERATION=0
 STALLED_COUNT=0
-REASONING_LEVEL="low" # Start at low
+REASONING_LEVEL="medium" # Start at medium
 
 echo "Starting Ralph Loop with Improved Stall Detection..."
 
