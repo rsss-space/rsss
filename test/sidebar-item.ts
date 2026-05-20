@@ -138,3 +138,95 @@ test(
         }
     }
 )
+
+test('SidebarItem renders an anchor link, not a button', t => {
+    const state = stubState({})
+    const root = mount(state, false)
+    try {
+        const link = root.querySelector('.sidebar-item') as HTMLElement
+        t.ok(link, 'sidebar-item element renders')
+        t.equal(
+            link.tagName,
+            'A',
+            'rendered element is <a>, not <button>'
+        )
+        t.equal(
+            link.getAttribute('href'),
+            '/',
+            'href attribute equals "/"'
+        )
+    } finally {
+        render(null, root)
+        root.remove()
+    }
+})
+
+test('SidebarItem All Items active class reflects showStarredOnly',
+    async t => {
+        const state = stubState({ showStarredOnly: false })
+        const root = mount(state, false)
+        try {
+            const link = (
+                root.querySelector('.sidebar-item') as HTMLElement
+            )
+            t.ok(
+                link.classList.contains('active'),
+                'All Items active when showStarredOnly is false'
+            )
+
+            state.showStarredOnly.value = true
+            await new Promise(resolve => setTimeout(resolve, 0))
+            t.ok(
+                !link.classList.contains('active'),
+                'All Items inactive when showStarredOnly flips to true'
+            )
+        } finally {
+            render(null, root)
+            root.remove()
+        }
+    }
+)
+
+test('SidebarItem Starred active class reflects showStarredOnly',
+    async t => {
+        const state = stubState({ showStarredOnly: true })
+        const root = mount(state, true)
+        try {
+            const link = (
+                root.querySelector('.sidebar-item') as HTMLElement
+            )
+            t.ok(
+                link.classList.contains('active'),
+                'Starred active when showStarredOnly is true'
+            )
+
+            state.showStarredOnly.value = false
+            await new Promise(resolve => setTimeout(resolve, 0))
+            t.ok(
+                !link.classList.contains('active'),
+                'Starred inactive when showStarredOnly flips to false'
+            )
+        } finally {
+            render(null, root)
+            root.remove()
+        }
+    }
+)
+
+test('SidebarItem is not active on feed-specific routes', t => {
+    const state = stubState({
+        showStarredOnly: false,
+        route: '/feed/example.com/feed.rss'
+    })
+    const root = mount(state, false)
+    try {
+        const link = root.querySelector('.sidebar-item') as HTMLElement
+        t.ok(
+            !link.classList.contains('active'),
+            'All Items not active on /feed/* route'
+        )
+    } finally {
+        render(null, root)
+        root.remove()
+    }
+})

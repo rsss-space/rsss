@@ -56,7 +56,8 @@ test(
     async t => {
         const calls:string[] = []
         const fakeState = {
-            route: { value: '/' }
+            route: { value: '/' },
+            viewItemsCache: new Map()
         } as unknown as AppState
 
         const original = {
@@ -115,7 +116,8 @@ test(
         const calls:string[] = []
         const fakeState = {
             initialLoadComplete: { value: false },
-            route: { value: '/' }
+            route: { value: '/' },
+            viewItemsCache: new Map()
         } as unknown as AppState
 
         const original = {

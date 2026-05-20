@@ -278,6 +278,17 @@ export {
     stripProtocol
 } from './routing.js'
 
+export type FilterKey = 'all' | 'starred'
+
+export type ViewItemsCacheEntry = {
+    items:Item[],
+    total:number,
+    limit:number,
+    offset:number
+}
+
+export type ViewItemsCache = Map<FilterKey, ViewItemsCacheEntry>
+
 export type AppState = {
     _setRoute:(route:string) => void,
     route:Signal<string>,
@@ -324,6 +335,7 @@ export type AppState = {
     showStarredOnly:Signal<boolean>,
     pageSize:Signal<number>,
     selectedFeedId:Signal<number|null>,
+    viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
     // Flips true once after the first refreshAfterSync resolves and
     // never flips back. Used to gate the initial-load skeleton; per-
@@ -409,6 +421,7 @@ export function State ():AppState {
         showStarredOnly: signal(false),
         pageSize: signal(DEFAULT_PAGE_SIZE),
         selectedFeedId: signal<number|null>(null),
+        viewItemsCache: new Map() as ViewItemsCache,
         initialLoadComplete: signal<boolean>(false),
         cleanup: () => {},
     }
@@ -719,6 +732,7 @@ function scheduleConvergenceForResolvingFeeds (state:AppState):void {
 State.loadInitialView = async function (
     state:AppState
 ):Promise<void> {
+    state.viewItemsCache.clear()
     const route = state.route.value
 
     try {
@@ -763,6 +777,7 @@ State.loadInitialView = async function (
 State.reconcileAfterRefresh = async function (
     state:AppState
 ):Promise<void> {
+    state.viewItemsCache.clear()
     const route = state.route.value
 
     await Promise.all([
@@ -788,6 +803,38 @@ State.reconcileAfterRefresh = async function (
 // set or as part of resuming sync after a network event -- both of
 // which legitimately want the feeds list re-fetched.
 State.refreshAfterSync = State.loadInitialView
+
+export function currentFilterKey (state:AppState):FilterKey|null {
+    if (state.selectedFeedId.value !== null) return null
+    return state.showStarredOnly.value ? 'starred' : 'all'
+}
+
+// The items array is replaced wholesale, but Preact's keyed
+// reconciliation reuses existing row nodes — required for FR-005.
+export function applyItemsResult (
+    state:AppState,
+    requestKey:FilterKey|null,
+    result:ItemsResponse|null
+):void {
+    if (currentFilterKey(state) !== requestKey) return
+    if (result === null) {
+        state.itemsLoading.value = false
+        return
+    }
+    batch(() => {
+        state.items.value = result.items as Item[]
+        state.itemsTotal.value = result.total
+        state.itemsLoading.value = false
+    })
+    if (requestKey !== null) {
+        state.viewItemsCache.set(requestKey, {
+            items: result.items as Item[],
+            total: result.total,
+            limit: result.limit,
+            offset: result.offset
+        })
+    }
+}
 
 function buildItemOptions (state:AppState):{
     feedId?:number;
@@ -1085,22 +1132,31 @@ State.handleOAuthCallback = async function (
 }
 
 State.showAll = function (state:AppState) {
-    batch(() => {
-        state.showStarredOnly.value = false
-        state.itemsOffset.value = 0
-    })
-
+    applyViewSwitch(state, 'all')
     State.loadItems(state)
 }
 
 State.showStarred = function (state:AppState) {
-    batch(() => {
-        state.showStarredOnly.value = true
-        state.itemsOffset.value = 0
-        State.loadItems(state)
-    })
-
+    applyViewSwitch(state, 'starred')
     State.loadItems(state)
+}
+
+function applyViewSwitch (
+    state:AppState,
+    destKey:FilterKey
+):void {
+    const cached = state.viewItemsCache.get(destKey)
+    batch(() => {
+        state.showStarredOnly.value = (destKey === 'starred')
+        state.itemsOffset.value = cached?.offset ?? 0
+        if (cached) {
+            state.items.value = cached.items
+            state.itemsTotal.value = cached.total
+            state.itemsLoading.value = false
+        } else if (state.items.value.length === 0) {
+            state.itemsLoading.value = true
+        }
+    })
 }
 
 /**
@@ -1910,14 +1966,22 @@ State.refreshFeeds = async function (
 State.loadItems = async function (
     state:AppState
 ):Promise<void> {
-    state.itemsLoading.value = true
+    const requestKey = currentFilterKey(state)
+    const cached = requestKey !== null ?
+        state.viewItemsCache.get(requestKey) :
+        undefined
+    if (cached === undefined && state.items.value.length === 0) {
+        state.itemsLoading.value = true
+    }
 
     const initialFeed = consumeInitialFeed()
     if (initialFeed && initialFeed.items.length > 0) {
-        batch(() => {
-            state.items.value = initialFeed.items as Item[]
-            state.itemsTotal.value = initialFeed.items.length
-            state.itemsLoading.value = false
+        const options = buildItemOptions(state)
+        applyItemsResult(state, requestKey, {
+            items: initialFeed.items as Item[],
+            total: initialFeed.items.length,
+            limit: options.limit ?? DEFAULT_PAGE_SIZE,
+            offset: options.offset ?? 0
         })
         recomputeCacheStatus(state).catch(() => {})
         return
@@ -1933,13 +1997,7 @@ State.loadItems = async function (
         debug('Error loading items:', err)
     }
 
-    batch(() => {
-        if (data) {
-            state.items.value = data.items as Item[]
-            state.itemsTotal.value = data.total
-        }
-        state.itemsLoading.value = false
-    })
+    applyItemsResult(state, requestKey, data)
 
     recomputeCacheStatus(state).catch(() => {})
 }
@@ -1990,6 +2048,7 @@ State.toggleItemRead = async function (
     itemId:number,
     isRead:boolean
 ):Promise<void> {
+    state.viewItemsCache.clear()
     try {
         const adapter = await getAdapter(
             state.user.value?.did
@@ -2026,6 +2085,7 @@ State.toggleItemStarred = async function (
     itemId:number,
     isStarred:boolean
 ):Promise<void> {
+    state.viewItemsCache.clear()
     try {
         const adapter = await getAdapter(
             state.user.value?.did
@@ -2064,6 +2124,7 @@ State.markAllRead = async function (
     state:AppState,
     feedId?:number
 ):Promise<void> {
+    state.viewItemsCache.clear()
     try {
         const adapter = await getAdapter(
             state.user.value?.did
