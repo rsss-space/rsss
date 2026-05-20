@@ -268,7 +268,8 @@ function feedState ():AppState {
         feedSyncStatus,
         displayedFeedSyncStatus,
         feedSyncError: signal<string|null>(null),
-        feedUpdateCounts: signal<Record<string, number>>({})
+        feedUpdateCounts: signal<Record<string, number>>({}),
+        viewItemsCache: new Map()
     } as unknown) as AppState
 }
 

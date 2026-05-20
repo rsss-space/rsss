@@ -94,7 +94,8 @@ function stateForLoadItems ():AppState {
         showUnreadOnly: signal(false),
         showStarredOnly: signal(false),
         pageSize: signal(20),
-        itemsOffset: signal(0)
+        itemsOffset: signal(0),
+        viewItemsCache: new Map()
     } as unknown as AppState
 }
 

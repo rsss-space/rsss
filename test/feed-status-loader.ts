@@ -116,6 +116,7 @@ function buildPartialState ():AppState {
         pageSize: signal(20),
         selectedFeedId: signal<number|null>(null),
         isAuthenticated: signal(true),
+        viewItemsCache: new Map(),
         initialLoadComplete: signal<boolean>(false),
         cleanup: () => {}
     } as unknown as AppState
