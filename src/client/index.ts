@@ -14,8 +14,8 @@ import { ItemSkeleton } from './components/item-skeleton.js'
 import { OAuthCallbackLoader } from './components/oauth-loader.js'
 import '@substrate-system/details-summary'
 import './style.css'
-// import Debug from '@substrate-system/debug'
-// const debug = Debug('rsss:view:index')
+import Debug from '@substrate-system/debug'
+const debug = Debug('rsss:view:index')
 
 const state = State()
 const router = Router(state)
@@ -26,15 +26,13 @@ if (import.meta.hot) {
     })
 }
 
-export const DEFAULT_DEBUG = 'rsss,rsss:*'
-
 /**
  * Debug logging
  */
 if (import.meta.env.DEV || import.meta.env.MODE === 'staging') {
     // @ts-expect-error DEV env
     window.state = state
-    localStorage.setItem('DEBUG', DEFAULT_DEBUG)
+    localStorage.setItem('DEBUG', 'rsss,rsss:*')
 } else {
     localStorage.removeItem('DEBUG')
 }
@@ -65,7 +63,9 @@ export const App:FunctionComponent<{
     }
 
     if (!pageReady.value) {
+        debug('not readyyyyyyyyyyyyyy')
         if (isItemRoute(route.value)) {
+            debug('is item route.........')
             return html`<${ItemSkeleton} state=${state} />`
         }
         if (route.value === '/' || route.value.startsWith('/feed/')) {
