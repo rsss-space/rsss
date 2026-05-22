@@ -41,7 +41,8 @@ export async function getTextBytesTotal (db:Sqlite3Db):Promise<number> {
 
 export async function loadStorageUsage (
     db:Sqlite3Db,
-    feedIds:number[]
+    feedIds:number[],
+    opts?:{ shouldApply?:() => boolean }
 ):Promise<void> {
     const perFeed:Record<number, number> = {}
     for (const feedId of feedIds) {
@@ -51,6 +52,7 @@ export async function loadStorageUsage (
     }
     const textTotal = await getTextBytesTotal(db)
     const imagesTotal = await sumTotal(db)
+    if (opts?.shouldApply && !opts.shouldApply()) return
     batch(() => {
         feedStorageBytes.value = perFeed
         totalStorageBytes.value = textTotal + imagesTotal

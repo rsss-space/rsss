@@ -57,19 +57,30 @@ import { PaymentMethodModal } from
 import './settings.css'
 import '@substrate-system/radio-input/css'
 
+// Per-mount route-generation counter. Each <SettingsRoute> mount bumps
+// `globalSettingsRouteGeneration` and captures its own value into a
+// ref; mount-time async loaders compare against the live counter at
+// apply time and no-op if the user has navigated away (FR-006).
+let globalSettingsRouteGeneration = 0
+
 export const SettingsRoute:FunctionComponent<{
     state:AppState
 }> = function (props) {
     const { state } = props
     const { feeds } = state
     const pendingBootstrapDid = useRef<string|null>(null)
+    const myGen = useRef(0)
 
     useEffect(() => {
+        myGen.current = ++globalSettingsRouteGeneration
+        const onSettings = ():boolean => (
+            myGen.current === globalSettingsRouteGeneration
+        )
         loadLocalFirstSettings()
         isLocalFirstSupported()
         if (state.isAuthenticated.value) {
-            State.loadBillingStatus()
-            State.loadPaymentMethods()
+            State.loadBillingStatus({ shouldApply: onSettings })
+            State.loadPaymentMethods({ shouldApply: onSettings })
         }
     }, [])
 
@@ -80,7 +91,11 @@ export const SettingsRoute:FunctionComponent<{
             null
         if (!db || feeds.value.length === 0) return
         const ids = feeds.value.map(f => f.id)
-        loadFeedPolicies(db, ids).catch(() => {})
+        const onSettings = ():boolean => (
+            myGen.current === globalSettingsRouteGeneration
+        )
+        loadFeedPolicies(db, ids, { shouldApply: onSettings })
+            .catch(() => {})
     }, [feeds.value, syncSubscriptions.value])
 
     useEffect(() => {
@@ -90,7 +105,11 @@ export const SettingsRoute:FunctionComponent<{
             null
         if (!db || feeds.value.length === 0) return
         const ids = feeds.value.map(f => f.id)
-        loadStorageUsage(db, ids).catch(() => {})
+        const onSettings = ():boolean => (
+            myGen.current === globalSettingsRouteGeneration
+        )
+        loadStorageUsage(db, ids, { shouldApply: onSettings })
+            .catch(() => {})
     }, [feeds.value, syncSubscriptions.value])
 
     const [subscriptionPending, setSubscriptionPending] = useState(false)
