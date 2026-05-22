@@ -81,6 +81,11 @@ import {
 import { cacheItemImages } from './db/image-cache.js'
 import { feedPolicies } from './db/feed-cache-policy.js'
 import { consumeInitialFeed, peekInitialFeed } from './initial-feed.js'
+import {
+    scheduleIdle,
+    cancelIdle,
+    type IdleHandle
+} from './util/schedule-idle.js'
 const debug = Debug('rsss:state')
 
 const CHECKOUT_EMAIL_KEY = 'rsss_checkout_email'
@@ -649,8 +654,12 @@ export function State ():AppState {
 
     // Recompute the local-cache-health snapshot when relevant inputs
     // change: paid status, store-content / default cache mode toggles,
-    // or per-feed policy edits. Item changes are handled inline by
-    // loadItems / fetchFullArticle / cacheUncachedItems.
+    // or per-feed policy edits. Defer the recompute to idle time so the
+    // signal-write task (and any paint waiting on it) is not blocked by
+    // the SQLite query and main-thread iteration in computeCacheStatus.
+    // The apply-time recomputeToken guard inside recomputeCacheStatus
+    // still discards stale results.
+    let pendingCacheStatusHandle:IdleHandle|null = null
     effect(() => {
         // Read each signal so the effect subscribes to changes.
         const _deps = [
@@ -663,7 +672,13 @@ export function State ():AppState {
             feedPolicies.value
         ]
         if (_deps.length === 0) return
-        recomputeCacheStatus(state).catch(() => {})
+        if (pendingCacheStatusHandle !== null) {
+            cancelIdle(pendingCacheStatusHandle)
+        }
+        pendingCacheStatusHandle = scheduleIdle(() => {
+            pendingCacheStatusHandle = null
+            recomputeCacheStatus(state).catch(() => {})
+        }, { timeout: 200 })
     })
 
     state.cleanup = () => {
@@ -1268,21 +1283,27 @@ State.devLogin = async function (
  * Called after auth lands and after returning from checkout.
  */
 State.loadBillingStatus = async function (
+    opts?:{ shouldApply?:() => boolean }
 ):Promise<BillingStatus|null> {
     try {
         const res = await api.get('billing/status', {
             throwHttpErrors: false
         })
         if (!res.ok) {
+            if (opts?.shouldApply && !opts.shouldApply()) return null
             setBillingError(`status_${res.status}`)
             return null
         }
         const data = await res.json<BillingStatus>()
-        setBillingStatus(data)
-        setBillingError(null)
+        if (opts?.shouldApply && !opts.shouldApply()) return null
+        batch(() => {
+            setBillingStatus(data)
+            setBillingError(null)
+        })
         return data
     } catch (err) {
         debug('loadBillingStatus error:', err)
+        if (opts?.shouldApply && !opts.shouldApply()) return null
         setBillingError(err instanceof Error ?
             err.message :
             'Failed to load billing status')
@@ -1291,6 +1312,7 @@ State.loadBillingStatus = async function (
 }
 
 State.loadPaymentMethods = async function (
+    opts?:{ shouldApply?:() => boolean }
 ):Promise<void> {
     setPaymentMethodsLoading(true)
     try {
@@ -1302,6 +1324,7 @@ State.loadPaymentMethods = async function (
                 () => ({} as { error?:string })
             )
             const code = body.error || `status_${res.status}`
+            if (opts?.shouldApply && !opts.shouldApply()) return
             batch(() => {
                 setPaymentMethodsError(code)
                 setPaymentMethodsLoading(false)
@@ -1312,6 +1335,7 @@ State.loadPaymentMethods = async function (
             methods:PaymentMethodSummary[];
             defaultId:string|null;
         }>()
+        if (opts?.shouldApply && !opts.shouldApply()) return
         batch(() => {
             setPaymentMethodsState(data.methods, data.defaultId)
             setPaymentMethodsError(null)
@@ -1319,6 +1343,7 @@ State.loadPaymentMethods = async function (
         })
     } catch (err) {
         debug('loadPaymentMethods error:', err)
+        if (opts?.shouldApply && !opts.shouldApply()) return
         batch(() => {
             setPaymentMethodsError(err instanceof Error ?
                 err.message :

@@ -19,6 +19,14 @@ const commands = [
     'node test/isolation-headers-static.mjs',
     'node test/run-all-coverage.mjs',
     'esbuild ./test/tab-coordination.ts --bundle | tapout',
+    'esbuild ./test/schedule-idle.ts --bundle | tapout',
+    'esbuild ./test/settings-nav-instant.ts --bundle | tapout',
+    'esbuild ./test/cache-status-coalesce.ts --bundle | tapout',
+    [
+        'esbuild ./test/settings-stale-async-writes.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
     'esbuild ./test/adapter-factory.ts --bundle | tapout',
     'esbuild ./test/article-detect.ts --bundle | tapout',
     'esbuild ./test/publisher-link.ts --bundle | tapout',

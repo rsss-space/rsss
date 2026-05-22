@@ -35,7 +35,7 @@ Structure. All work in this feature is client-side.
 **Purpose**: Make the new `util/` location exist and add the only new
 file every later task imports.
 
-- [ ] T001 [P] Create the directory `src/client/util/` if it does not
+- [X] T001 [P] Create the directory `src/client/util/` if it does not
       already exist (no other file lives here yet).
 
 ---
@@ -49,7 +49,7 @@ Build it once, with its tests, before any user-story work.
 **Why blocking**: Every other production change in this feature
 imports from `src/client/util/schedule-idle.ts`.
 
-- [ ] T002 Author the `scheduleIdle` / `cancelIdle` helper in
+- [X] T002 Author the `scheduleIdle` / `cancelIdle` helper in
       `src/client/util/schedule-idle.ts`. Export `IdleHandle =
       { kind:'idle'|'timeout'; id:number }`, `ScheduleIdleOptions =
       { timeout?:number }` (default 200), `scheduleIdle(fn, opts?):
@@ -61,7 +61,7 @@ imports from `src/client/util/schedule-idle.ts`.
       `timeout` is ignored on the `setTimeout` fallback. Keep the
       module side-effect-free so test stubs can patch
       `window.requestIdleCallback` before import.
-- [ ] T003 [P] Add `test/schedule-idle.ts` covering: (a)
+- [X] T003 [P] Add `test/schedule-idle.ts` covering: (a)
       `scheduleIdle` returns a `{ kind, id }` token; (b) on a
       simulated `requestIdleCallback` environment, `fn` is called via
       the rIC path with the configured `timeout`; (c) on an
@@ -96,7 +96,7 @@ scheduled callback is queued (INV-1).
 
 ### Tests for User Story 1 (write first, must FAIL before T006)
 
-- [ ] T004 [P] [US1] Add `test/settings-nav-instant.ts`. Construct an
+- [X] T004 [P] [US1] Add `test/settings-nav-instant.ts`. Construct an
       `AppState` in a test environment that stubs the `schedule-idle`
       module so `scheduleIdle` records its `fn` instead of running it.
       Assert: (1) writing each of `feedPolicies`,
@@ -106,7 +106,7 @@ scheduled callback is queued (INV-1).
       after rapid writes; (3) running the captured `fn` once calls
       `recomputeCacheStatus` once. Covers INV-1 and the FR-001 /
       SC-001 / SC-002 contract from the spec.
-- [ ] T005 [P] [US1] Add `test/cache-status-coalesce.ts`. With the
+- [X] T005 [P] [US1] Add `test/cache-status-coalesce.ts`. With the
       same stub from T004, write `feedPolicies.value` three times in
       a row (`batch` or sequential). Assert: only one
       `IdleHandle` is outstanding at any moment (i.e. each new write
@@ -116,7 +116,7 @@ scheduled callback is queued (INV-1).
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Rewrite the effect at `src/client/state.ts:654-667`
+- [X] T006 [US1] Rewrite the effect at `src/client/state.ts:654-667`
       per `contracts/settings-nav-contract.md` §2. Import
       `scheduleIdle` and `cancelIdle` (plus the `IdleHandle` type)
       from `../util/schedule-idle`. Add a closure-local
@@ -132,7 +132,7 @@ scheduled callback is queued (INV-1).
       `computeCacheStatus`. Lines ≤ 80 cols. Keep TypeScript style
       from the user's global instructions (no space between colon and
       type, etc.).
-- [ ] T007 [US1] Run `npm test -- test/settings-nav-instant.ts
+- [X] T007 [US1] Run `npm test -- test/settings-nav-instant.ts
       test/cache-status-coalesce.ts` and confirm both pass. Then run
       `npm test && npm run lint` to confirm no regressions in any
       other suite (e.g. `cache-status-state.ts` tests still pass — the
@@ -167,7 +167,7 @@ that resolves **after** `state.route.value` is flipped off
 
 ### Tests for User Story 2 (write first, must FAIL before T012)
 
-- [ ] T008 [P] [US2] Add `test/settings-stale-async-writes.ts`.
+- [X] T008 [P] [US2] Add `test/settings-stale-async-writes.ts`.
       Cover four loaders in one file (one describe-block each):
       `State.loadBillingStatus`, `State.loadPaymentMethods`,
       `loadFeedPolicies` (from `src/client/db/feed-cache-policy.ts`),
@@ -182,7 +182,7 @@ that resolves **after** `state.route.value` is flipped off
 
 ### Implementation for User Story 2
 
-- [ ] T009 [P] [US2] Extend the signature of `loadFeedPolicies` in
+- [X] T009 [P] [US2] Extend the signature of `loadFeedPolicies` in
       `src/client/db/feed-cache-policy.ts:105` to accept an optional
       fourth (or trailing) parameter `opts?:{ shouldApply?:() =>
       boolean }`. Default behaviour when `shouldApply` is omitted or
@@ -191,13 +191,13 @@ that resolves **after** `state.route.value` is flipped off
       write but otherwise complete normally (no thrown error). Per
       the user's batch rule (global CLAUDE.md): if you set multiple
       signals here, wrap them in `batch`.
-- [ ] T010 [P] [US2] Extend the signature of `loadStorageUsage` in
+- [X] T010 [P] [US2] Extend the signature of `loadStorageUsage` in
       `src/client/db/storage-usage.ts:42` the same way. The loader
       writes `feedStorageBytes` and `totalStorageBytes`; both writes
       must go through the `shouldApply` gate together (use `batch`
       so a `false` predicate suppresses both, not one). Default
       behaviour preserved for non-Settings callers.
-- [ ] T011 [P] [US2] Extend `State.loadBillingStatus`
+- [X] T011 [P] [US2] Extend `State.loadBillingStatus`
       (`src/client/state.ts:1270`) and `State.loadPaymentMethods`
       (`src/client/state.ts:1293`) with the same optional
       `{ shouldApply?:() => boolean }` parameter. For
@@ -209,7 +209,7 @@ that resolves **after** `state.route.value` is flipped off
       1368, 1400, 1471, 1515, 1583, 1603, 1652, 1678) must continue
       to work with no argument — the default predicate is `() =>
       true`.
-- [ ] T012 [US2] In `src/client/routes/settings.ts`, add a
+- [X] T012 [US2] In `src/client/routes/settings.ts`, add a
       module-level `let globalRouteGeneration = 0`. Inside the
       component, capture `const myGen = useRef(0)` and inside the
       mount-time `useEffect` set `myGen.current =
@@ -223,7 +223,7 @@ that resolves **after** `state.route.value` is flipped off
       loaders themselves; the predicate carries the contract.
       Preserve the existing call ordering and the `isAuthenticated`
       gate for the billing/payment loaders.
-- [ ] T013 [US2] Run `npm test -- test/settings-stale-async-writes.ts`
+- [X] T013 [US2] Run `npm test -- test/settings-stale-async-writes.ts`
       and confirm it passes. Run `npm test && npm run lint` to
       confirm no regressions. Manually run `quickstart.md` §"Settings
       async writes don't bleed into the new view" under DevTools Slow
@@ -252,7 +252,7 @@ transition must be visually instant (≤1 frame).
 
 ### Implementation for User Story 3
 
-- [ ] T014 [US3] Run the existing 021 test files (`grep -l
+- [X] T014 [US3] Run the existing 021 test files (`grep -l
       "viewItemsCache\|showStarred\|showAll" test/*.ts` to locate
       them, e.g. `test/view-switch-*.ts` and any test referencing
       `viewItemsCache`) and confirm they all pass unchanged.
@@ -295,7 +295,7 @@ and the cold-load path.
       confirm the long `computeCacheStatus` task appears **after**
       the paint that draws `<FeedReader>`, inside an Idle callback.
       If it appears before, the fix did not take effect.
-- [ ] T020 [P] Code review pass on the three production files
+- [X] T020 [P] Code review pass on the three production files
       touched: `src/client/state.ts` (effect rewrite at 654-667 plus
       the four loaders extended with `shouldApply`),
       `src/client/routes/settings.ts` (route-generation token +
