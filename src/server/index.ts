@@ -2052,8 +2052,14 @@ const worker = Object.assign(app, {
     }
 })
 
+// Only ship events to Sentry from deployed envs; local `wrangler dev`
+// leaves NODE_ENV unset, which disables the SDK entirely (empty DSN).
+const isSentryEnv = (nodeEnv:string|undefined):boolean => (
+    nodeEnv === 'production' || nodeEnv === 'staging'
+)
+
 const getSentryOptions = (env:Env) => ({
-    dsn: env.SENTRY_DSN,
+    dsn: isSentryEnv(env.NODE_ENV) ? env.SENTRY_DSN : undefined,
     environment: env.NODE_ENV,
     tracesSampleRate: env.NODE_ENV === 'production' ? 0.2 : 1.0,
     sendDefaultPii: false,
@@ -2061,7 +2067,7 @@ const getSentryOptions = (env:Env) => ({
 
 // DO has its own narrower Env type; mirror the worker options for it.
 const getDOSentryOptions = (env:UserDOEnv) => ({
-    dsn: env.SENTRY_DSN,
+    dsn: isSentryEnv(env.NODE_ENV) ? env.SENTRY_DSN : undefined,
     environment: env.NODE_ENV,
     tracesSampleRate: env.NODE_ENV === 'production' ? 0.2 : 1.0,
     sendDefaultPii: false,
