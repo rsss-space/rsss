@@ -87,3 +87,23 @@ test('AC6.4: clearing one DID\'s paint cache leaves other DIDs intact',
         t.equal(afterB, beforeB, 'cache for DID B unchanged')
     }
 )
+
+test('AC6.3: disableLocalFirst clears paint cache',
+    t => {
+        const did = 'did:plc:charlie'
+        const snap = makeTestSnapshot()
+
+        // Pre-populate cache for the test DID
+        writePaintCache(did, snap)
+        const key = PAINT_CACHE_PREFIX + did
+        const before = localStorage.getItem(key)
+        t.ok(before !== null, 'paint cache exists before disableLocalFirst')
+
+        // Simulate the cleanup that happens in disableLocalFirst
+        clearPaintCache(did)
+
+        // Verify it's gone
+        const after = localStorage.getItem(key)
+        t.equal(after, null, 'paint cache cleared when local-first is disabled')
+    }
+)

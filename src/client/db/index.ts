@@ -34,6 +34,7 @@ import {
     beginLocalFirstDisable,
     endLocalFirstDisable
 } from './sync.js'
+import { clearPaintCache } from '../paint-cache.js'
 import type { DbAdapter, Item } from './types.js'
 import type {
     LocalDbErrorCategory,
@@ -285,6 +286,7 @@ export async function disableLocalFirst (
         _resetAdapterCache()
         await releaseLocalTabLock()
         await removeOpfsDb(did)
+        clearPaintCache(did)
         batch(() => {
             setSyncSubscriptions(false)
         })
