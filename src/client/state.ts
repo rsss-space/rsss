@@ -1782,6 +1782,7 @@ State.resumeSubscription = async function ():Promise<void> {
 State.logout = async function (
     state:AppState
 ):Promise<void> {
+    const did = state.user.value?.did
     let serverLogoutOk = false
     try {
         const res = await api.post('auth/logout', {
@@ -1805,6 +1806,8 @@ State.logout = async function (
         resetBilling()
         resetPaymentMethods()
     })
+    if (did) clearPaintCache(did)
+    clearStoredDid()
     State.closeEventStream()
     state._setRoute('/login')
 }

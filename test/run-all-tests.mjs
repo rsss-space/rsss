@@ -22,6 +22,7 @@ const commands = [
     'esbuild ./test/schedule-idle.ts --bundle | tapout',
     'esbuild ./test/paint-cache.ts --bundle | tapout',
     'esbuild ./test/paint-cache-bootstrap.ts --bundle | tapout',
+    'esbuild ./test/paint-cache-cleanup.ts --bundle | tapout',
     'esbuild ./test/settings-nav-instant.ts --bundle | tapout',
     'esbuild ./test/cache-status-coalesce.ts --bundle | tapout',
     [
