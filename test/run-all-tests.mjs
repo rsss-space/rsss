@@ -20,6 +20,7 @@ const commands = [
     'node test/run-all-coverage.mjs',
     'esbuild ./test/tab-coordination.ts --bundle | tapout',
     'esbuild ./test/schedule-idle.ts --bundle | tapout',
+    'esbuild ./test/paint-cache.ts --bundle | tapout',
     'esbuild ./test/settings-nav-instant.ts --bundle | tapout',
     'esbuild ./test/cache-status-coalesce.ts --bundle | tapout',
     [

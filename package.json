@@ -16,6 +16,7 @@
     "test:db": "esbuild ./test/db-adapter.ts --bundle | tapout",
     "test:lww": "esbuild ./test/server-lww.ts --bundle | tapout",
     "test:local-first": "esbuild ./test/local-first-settings.ts --bundle | tapout",
+    "test:paint-cache": "esbuild ./test/paint-cache.ts --bundle | tapout",
     "test:sqlite-init": "esbuild ./test/sqlite-init.ts --bundle --loader:.wasm=dataurl | tapout",
     "test:local-adapter": "esbuild ./test/local-adapter.ts --bundle --loader:.wasm=dataurl | tapout",
     "test:adapter-factory": "esbuild ./test/adapter-factory.ts --bundle | tapout",
