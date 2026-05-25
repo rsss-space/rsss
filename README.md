@@ -374,7 +374,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:execute-implementation-plan docs/implementation-plans/2026-05-11-020-add-feed-zero-unread/ .
+/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-05-24-023-fix-initial-load.md .
 ```
 
 --------------------------------------------------------------
