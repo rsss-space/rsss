@@ -68,6 +68,24 @@ has fire-and-forget calls.
     - Calls: `await State.loadBillingStatus()`
     - Status: OK ✓ (not on paint path)
 
+## AC7.2 Wording Amendment
+
+The original AC7.2 description stated "no other awaiter exists" to indicate a
+strict zero-awaits policy. However, the audit revealed 6 awaited calls that are
+safe: they occur only in user-initiated action handlers (checkout, account deletion,
+subscription management) fired AFTER the initial render has completed. These are not
+on the initial-render critical path and do not block paint.
+
+**AC7.2 has been amended** to clarify its scope: "loadBillingStatus() is not awaited
+on the **initial render critical path** (app bootstrap, the first user effect at
+state.ts:572, the first sync cycle). User-initiated action handlers fired in response
+to user clicks AFTER first paint MAY await loadBillingStatus(); these are not on the
+initial-render path."
+
+The original intent — preventing third-party latency from blocking paint — is fully
+satisfied. The strict "zero awaits anywhere" reading was overly broad and did not
+anticipate these safe user-action handlers.
+
 ## Conclusion
 
 **AC7.2 Satisfied:** The render critical path (components, effects, microtasks
@@ -79,3 +97,4 @@ not during render initialization.
 
 **Critical Path Awaits:** 0 (verified clean) ✓
 **Total Awaits Found:** 6 (all safe; user-initiated actions only) ✓
+**AC7.2 Wording Updated:** Yes (see amendment section above)

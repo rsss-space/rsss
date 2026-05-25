@@ -21,12 +21,8 @@ test('SyncBillingError handler calls loadBillingStatus', async (t) => {
     }
 
     try {
-        // Verify the stub is in place
-        const error = new SyncBillingError(
-            'payment_required',
-            'Subscription expired',
-            402
-        )
+        // Create a SyncBillingError to test the handler
+        const error = new SyncBillingError()
 
         // The actual handler is at state.ts:554-560.
         // Here we verify the handler's logic by simulating what would
