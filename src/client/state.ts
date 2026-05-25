@@ -86,6 +86,11 @@ import {
     cancelIdle,
     type IdleHandle
 } from './util/schedule-idle.js'
+import {
+    readPaintCache,
+    setStoredDid,
+    type PaintCacheV1
+} from './paint-cache.js'
 const debug = Debug('rsss:state')
 
 const CHECKOUT_EMAIL_KEY = 'rsss_checkout_email'
@@ -703,6 +708,31 @@ export function State ():AppState {
     return state
 }
 
+/**
+ * Synchronously apply a paint-cache snapshot to the state signals.
+ * Returns true if hydration happened, false otherwise.
+ *
+ * Cache wins over the SSR seed: the cache is the user's last-rendered
+ * view (selectedFeedId, scroll-relevant ordering); the immediate
+ * `loadInitialView()` call after auth will overwrite authoritatively
+ * within ~100ms.
+ */
+export function hydratePaintCache (
+    state:AppState,
+    did:string|null
+):boolean {
+    if (did === null) return false
+    const snap:PaintCacheV1|null = readPaintCache(did)
+    if (snap === null) return false
+    batch(() => {
+        state.feeds.value = snap.feeds as Feed[]
+        state.items.value = snap.items as Item[]
+        state.counts.value = snap.counts
+        state.selectedFeedId.value = snap.selectedFeedId
+    })
+    return true
+}
+
 State.handleSyncAuthError = function (
     state:AppState,
     err:unknown
@@ -1200,6 +1230,7 @@ State.checkAuth = async function (
                     avatar: data.avatar
                 }
                 state.user.value = user
+                setStoredDid(data.did)
                 State.openEventStream(state)
             } else {
                 state.user.value = null

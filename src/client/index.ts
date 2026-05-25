@@ -4,7 +4,12 @@ import './instrument.js'
 import { html } from 'htm/preact'
 import { type FunctionComponent, render } from 'preact'
 import { useComputed } from '@preact/signals'
-import { State, type AppState } from './state.js'
+import {
+    State,
+    type AppState,
+    hydratePaintCache
+} from './state.js'
+import { getStoredDid } from './paint-cache.js'
 import { isItemRoute } from './routing.js'
 import Router from './routes/index.js'
 import { NotFound } from './not-found.js'
@@ -19,6 +24,8 @@ const debug = Debug('rsss:view:index')
 
 const state = State()
 const router = Router(state)
+
+hydratePaintCache(state, getStoredDid())
 
 if (import.meta.hot) {
     import.meta.hot.dispose(() => {
