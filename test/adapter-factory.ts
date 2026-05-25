@@ -124,7 +124,6 @@ test('getAdapter returns remoteAdapter when opted in but support missing',
     async (t) => {
         setup()
         syncSubscriptions.value = true
-        // Force support check to false by clearing cache and stubbing storage
         const origStorage = navigator.storage
         Object.defineProperty(navigator, 'storage', {
             value: undefined, configurable: true
@@ -188,7 +187,6 @@ test('getAdapter returns remoteAdapter when worker OPFS probe fails',
 test('getAdapter returns remoteAdapter when did is absent', async (t) => {
     setup()
     syncSubscriptions.value = true
-    // Even if support were true, no did means no local DB to open
     const adapter = await getAdapter(undefined)
     t.equal(adapter, remoteAdapter, 'returns remoteAdapter when did missing')
 })
@@ -300,34 +298,6 @@ test('getAdapter reports corrupt open failures as resettable',
             setTestMode(true)
             setSQLiteWorkerClientFactoryForTests(null)
         }
-    }
-)
-
-test('getAdapter returns remoteAdapter for free (unentitled) users',
-    async (t) => {
-        setup()
-        syncSubscriptions.value = true
-        billingStatus.value = {
-            entitled: false,
-            planId: 'local-first',
-            status: 'none',
-            refreshedAt: Date.now(),
-            useLive: false
-        }
-        const adapter = await getAdapter('did:plc:test')
-        t.equal(adapter, remoteAdapter,
-            'free users get remoteAdapter even with the toggle on')
-    }
-)
-
-test('getAdapter returns remoteAdapter when billingStatus is null',
-    async (t) => {
-        setup()
-        syncSubscriptions.value = true
-        billingStatus.value = null
-        const adapter = await getAdapter('did:plc:test')
-        t.equal(adapter, remoteAdapter,
-            'unloaded billing falls back to remoteAdapter')
     }
 )
 

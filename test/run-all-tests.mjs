@@ -30,7 +30,11 @@ const commands = [
         '--loader:.wasm=dataurl',
         '| tapout'
     ].join(' '),
-    'esbuild ./test/adapter-factory.ts --bundle | tapout',
+    [
+        'esbuild ./test/adapter-factory.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
     'esbuild ./test/article-detect.ts --bundle | tapout',
     'esbuild ./test/publisher-link.ts --bundle | tapout',
     'esbuild ./test/article-extract.ts --bundle | tapout',
