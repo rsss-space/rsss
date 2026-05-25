@@ -6,10 +6,10 @@ import {
     useRef,
     useState
 } from 'preact/hooks'
-import {
-    loadStripe,
-    type Stripe as StripeLib,
-    type StripeElements
+import { loadStripe } from '@stripe/stripe-js/pure'
+import type {
+    Stripe as StripeLib,
+    StripeElements
 } from '@stripe/stripe-js'
 import { ModalWindow } from '@substrate-system/dialog'
 import '@substrate-system/dialog/css'

@@ -174,6 +174,7 @@ const commands = [
         'esbuild ./test/payment-method-modal.ts --bundle',
         '--loader:.css=text',
         '--alias:@stripe/stripe-js=./test/stripe-js-stub.ts',
+        '--alias:@stripe/stripe-js/pure=./test/stripe-js-stub.ts',
         '| tapout'
     ].join(' ')
 ]
