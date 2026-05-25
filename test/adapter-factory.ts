@@ -124,6 +124,7 @@ test('getAdapter returns remoteAdapter when opted in but support missing',
     async (t) => {
         setup()
         syncSubscriptions.value = true
+        // Force support check to false by clearing cache and stubbing storage
         const origStorage = navigator.storage
         Object.defineProperty(navigator, 'storage', {
             value: undefined, configurable: true
@@ -187,6 +188,7 @@ test('getAdapter returns remoteAdapter when worker OPFS probe fails',
 test('getAdapter returns remoteAdapter when did is absent', async (t) => {
     setup()
     syncSubscriptions.value = true
+    // Even if support were true, no did means no local DB to open
     const adapter = await getAdapter(undefined)
     t.equal(adapter, remoteAdapter, 'returns remoteAdapter when did missing')
 })
@@ -296,6 +298,69 @@ test('getAdapter reports corrupt open failures as resettable',
                 'corrupt databases expose reset recovery')
         } finally {
             setTestMode(true)
+            setSQLiteWorkerClientFactoryForTests(null)
+        }
+    }
+)
+
+test(
+    'getAdapter returns localAdapter when billing is null but sync enabled',
+    async (t) => {
+        setup()
+        syncSubscriptions.value = true
+        billingStatus.value = null
+        const origStorage = navigator.storage
+        const previousIsolated = (
+            globalThis as { crossOriginIsolated?:boolean }
+        ).crossOriginIsolated
+        const previousAccessHandle = (
+            globalThis as Record<string, unknown>
+        ).FileSystemSyncAccessHandle
+
+        // Stub storage to indicate OPFS support
+        Object.defineProperty(navigator, 'storage', {
+            value: { getDirectory: async () => ({}) },
+            configurable: true
+        })
+        Object.defineProperty(globalThis, 'crossOriginIsolated', {
+            value: true,
+            configurable: true
+        })
+        // Stub FileSystemSyncAccessHandle to exist (indicates browser support)
+        ;(globalThis as Record<string, unknown>)
+            .FileSystemSyncAccessHandle = function MockFSSyncAccessHandle () {}
+
+        // Switch to production mode to use worker client factory
+        setTestMode(false)
+        // Stub the SQLite worker factory to return a mock DB without WASM
+        setSQLiteWorkerClientFactoryForTests(() => ({
+            probe: async () => {},
+            open: async () => ({
+                exec: () => null,
+                close: () => {},
+                dump: () => new Uint8Array(),
+                export: () => new Uint8Array()
+            }),
+            dispose: () => {}
+        } as unknown as SQLiteWorkerClient))
+
+        try {
+            const adapter = await getAdapter('did:plc:alice')
+
+            t.notEqual(adapter, remoteAdapter,
+                'returns localAdapter when billing null but sync enabled')
+        } finally {
+            setTestMode(true)
+            Object.defineProperty(navigator, 'storage', {
+                value: origStorage,
+                configurable: true
+            })
+            Object.defineProperty(globalThis, 'crossOriginIsolated', {
+                value: previousIsolated,
+                configurable: true
+            })
+            ;(globalThis as Record<string, unknown>)
+                .FileSystemSyncAccessHandle = previousAccessHandle
             setSQLiteWorkerClientFactoryForTests(null)
         }
     }
