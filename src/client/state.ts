@@ -89,7 +89,11 @@ import {
 import {
     readPaintCache,
     setStoredDid,
-    type PaintCacheV1
+    type PaintCacheV1,
+    writePaintCache,
+    snapshotFromState,
+    clearStoredDid,
+    clearPaintCache
 } from './paint-cache.js'
 const debug = Debug('rsss:state')
 
@@ -733,6 +737,37 @@ export function hydratePaintCache (
     return true
 }
 
+let _pendingPaintCacheWrite:IdleHandle|null = null
+
+const PAINT_CACHE_WRITE_DEBOUNCE_MS = 1000
+
+/**
+ * Schedule a debounced paint-cache write. Coalesces multiple loads
+ * within the same idle window into a single write. The write only
+ * happens when a logged-in DID is available — otherwise it is a
+ * no-op (there is no per-tab cache for unauthenticated users).
+ */
+export function schedulePaintCacheWrite (state:AppState):void {
+    const did = state.user.value?.did
+    if (!did) return
+    cancelIdle(_pendingPaintCacheWrite)
+    _pendingPaintCacheWrite = scheduleIdle(() => {
+        _pendingPaintCacheWrite = null
+        try {
+            const snap = snapshotFromState(
+                state.feeds.peek(),
+                state.items.peek(),
+                state.counts.peek(),
+                state.selectedFeedId.peek()
+            )
+            writePaintCache(did, snap)
+        } catch {
+            // best-effort: ignore errors if state is undefined or
+            // signals have been cleaned up (e.g., in test teardown)
+        }
+    }, { timeout: PAINT_CACHE_WRITE_DEBOUNCE_MS })
+}
+
 State.handleSyncAuthError = function (
     state:AppState,
     err:unknown
@@ -871,6 +906,7 @@ export function applyItemsResult (
         state.itemsTotal.value = result.total
         state.itemsLoading.value = false
     })
+    schedulePaintCacheWrite(state)
     if (requestKey !== null) {
         state.viewItemsCache.set(requestKey, {
             items: result.items as Item[],
@@ -1794,6 +1830,7 @@ State.loadFeeds = async function (
             state.feedsError.value = null
             state.feedsLoading.value = false
         })
+        schedulePaintCacheWrite(state)
     } catch (err) {
         debug('Error loading feeds:', err)
         batch(() => {
@@ -2091,6 +2128,7 @@ State.loadCounts = async function (
         )
         const counts = await adapter.getCounts()
         state.counts.value = counts
+        schedulePaintCacheWrite(state)
     } catch (err) {
         debug('Error loading counts:', err)
     }
