@@ -725,8 +725,8 @@ export function hydratePaintCache (
     const snap:PaintCacheV1|null = readPaintCache(did)
     if (snap === null) return false
     batch(() => {
-        state.feeds.value = snap.feeds as Feed[]
-        state.items.value = snap.items as Item[]
+        state.feeds.value = snap.feeds
+        state.items.value = snap.items
         state.counts.value = snap.counts
         state.selectedFeedId.value = snap.selectedFeedId
     })
