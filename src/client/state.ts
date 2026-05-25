@@ -551,14 +551,7 @@ export function State ():AppState {
                     if (State.handleSyncAuthError(state, err)) {
                         return
                     }
-                    if (
-                        err instanceof SyncBillingError ||
-                        err instanceof PushSyncBillingError
-                    ) {
-                        State.loadBillingStatus()
-                        return
-                    }
-                    debug('sync cycle error:', err)
+                    State.handleSyncCycleError(err)
                 }).then(() => {
                     if (!isCurrent()) return
                     State.refreshAfterSync(state)
@@ -631,14 +624,7 @@ export function State ():AppState {
                 if (State.handleSyncAuthError(state, err)) {
                     return
                 }
-                if (
-                    err instanceof SyncBillingError ||
-                    err instanceof PushSyncBillingError
-                ) {
-                    State.loadBillingStatus()
-                    return
-                }
-                debug('sync cycle online error:', err)
+                State.handleSyncCycleError(err)
             })
         }
     }
@@ -809,6 +795,25 @@ function scheduleConvergenceForResolvingFeeds (state:AppState):void {
             scheduleResolveConvergence(state, feed.url)
         }
     }
+}
+
+/**
+ * Handles errors from sync cycles (used in both the local-first sync
+ * startup and the online recovery effect). If the error is a billing
+ * error (SyncBillingError or PushSyncBillingError), invokes
+ * loadBillingStatus to re-check entitlement and trigger the downgrade
+ * flow if the subscription has lapsed. Other errors are logged.
+ * Auth errors should be handled before this is called in the calling code.
+ */
+State.handleSyncCycleError = function (err:unknown):void {
+    if (
+        err instanceof SyncBillingError ||
+        err instanceof PushSyncBillingError
+    ) {
+        State.loadBillingStatus()
+        return
+    }
+    debug('sync cycle error:', err)
 }
 
 /**

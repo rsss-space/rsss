@@ -1,43 +1,80 @@
 import { test } from '@substrate-system/tapzero'
 import { SyncBillingError } from '../src/client/db/pull-sync.js'
+import {
+    PushSyncBillingError
+} from '../src/client/db/push-sync.js'
 import { State } from '../src/client/state.js'
 
 // Test for AC4.3: Verify SyncBillingError → loadBillingStatus wiring
 //
-// The handler at state.ts:550-560 ensures that when a lapsed-billing user
-// receives SyncBillingError, loadBillingStatus() is called to re-check
-// entitlement status. This test verifies that handler is connected.
+// The handler State.handleSyncCycleError drives the production logic
+// (state.ts:550-560, 635-640) that ensures when a lapsed-billing user
+// receives SyncBillingError or PushSyncBillingError, loadBillingStatus()
+// is called to re-check entitlement status. This test verifies the
+// handler function itself.
 
-test('SyncBillingError handler calls loadBillingStatus', async (t) => {
-    const calls:string[] = []
+test(
+    'State.handleSyncCycleError calls loadBillingStatus on '
+    + 'SyncBillingError',
+    async (t) => {
+        const calls:string[] = []
 
-    // Save original
-    const originalLoadBillingStatus = State.loadBillingStatus
+        // Save original
+        const originalLoadBillingStatus = State.loadBillingStatus
 
-    // Replace with tracking stub
-    State.loadBillingStatus = async () => {
-        calls.push('loadBillingStatus')
-        return null
-    }
-
-    try {
-        // Create a SyncBillingError to test the handler
-        const error = new SyncBillingError()
-
-        // The actual handler is at state.ts:554-560.
-        // Here we verify the handler's logic by simulating what would
-        // happen when runSync().catch() receives this error.
-        if (
-            error instanceof SyncBillingError
-        ) {
-            await State.loadBillingStatus()
+        // Replace with tracking stub
+        State.loadBillingStatus = async () => {
+            calls.push('loadBillingStatus')
+            return null
         }
 
-        t.equal(calls.length, 1,
-            'loadBillingStatus is called when error is SyncBillingError')
-        t.equal(calls[0], 'loadBillingStatus',
-            'calls the right function')
-    } finally {
-        State.loadBillingStatus = originalLoadBillingStatus
+        try {
+            // Call the production handler with a SyncBillingError
+            const error = new SyncBillingError()
+            State.handleSyncCycleError(error)
+
+            // Handler calls loadBillingStatus (but may be async)
+            await Promise.resolve()
+
+            t.equal(calls.length, 1,
+                'loadBillingStatus is called for SyncBillingError')
+            t.equal(calls[0], 'loadBillingStatus',
+                'calls the right function')
+        } finally {
+            State.loadBillingStatus = originalLoadBillingStatus
+        }
     }
-})
+)
+
+test(
+    'State.handleSyncCycleError calls loadBillingStatus on '
+    + 'PushSyncBillingError',
+    async (t) => {
+        const calls:string[] = []
+
+        // Save original
+        const originalLoadBillingStatus = State.loadBillingStatus
+
+        // Replace with tracking stub
+        State.loadBillingStatus = async () => {
+            calls.push('loadBillingStatus')
+            return null
+        }
+
+        try {
+            // Call the production handler with a PushSyncBillingError
+            const error = new PushSyncBillingError()
+            State.handleSyncCycleError(error)
+
+            // Handler calls loadBillingStatus (but may be async)
+            await Promise.resolve()
+
+            t.equal(calls.length, 1,
+                'loadBillingStatus is called for PushSyncBillingError')
+            t.equal(calls[0], 'loadBillingStatus',
+                'calls the right function')
+        } finally {
+            State.loadBillingStatus = originalLoadBillingStatus
+        }
+    }
+)
