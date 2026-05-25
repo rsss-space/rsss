@@ -7,13 +7,13 @@ import {
     State,
     type AppState,
     stripProtocol,
+    paintCacheHydratedOnBootstrap,
 } from '../state.js'
 import {
     bootstrapInProgress,
     bootstrapFeedsCount,
     bootstrapItemsCount
 } from '../db/bootstrap.js'
-import { paintCacheHydratedOnBootstrap } from '../state.js'
 import { ItemRow } from '../components/item-row.js'
 import { Sidebar } from '../components/sidebar.js'
 import { CacheSettings } from '../components/cache-settings.js'
