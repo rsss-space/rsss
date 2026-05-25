@@ -11,7 +11,11 @@ import {
     CLIENT_GRACE_MS,
     State
 } from '../src/client/state.js'
-import type { Feed } from '../src/client/db/types.js'
+import type {
+    Feed,
+    Item,
+    CountsResponse
+} from '../src/client/db/types.js'
 import type { AppState } from '../src/client/state.js'
 
 setTestMode(true, wasmUrl as string)
@@ -22,6 +26,14 @@ function makeFakeStateWithFeeds (feeds:Array<Partial<Feed> & {
 }>) {
     return {
         feeds: signal<Feed[]>(feeds as Feed[]),
+        items: signal<Item[]>([]),
+        counts: signal<CountsResponse>({
+            unread: 0,
+            starred: 0,
+            total: 0,
+            perFeed: {}
+        }),
+        selectedFeedId: signal<number|null>(null),
         user: signal<{ did:string }|null>({ did: 'did:test:convergence' })
     } as unknown as Parameters<
         typeof _resolveConvergenceForTest.schedule
@@ -62,6 +74,14 @@ test(
                     created_at: '2026-05-10 12:00:00',
                     updated_at: '2026-05-10 12:00:00'
                 } as Feed]),
+                items: signal<Item[]>([]),
+                counts: signal<CountsResponse>({
+                    unread: 0,
+                    starred: 0,
+                    total: 0,
+                    perFeed: {}
+                }),
+                selectedFeedId: signal<number|null>(null),
                 user: signal<{ did:string }|null>({ did: 'did:test:convergence' })
             } as unknown as AppState
 
@@ -347,6 +367,14 @@ test(
                 }]),
                 feedsLoading: signal(false),
                 feedsError: signal<string | null>(null),
+                items: signal<Item[]>([]),
+                counts: signal<CountsResponse>({
+                    unread: 0,
+                    starred: 0,
+                    total: 0,
+                    perFeed: {}
+                }),
+                selectedFeedId: signal<number | null>(null),
                 user: signal<{ did:string } | null>({ did: 'did:test:convergence' })
             } as unknown as AppState
 
