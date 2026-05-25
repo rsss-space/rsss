@@ -127,4 +127,30 @@
             }
         }
     }
+
+    & .bootstrap-card {
+        margin: 1.5rem auto;
+        padding: 1.5rem;
+        max-width: 32rem;
+        border: 1px solid var(--color-border);
+        border-radius: 0.5rem;
+        background: var(--color-surface);
+        text-align: center;
+    }
+
+    & .bootstrap-card-title {
+        margin: 0 0 0.5rem;
+        font-size: 1.125rem;
+    }
+
+    & .bootstrap-card-body {
+        margin: 0 0 0.5rem;
+        color: var(--color-text-secondary);
+    }
+
+    & .bootstrap-card-progress {
+        margin: 0;
+        color: var(--color-text-secondary);
+        font-feature-settings: 'tnum' 1;
+    }
 }

@@ -97,6 +97,15 @@ import {
 } from './paint-cache.js'
 const debug = Debug('rsss:state')
 
+/**
+ * Set to `true` exactly once, by `hydratePaintCache`, when a
+ * snapshot was found and applied during the initial bootstrap.
+ * Read by UI to decide whether to show the first-time-bootstrap
+ * card during the OPFS first-pull.
+ */
+export const paintCacheHydratedOnBootstrap:Signal<boolean> =
+    signal(false)
+
 const CHECKOUT_EMAIL_KEY = 'rsss_checkout_email'
 export const DEFAULT_PAGE_SIZE = 20
 const SYNC_AUTH_EXPIRED = 'Your session expired. Please log in again.'
@@ -719,6 +728,7 @@ export function hydratePaintCache (
         state.items.value = snap.items
         state.counts.value = snap.counts
         state.selectedFeedId.value = snap.selectedFeedId
+        paintCacheHydratedOnBootstrap.value = true
     })
     return true
 }

@@ -41,6 +41,7 @@ const commands = [
     'esbuild ./test/article-extract.ts --bundle | tapout',
     'esbuild ./test/article-fetch.ts --bundle | tapout',
     'esbuild ./test/item-reader-render-state.ts --bundle | tapout',
+    'esbuild ./test/feed-reader-render-state.ts --bundle | tapout',
     [
         'esbuild ./test/fetch-full-endpoint.ts --bundle',
         '--platform=node --format=esm',

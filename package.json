@@ -39,6 +39,7 @@
     "test:lazy-html-handler": "node test/run-lazy-html-handler.mjs",
     "test:lazy-html-routing": "node test/run-lazy-html-routing.mjs",
     "test:initial-feed": "esbuild ./test/initial-feed.ts --bundle | tapout",
+    "test:feed-reader-render-state": "esbuild ./test/feed-reader-render-state.ts --bundle | tapout",
     "test:signup:server": "node test/run-signup-server.mjs",
     "test:signup:ui": "esbuild ./test/signup-ui.ts --bundle --loader:.css=text | tapout",
     "test:signup": "npm run test:signup:server && npm run test:signup:ui",
