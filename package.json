@@ -22,6 +22,7 @@
     "test:sqlite-init": "esbuild ./test/sqlite-init.ts --bundle --loader:.wasm=dataurl | tapout",
     "test:local-adapter": "esbuild ./test/local-adapter.ts --bundle --loader:.wasm=dataurl | tapout",
     "test:adapter-factory": "esbuild ./test/adapter-factory.ts --bundle --loader:.wasm=dataurl | tapout",
+    "test:sync-billing-recovery": "esbuild ./test/sync-billing-recovery.ts --bundle | tapout",
     "test:pull-sync": "esbuild ./test/pull-sync.ts --bundle --loader:.wasm=dataurl | tapout",
     "test:push-sync": "esbuild ./test/push-sync.ts --bundle --loader:.wasm=dataurl | tapout",
     "test:feed-resolve-state": "esbuild ./test/feed-resolve-state.ts --bundle --loader:.wasm=dataurl --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts | tapout",

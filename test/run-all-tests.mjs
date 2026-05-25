@@ -35,6 +35,7 @@ const commands = [
         '--loader:.wasm=dataurl',
         '| tapout'
     ].join(' '),
+    'esbuild ./test/sync-billing-recovery.ts --bundle | tapout',
     'esbuild ./test/article-detect.ts --bundle | tapout',
     'esbuild ./test/publisher-link.ts --bundle | tapout',
     'esbuild ./test/article-extract.ts --bundle | tapout',
