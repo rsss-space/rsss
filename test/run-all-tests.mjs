@@ -185,7 +185,8 @@ const commands = [
         '--alias:@stripe/stripe-js=./test/stripe-js-stub.ts',
         '--alias:@stripe/stripe-js/pure=./test/stripe-js-stub.ts',
         '| tapout'
-    ].join(' ')
+    ].join(' '),
+    'node test/paint-cache-slow-billing.mjs'
 ]
 
 for (const command of commands) {
