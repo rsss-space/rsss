@@ -750,21 +750,23 @@ const PAINT_CACHE_WRITE_DEBOUNCE_MS = 1000
 export function schedulePaintCacheWrite (state:AppState):void {
     const did = state.user.value?.did
     if (!did) return
+    // Guard against partial state objects (e.g., in tests) that might not have
+    // all required signals. This is safe because .peek() itself cannot throw on
+    // valid signals; this only guards against undefined properties.
+    if (!state.feeds || !state.items || !state.counts ||
+        !state.selectedFeedId) {
+        return
+    }
     cancelIdle(_pendingPaintCacheWrite)
     _pendingPaintCacheWrite = scheduleIdle(() => {
         _pendingPaintCacheWrite = null
-        try {
-            const snap = snapshotFromState(
-                state.feeds.peek(),
-                state.items.peek(),
-                state.counts.peek(),
-                state.selectedFeedId.peek()
-            )
-            writePaintCache(did, snap)
-        } catch {
-            // best-effort: ignore errors if state is undefined or
-            // signals have been cleaned up (e.g., in test teardown)
-        }
+        const snap = snapshotFromState(
+            state.feeds.peek(),
+            state.items.peek(),
+            state.counts.peek(),
+            state.selectedFeedId.peek()
+        )
+        writePaintCache(did, snap)
     }, { timeout: PAINT_CACHE_WRITE_DEBOUNCE_MS })
 }
 

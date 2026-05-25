@@ -86,9 +86,16 @@ function resetBootstrap ():void {
 
 function stateForLoadItems ():AppState {
     return {
+        feeds: signal<Feed[]>([]),
         items: signal<Item[]>([]),
         itemsTotal: signal(0),
         itemsLoading: signal(false),
+        counts: signal<CountsResponse>({
+            unread: 0,
+            starred: 0,
+            total: 0,
+            perFeed: {}
+        }),
         user: signal({ did: 'did:plc:test', handle: 'test' }),
         selectedFeedId: signal<number|null>(null),
         showUnreadOnly: signal(false),
