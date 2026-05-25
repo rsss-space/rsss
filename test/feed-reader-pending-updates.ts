@@ -63,7 +63,6 @@ function makeState ():AppState {
         showStarredOnly: signal(false),
         pageSize: signal(20),
         selectedFeedId: signal<number|null>(null),
-        initialLoadComplete: signal<boolean>(false),
         cleanup: () => {}
     } as unknown as AppState
     ;(state as unknown as {

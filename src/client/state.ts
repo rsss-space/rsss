@@ -360,10 +360,6 @@ export type AppState = {
     selectedFeedId:Signal<number|null>,
     viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
-    // Flips true once after the first refreshAfterSync resolves and
-    // never flips back. Used to gate the initial-load skeleton; per-
-    // section *Loading flags drive subsequent refreshes.
-    initialLoadComplete:Signal<boolean>,
     cleanup:() => void
 }
 
@@ -445,7 +441,6 @@ export function State ():AppState {
         pageSize: signal(DEFAULT_PAGE_SIZE),
         selectedFeedId: signal<number|null>(null),
         viewItemsCache: new Map() as ViewItemsCache,
-        initialLoadComplete: signal<boolean>(false),
         cleanup: () => {},
     }
 
@@ -828,8 +823,7 @@ State.handleSyncCycleError = function (err:unknown):void {
 
 /**
  * First post-auth load. Pulls feeds, indicator, items, counts, and
- * the route item if applicable. Sets initialLoadComplete on the way
- * out so the App shell can swap from skeleton to real UI.
+ * the route item if applicable.
  */
 State.loadInitialView = async function (
     state:AppState
@@ -862,10 +856,8 @@ State.loadInitialView = async function (
             state.routeItem.value = item
             state.routeItemLoading.value = false
         })
-    } finally {
-        if (!state.initialLoadComplete.value) {
-            state.initialLoadComplete.value = true
-        }
+    } catch (err) {
+        debug('loadInitialView error:', err)
     }
 }
 
@@ -901,9 +893,8 @@ State.reconcileAfterRefresh = async function (
 
 // Back-compat shim: external callers (online/offline handlers and the
 // bootstrap path) continue to call refreshAfterSync. Route them to the
-// initial-load path because they all run before initialLoadComplete is
-// set or as part of resuming sync after a network event -- both of
-// which legitimately want the feeds list re-fetched.
+// initial-load path, or as part of resuming sync after a network event --
+// both of which legitimately want the feeds list re-fetched.
 State.refreshAfterSync = State.loadInitialView
 
 export function currentFilterKey (state:AppState):FilterKey|null {

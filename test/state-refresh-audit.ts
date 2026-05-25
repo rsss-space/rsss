@@ -115,7 +115,6 @@ test(
     async t => {
         const calls:string[] = []
         const fakeState = {
-            initialLoadComplete: { value: false },
             route: { value: '/' },
             viewItemsCache: new Map()
         } as unknown as AppState

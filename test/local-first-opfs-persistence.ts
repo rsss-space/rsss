@@ -262,7 +262,6 @@ function makeState ():AppState {
         pageSize: signal(20),
         selectedFeedId: signal(null),
         isAuthenticated: computed(() => user.value !== null),
-        initialLoadComplete: signal(false),
         cleanup: () => {}
     } as unknown as AppState
 }
