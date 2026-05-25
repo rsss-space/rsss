@@ -555,9 +555,12 @@ lands the slow-billing test and covers AC7.1 + AC7.3.
 
 ### AC7.2 Success
 
-> `loadBillingStatus()` is not awaited anywhere on the render
-> critical path (`src/client/state.ts:572` remains fire-and-forget;
-> no other awaiter exists).
+> `loadBillingStatus()` is not awaited on the **initial render
+> critical path** (app bootstrap, the first user effect at
+> state.ts:572, the first sync cycle). User-initiated action
+> handlers fired in response to user clicks AFTER first paint MAY
+> await `loadBillingStatus()`; these are not on the initial-render
+> path.
 
 - **Category:** AUTOMATED
 - **Test type:** Static audit (grep-based assertion) + manual
@@ -567,8 +570,11 @@ lands the slow-billing test and covers AC7.1 + AC7.3.
   in Phase 6 Task 2 also runs at PR time.
 - **Description:** Assert (via test or CI grep) that
   `rg -n "await\s+State\.loadBillingStatus|await\s+loadBillingStatus" src/`
-  returns zero matches. Phase 6 Task 2 also commits the audit
-  finding to `phase_06_findings.md`.
+  returns zero matches in render-path code (effects fired at app
+  bootstrap, the user effect, and sync handlers). Awaited calls in
+  user-initiated action handlers are acceptable. Phase 6 Task 2
+  also commits the detailed audit finding to `phase_06_findings.md`
+  with classification of each call (critical-path vs. user-action).
 - **Owning tasks:** Phase 6 Task 2 (audit); Phase 8 Task 1
   (structural test).
 
