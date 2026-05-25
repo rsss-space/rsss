@@ -763,6 +763,18 @@ export function schedulePaintCacheWrite (state:AppState):void {
     }, { timeout: PAINT_CACHE_WRITE_DEBOUNCE_MS })
 }
 
+/**
+ * Test-only helper to cancel the pending paint-cache write idle
+ * callback. Call this in test teardown (finally block) to prevent
+ * the idle callback from firing after the test environment is torn
+ * down. This is needed because schedulePaintCacheWrite queues a
+ * debounced idle callback that may fire after tests complete.
+ */
+export function _resetPaintCacheWriteHandleForTest ():void {
+    cancelIdle(_pendingPaintCacheWrite)
+    _pendingPaintCacheWrite = null
+}
+
 State.handleSyncAuthError = function (
     state:AppState,
     err:unknown

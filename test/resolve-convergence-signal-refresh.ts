@@ -7,6 +7,7 @@ import {
 } from '../src/client/db/sqlite-init.js'
 import {
     _resolveConvergenceForTest,
+    _resetPaintCacheWriteHandleForTest,
     RESOLVE_WINDOW_MS,
     CLIENT_GRACE_MS,
     State
@@ -117,6 +118,7 @@ test(
         } finally {
             globalThis.setTimeout = realSetTimeout
             globalThis.clearTimeout = realClearTimeout
+            _resetPaintCacheWriteHandleForTest()
         }
     }
 )
@@ -224,6 +226,7 @@ test(
         } finally {
             globalThis.setTimeout = realSetTimeout
             globalThis.clearTimeout = realClearTimeout
+            _resetPaintCacheWriteHandleForTest()
         }
     }
 )
@@ -295,6 +298,7 @@ test(
             // Just verify the state changed synchronously
         } finally {
             globalThis.fetch = realFetch
+            _resetPaintCacheWriteHandleForTest()
         }
     }
 )
@@ -404,6 +408,7 @@ test(
             globalThis.setTimeout = realSetTimeout
             globalThis.clearTimeout = realClearTimeout
             globalThis.fetch = realFetch
+            _resetPaintCacheWriteHandleForTest()
         }
     }
 )
@@ -529,6 +534,7 @@ test(
             globalThis.setTimeout = realSetTimeout
             globalThis.clearTimeout = realClearTimeout
             globalThis.fetch = realFetch
+            _resetPaintCacheWriteHandleForTest()
         }
     }
 )
