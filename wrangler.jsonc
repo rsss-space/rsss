@@ -121,7 +121,7 @@
 			"queues": {
 				"producers": [
 					{
-						"binding": "BLURHASH_QUEUE",
+						"binding": "blurhash_jobs",
 						"queue": "blurhash-jobs"
 					}
 				],
