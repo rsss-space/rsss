@@ -103,12 +103,6 @@
 				"NODE_ENV": "staging",
 				"APP_ORIGIN": "https://staging.rsss.app"
 			},
-			"migrations": [
-				{
-					"tag": "v1",
-					"new_sqlite_classes": ["UserDO"]
-				}
-			],
 			"durable_objects": {
 				"bindings": [
 					{
