@@ -831,34 +831,30 @@ State.loadInitialView = async function (
     state.viewItemsCache.clear()
     const route = state.route.value
 
-    try {
-        // Load feeds and schedule convergence in parallel with other loads.
-        // Chain scheduling on the feeds promise to avoid serialization.
-        const feedsLoaded = State.loadFeeds(state).then(() => {
-            // Schedule convergence for any feeds that are still resolving after
-            // the initial load (FR-006, AC1.3: reload preserves terminal state).
-            scheduleConvergenceForResolvingFeeds(state)
-        })
+    // Load feeds and schedule convergence in parallel with other loads.
+    // Chain scheduling on the feeds promise to avoid serialization.
+    const feedsLoaded = State.loadFeeds(state).then(() => {
+        // Schedule convergence for any feeds that are still resolving after
+        // the initial load (FR-006, AC1.3: reload preserves terminal state).
+        scheduleConvergenceForResolvingFeeds(state)
+    })
 
-        await Promise.all([
-            feedsLoaded,
-            State.loadFeedStatus(state),
-            State.loadItems(state),
-            State.loadCounts(state)
-        ])
+    await Promise.all([
+        feedsLoaded,
+        State.loadFeedStatus(state),
+        State.loadItems(state),
+        State.loadCounts(state)
+    ])
 
-        if (!isItemRoute(route)) return
+    if (!isItemRoute(route)) return
 
-        const item = await State.loadItemByRoute(state, route)
-        if (state.route.value !== route) return
+    const item = await State.loadItemByRoute(state, route)
+    if (state.route.value !== route) return
 
-        batch(() => {
-            state.routeItem.value = item
-            state.routeItemLoading.value = false
-        })
-    } catch (err) {
-        debug('loadInitialView error:', err)
-    }
+    batch(() => {
+        state.routeItem.value = item
+        state.routeItemLoading.value = false
+    })
 }
 
 /**
@@ -892,9 +888,8 @@ State.reconcileAfterRefresh = async function (
 }
 
 // Back-compat shim: external callers (online/offline handlers and the
-// bootstrap path) continue to call refreshAfterSync. Route them to the
-// initial-load path, or as part of resuming sync after a network event --
-// both of which legitimately want the feeds list re-fetched.
+// bootstrap path) continue to call refreshAfterSync. Online/offline handlers
+// and the bootstrap path legitimately want the feeds list re-fetched.
 State.refreshAfterSync = State.loadInitialView
 
 export function currentFilterKey (state:AppState):FilterKey|null {
