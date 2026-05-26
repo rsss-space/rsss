@@ -1,6 +1,10 @@
 import { signal, batch, computed, effect } from '@preact/signals'
 import { test } from '@substrate-system/tapzero'
-import { State, type AppState } from '../src/client/state.js'
+import {
+    State,
+    type AppState,
+    _resetPaintCacheWriteHandleForTest,
+} from '../src/client/state.js'
 
 type EventListenerFn = (ev:MessageEvent|Event) => void
 
@@ -130,7 +134,6 @@ function buildPartialState ():AppState {
         selectedFeedId: signal<number|null>(null),
         isAuthenticated: signal(true),
         viewItemsCache: new Map(),
-        initialLoadComplete: signal<boolean>(false),
         cleanup: () => {}
     } as unknown as AppState
 
@@ -300,6 +303,7 @@ async t => {
     } finally {
         State.reconcileAfterRefresh = originalReconcileAfterRefresh
         State.closeEventStream()
+        _resetPaintCacheWriteHandleForTest()
     }
 
     t.equal(postCalls, 1, 'exactly one POST /feeds/refresh dispatched')
@@ -311,30 +315,34 @@ test('rapid duplicate refreshFeeds calls dispatch only one POST (FR-008)',
         const state = buildPartialState()
 
         let postCalls = 0
-        await withStubbedFetch(async (input) => {
-            const url = typeof input === 'string' ?
-                input :
-                input instanceof URL ?
-                    input.toString() :
-                    input.url
-            if (url.endsWith('/api/feeds/refresh')) {
-                postCalls += 1
-                return new Promise<Response>(resolve => {
-                    setTimeout(() => {
-                        resolve(jsonResponse({ success: true, queued: 0 }))
-                    }, 0)
-                })
-            }
-            return jsonResponse({})
-        }, async () => {
-            const promises = [
-                State.refreshFeeds(state),
-                State.refreshFeeds(state),
-                State.refreshFeeds(state),
-                State.refreshFeeds(state)
-            ]
-            await Promise.all(promises)
-        })
+        try {
+            await withStubbedFetch(async (input) => {
+                const url = typeof input === 'string' ?
+                    input :
+                    input instanceof URL ?
+                        input.toString() :
+                        input.url
+                if (url.endsWith('/api/feeds/refresh')) {
+                    postCalls += 1
+                    return new Promise<Response>(resolve => {
+                        setTimeout(() => {
+                            resolve(jsonResponse({ success: true, queued: 0 }))
+                        }, 0)
+                    })
+                }
+                return jsonResponse({})
+            }, async () => {
+                const promises = [
+                    State.refreshFeeds(state),
+                    State.refreshFeeds(state),
+                    State.refreshFeeds(state),
+                    State.refreshFeeds(state)
+                ]
+                await Promise.all(promises)
+            })
+        } finally {
+            _resetPaintCacheWriteHandleForTest()
+        }
 
         t.equal(
             postCalls,
@@ -356,17 +364,21 @@ test('SSE feed-updated does NOT clear refreshInProgress (FR-011)',
         state.refreshInProgress.value = true
         state.feedSyncStatus.value = 'syncing'
 
-        await withStubbedEventSource(async () => {
-            await withStubbedFetch(async () => {
-                return jsonResponse({})
-            }, async () => {
-                State.openEventStream(state)
-                const source = StubEventSource.instances[0]
-                source.fire('feed-updated')
-                await settle()
+        try {
+            await withStubbedEventSource(async () => {
+                await withStubbedFetch(async () => {
+                    return jsonResponse({})
+                }, async () => {
+                    State.openEventStream(state)
+                    const source = StubEventSource.instances[0]
+                    source.fire('feed-updated')
+                    await settle()
+                })
             })
-        })
-        State.closeEventStream()
+        } finally {
+            State.closeEventStream()
+            _resetPaintCacheWriteHandleForTest()
+        }
 
         t.equal(
             state.refreshInProgress.value,
@@ -410,6 +422,7 @@ async t => {
     } finally {
         State.reconcileAfterRefresh = originalReconcileAfterRefresh
         State.closeEventStream()
+        _resetPaintCacheWriteHandleForTest()
     }
 
     t.equal(
@@ -469,6 +482,7 @@ test('safety timer clears refreshInProgress when refresh-complete is lost',
             })
         } finally {
             timer.restore()
+            _resetPaintCacheWriteHandleForTest()
         }
     })
 
@@ -513,6 +527,7 @@ async t => {
     } finally {
         State.reconcileAfterRefresh = originalReconcileAfterRefresh
         State.closeEventStream()
+        _resetPaintCacheWriteHandleForTest()
     }
 
     t.equal(
@@ -546,57 +561,61 @@ test('zero-feed refresh recovers via short safety timer without SSE',
         state.feedSyncStatus.value = 'synced'
 
         let refreshPostCount = 0
-        await withStubbedEventSource(async () => {
-            await withStubbedFetch(async (input) => {
-                const url = typeof input === 'string' ?
-                    input :
-                    input instanceof URL ?
-                        input.toString() :
-                        input.url
-                if (url.endsWith('/api/feeds/refresh')) {
-                    refreshPostCount += 1
-                    return jsonResponse({ success: true, queued: 0 })
-                }
-                return jsonResponse({})
-            }, async () => {
-                State.openEventStream(state)
+        try {
+            await withStubbedEventSource(async () => {
+                await withStubbedFetch(async (input) => {
+                    const url = typeof input === 'string' ?
+                        input :
+                        input instanceof URL ?
+                            input.toString() :
+                            input.url
+                    if (url.endsWith('/api/feeds/refresh')) {
+                        refreshPostCount += 1
+                        return jsonResponse({ success: true, queued: 0 })
+                    }
+                    return jsonResponse({})
+                }, async () => {
+                    State.openEventStream(state)
 
-                await State.refreshFeeds(state)
-                t.equal(
-                    state.refreshInProgress.value,
-                    true,
-                    '1st click: pill flashes "updating" before short timer fires'
-                )
+                    await State.refreshFeeds(state)
+                    t.equal(
+                        state.refreshInProgress.value,
+                        true,
+                        '1st click: pill flashes "updating" before short timer fires'
+                    )
 
-                // Wait past the 1s zero-feed safety timer.
-                await new Promise<void>(resolve => setTimeout(resolve, 1100))
+                    // Wait past the 1s zero-feed safety timer.
+                    await new Promise<void>(resolve => setTimeout(resolve, 1100))
 
-                t.equal(
-                    state.refreshInProgress.value,
-                    false,
-                    '1st click: refreshInProgress clears via short safety ' +
-                'timer (no SSE)'
-                )
+                    t.equal(
+                        state.refreshInProgress.value,
+                        false,
+                        '1st click: refreshInProgress clears via short safety ' +
+                    'timer (no SSE)'
+                    )
 
-                // Second back-to-back click must not get stuck either.
-                await State.refreshFeeds(state)
-                t.equal(
-                    state.refreshInProgress.value,
-                    true,
-                    '2nd click: pill flashes "updating" again'
-                )
+                    // Second back-to-back click must not get stuck either.
+                    await State.refreshFeeds(state)
+                    t.equal(
+                        state.refreshInProgress.value,
+                        true,
+                        '2nd click: pill flashes "updating" again'
+                    )
 
-                await new Promise<void>(resolve => setTimeout(resolve, 1100))
+                    await new Promise<void>(resolve => setTimeout(resolve, 1100))
 
-                t.equal(
-                    state.refreshInProgress.value,
-                    false,
-                    '2nd click: refreshInProgress clears via short safety ' +
-                'timer (019 fix)'
-                )
+                    t.equal(
+                        state.refreshInProgress.value,
+                        false,
+                        '2nd click: refreshInProgress clears via short safety ' +
+                    'timer (019 fix)'
+                    )
+                })
             })
-        })
-        State.closeEventStream()
+        } finally {
+            State.closeEventStream()
+            _resetPaintCacheWriteHandleForTest()
+        }
 
         t.equal(
             refreshPostCount,
@@ -630,6 +649,7 @@ async t => {
         })
     } finally {
         dispose()
+        _resetPaintCacheWriteHandleForTest()
     }
 
     t.deepEqual(
@@ -668,11 +688,15 @@ test('refreshFeeds POST 5xx restores priorCounts and sets error (FR-007)',
         state.feedUpdateCounts.value = { 1: 7 }
         state.feedSyncStatus.value = 'updates'
 
-        await withStubbedFetch(async () => {
-            return new Response('boom', { status: 500 })
-        }, async () => {
-            await State.refreshFeeds(state).catch(() => undefined)
-        })
+        try {
+            await withStubbedFetch(async () => {
+                return new Response('boom', { status: 500 })
+            }, async () => {
+                await State.refreshFeeds(state).catch(() => undefined)
+            })
+        } finally {
+            _resetPaintCacheWriteHandleForTest()
+        }
 
         t.deepEqual(
             state.feedUpdateCounts.value,
@@ -702,11 +726,15 @@ async t => {
     const state = buildPartialState()
     state.feedSyncStatus.value = 'updates'
 
-    await withStubbedFetch(async () => {
-        return new Response('unauthenticated', { status: 401 })
-    }, async () => {
-        await State.refreshFeeds(state).catch(() => undefined)
-    })
+    try {
+        await withStubbedFetch(async () => {
+            return new Response('unauthenticated', { status: 401 })
+        }, async () => {
+            await State.refreshFeeds(state).catch(() => undefined)
+        })
+    } finally {
+        _resetPaintCacheWriteHandleForTest()
+    }
 
     t.equal(
         state.user.value,
@@ -798,6 +826,7 @@ async t => {
         )
     })
     State.closeEventStream()
+    _resetPaintCacheWriteHandleForTest()
 })
 
 // US1 - T003: broken-caller pattern guard (FR-008 invariant).
@@ -813,26 +842,30 @@ async t => {
     const state = buildPartialState()
 
     let postCalls = 0
-    await withStubbedFetch(async (input) => {
-        const url = typeof input === 'string' ?
-            input :
-            input instanceof URL ?
-                input.toString() :
-                input.url
-        if (url.endsWith('/api/feeds/refresh')) {
-            postCalls += 1
-            return jsonResponse({ success: true, queued: 0 })
-        }
-        return jsonResponse({})
-    }, async () => {
-        // Simulate the broken Button.click write that landed before
-        // refreshFeeds ran. After the fix this pattern is forbidden;
-        // the test guarantees the consequence is observable so any
-        // future caller that re-introduces it fails CI here.
-        state.refreshInProgress.value = true
+    try {
+        await withStubbedFetch(async (input) => {
+            const url = typeof input === 'string' ?
+                input :
+                input instanceof URL ?
+                    input.toString() :
+                    input.url
+            if (url.endsWith('/api/feeds/refresh')) {
+                postCalls += 1
+                return jsonResponse({ success: true, queued: 0 })
+            }
+            return jsonResponse({})
+        }, async () => {
+            // Simulate the broken Button.click write that landed before
+            // refreshFeeds ran. After the fix this pattern is forbidden;
+            // the test guarantees the consequence is observable so any
+            // future caller that re-introduces it fails CI here.
+            state.refreshInProgress.value = true
 
-        await State.refreshFeeds(state)
-    })
+            await State.refreshFeeds(state)
+        })
+    } finally {
+        _resetPaintCacheWriteHandleForTest()
+    }
 
     t.equal(
         postCalls,

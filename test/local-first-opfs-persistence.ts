@@ -17,6 +17,10 @@ import {
     remoteAdapter
 } from '../src/client/db/index.js'
 import {
+    writePaintCache,
+    readPaintCache
+} from '../src/client/paint-cache.js'
+import {
     getOpfsFilename,
     setSQLiteWorkerClientFactoryForTests,
     setTestMode
@@ -258,7 +262,6 @@ function makeState ():AppState {
         pageSize: signal(20),
         selectedFeedId: signal(null),
         isAuthenticated: computed(() => user.value !== null),
-        initialLoadComplete: signal(false),
         cleanup: () => {}
     } as unknown as AppState
 }
@@ -401,6 +404,52 @@ test(
             t.ok(root.textContent?.includes(itemTitle),
                 'reloaded UI renders the persisted item')
 
+            // AC6.3: write a paint-cache snapshot before disabling
+            const testSnapshot = {
+                feeds: [{
+                    id: 1,
+                    url: 'https://example.com/persist.xml',
+                    title: feedTitle,
+                    description: null,
+                    site_url: null,
+                    last_fetched: null,
+                    last_error: null,
+                    last_status: null,
+                    created_at: '2026-01-01 00:00:00',
+                    updated_at: '2026-01-01 00:00:00'
+                }],
+                items: [{
+                    id: 1,
+                    feed_id: 1,
+                    guid: 'persist-item',
+                    title: itemTitle,
+                    link: 'https://example.com/articles/persistent-item',
+                    description: null,
+                    content: null,
+                    author: null,
+                    pub_date: '2026-01-01 00:00:00',
+                    thumbnail_url: null,
+                    og_image_url: null,
+                    blurhash: null,
+                    image_width: null,
+                    image_height: null,
+                    is_read: 0,
+                    is_starred: 0,
+                    created_at: '2026-01-01 00:00:00',
+                    updated_at: '2026-01-01 00:00:00'
+                }],
+                counts: {
+                    unread: 1,
+                    starred: 0,
+                    total: 1,
+                    perFeed: { 1: 1 }
+                },
+                selectedFeedId: 1
+            }
+            writePaintCache(did, testSnapshot)
+            const beforeDisable = readPaintCache(did)
+            t.ok(beforeDisable !== null, 'paint cache written before disableLocalFirst')
+
             await disableLocalFirst(did, sync.fetchFn)
             const filename = getOpfsFilename(did)
             const opensAfterDisable = harness.counters.opens
@@ -414,6 +463,8 @@ test(
                 'adapter falls back to remote after disable')
             t.equal(harness.counters.opens, opensAfterDisable,
                 'disabled local-first does not reopen SQLite')
+            t.equal(readPaintCache(did), null,
+                'paint cache is cleared after disableLocalFirst')
         } finally {
             render(null, root)
             root.remove()

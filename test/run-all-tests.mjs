@@ -20,6 +20,9 @@ const commands = [
     'node test/run-all-coverage.mjs',
     'esbuild ./test/tab-coordination.ts --bundle | tapout',
     'esbuild ./test/schedule-idle.ts --bundle | tapout',
+    'esbuild ./test/paint-cache.ts --bundle | tapout',
+    'esbuild ./test/paint-cache-bootstrap.ts --bundle | tapout',
+    'esbuild ./test/paint-cache-cleanup.ts --bundle | tapout',
     'esbuild ./test/settings-nav-instant.ts --bundle | tapout',
     'esbuild ./test/cache-status-coalesce.ts --bundle | tapout',
     [
@@ -27,12 +30,18 @@ const commands = [
         '--loader:.wasm=dataurl',
         '| tapout'
     ].join(' '),
-    'esbuild ./test/adapter-factory.ts --bundle | tapout',
+    [
+        'esbuild ./test/adapter-factory.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
+    'esbuild ./test/sync-billing-recovery.ts --bundle | tapout',
     'esbuild ./test/article-detect.ts --bundle | tapout',
     'esbuild ./test/publisher-link.ts --bundle | tapout',
     'esbuild ./test/article-extract.ts --bundle | tapout',
     'esbuild ./test/article-fetch.ts --bundle | tapout',
     'esbuild ./test/item-reader-render-state.ts --bundle | tapout',
+    'esbuild ./test/feed-reader-render-state.ts --bundle --loader:.css=text | tapout',
     [
         'esbuild ./test/fetch-full-endpoint.ts --bundle',
         '--platform=node --format=esm',
@@ -174,8 +183,10 @@ const commands = [
         'esbuild ./test/payment-method-modal.ts --bundle',
         '--loader:.css=text',
         '--alias:@stripe/stripe-js=./test/stripe-js-stub.ts',
+        '--alias:@stripe/stripe-js/pure=./test/stripe-js-stub.ts',
         '| tapout'
-    ].join(' ')
+    ].join(' '),
+    'node test/paint-cache-slow-billing.mjs'
 ]
 
 for (const command of commands) {

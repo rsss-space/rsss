@@ -17,7 +17,7 @@ import {
     _resolveConvergenceForTest,
     CLIENT_GRACE_MS
 } from '../src/client/state.js'
-import type { Feed } from '../src/client/db/types.js'
+import type { Feed, Item, CountsResponse } from '../src/client/db/types.js'
 
 setTestMode(true, wasmUrl as string)
 
@@ -439,6 +439,14 @@ test(
 function makeFakeStateWithFeed (feed:Partial<Feed> & { id:number; url:string }) {
     return {
         feeds: signal<Feed[]>([feed as Feed]),
+        items: signal<Item[]>([]),
+        counts: signal<CountsResponse>({
+            unread: 0,
+            starred: 0,
+            total: 0,
+            perFeed: {}
+        }),
+        selectedFeedId: signal<number|null>(null),
         user: signal<{ did:string }|null>(null)
     } as unknown as Parameters<
         typeof _resolveConvergenceForTest.schedule

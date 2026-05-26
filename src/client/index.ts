@@ -4,21 +4,24 @@ import './instrument.js'
 import { html } from 'htm/preact'
 import { type FunctionComponent, render } from 'preact'
 import { useComputed } from '@preact/signals'
-import { State, type AppState } from './state.js'
-import { isItemRoute } from './routing.js'
+import {
+    State,
+    type AppState,
+    hydratePaintCache
+} from './state.js'
+import { getStoredDid } from './paint-cache.js'
 import Router from './routes/index.js'
 import { NotFound } from './not-found.js'
 import { Header } from './components/header.js'
-import { PageSkeleton } from './components/page-skeleton.js'
-import { ItemSkeleton } from './components/item-skeleton.js'
 import { OAuthCallbackLoader } from './components/oauth-loader.js'
 import '@substrate-system/details-summary'
 import './style.css'
-import Debug from '@substrate-system/debug'
-const debug = Debug('rsss:view:index')
 
 const state = State()
 const router = Router(state)
+
+// Synchronous: must run before render() so the first paint sees the cached snapshot.
+hydratePaintCache(state, getStoredDid())
 
 if (import.meta.hot) {
     import.meta.hot.dispose(() => {
@@ -43,11 +46,6 @@ if (import.meta.env.DEV || import.meta.env.MODE === 'staging') {
 export const App:FunctionComponent<{
     state:AppState
 }> = function App ({ state }) {
-    const pageReady = useComputed(() => (
-        !state.authLoading.value &&
-        (state.user.value === null || state.initialLoadComplete.value)
-    ))
-
     const route = useComputed(() => state.route.value)
 
     const match = useComputed(() => {
@@ -60,19 +58,6 @@ export const App:FunctionComponent<{
 
     if (state.oauthInFlight.value) {
         return html`<${OAuthCallbackLoader} />`
-    }
-
-    if (!pageReady.value) {
-        debug('not readyyyyyyyyyyyyyy')
-        if (isItemRoute(route.value)) {
-            debug('is item route.........')
-            return html`<${ItemSkeleton} state=${state} />`
-        }
-        if (route.value === '/' || route.value.startsWith('/feed/')) {
-            return html`<${PageSkeleton} state=${state} />`
-        }
-        // Other routes (login, about, settings, etc.) don't depend on
-        // feeds/items; render them normally even before pageReady.
     }
 
     const ChildNode = match.value.action(match.value, route.value)

@@ -86,7 +86,25 @@ import {
     cancelIdle,
     type IdleHandle
 } from './util/schedule-idle.js'
+import {
+    readPaintCache,
+    setStoredDid,
+    type PaintCacheV1,
+    writePaintCache,
+    snapshotFromState,
+    clearStoredDid,
+    clearPaintCache
+} from './paint-cache.js'
 const debug = Debug('rsss:state')
+
+/**
+ * Set to `true` exactly once, by `hydratePaintCache`, when a
+ * snapshot was found and applied during the initial bootstrap.
+ * Read by UI to decide whether to show the first-time-bootstrap
+ * card during the OPFS first-pull.
+ */
+export const paintCacheHydratedOnBootstrap:Signal<boolean> =
+    signal(false)
 
 const CHECKOUT_EMAIL_KEY = 'rsss_checkout_email'
 export const DEFAULT_PAGE_SIZE = 20
@@ -342,10 +360,6 @@ export type AppState = {
     selectedFeedId:Signal<number|null>,
     viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
-    // Flips true once after the first refreshAfterSync resolves and
-    // never flips back. Used to gate the initial-load skeleton; per-
-    // section *Loading flags drive subsequent refreshes.
-    initialLoadComplete:Signal<boolean>,
     cleanup:() => void
 }
 
@@ -427,7 +441,6 @@ export function State ():AppState {
         pageSize: signal(DEFAULT_PAGE_SIZE),
         selectedFeedId: signal<number|null>(null),
         viewItemsCache: new Map() as ViewItemsCache,
-        initialLoadComplete: signal<boolean>(false),
         cleanup: () => {},
     }
 
@@ -542,14 +555,7 @@ export function State ():AppState {
                     if (State.handleSyncAuthError(state, err)) {
                         return
                     }
-                    if (
-                        err instanceof SyncBillingError ||
-                        err instanceof PushSyncBillingError
-                    ) {
-                        State.loadBillingStatus()
-                        return
-                    }
-                    debug('sync cycle error:', err)
+                    State.handleSyncCycleError(err)
                 }).then(() => {
                     if (!isCurrent()) return
                     State.refreshAfterSync(state)
@@ -622,14 +628,7 @@ export function State ():AppState {
                 if (State.handleSyncAuthError(state, err)) {
                     return
                 }
-                if (
-                    err instanceof SyncBillingError ||
-                    err instanceof PushSyncBillingError
-                ) {
-                    State.loadBillingStatus()
-                    return
-                }
-                debug('sync cycle online error:', err)
+                State.handleSyncCycleError(err)
             })
         }
     }
@@ -703,6 +702,70 @@ export function State ():AppState {
     return state
 }
 
+/**
+ * Synchronously apply a paint-cache snapshot to the state signals.
+ * Returns true if hydration happened, false otherwise.
+ *
+ * Cache wins over the SSR seed: the cache is the user's last-rendered
+ * view (selectedFeedId, scroll-relevant ordering); the immediate
+ * `loadInitialView()` call after auth will overwrite authoritatively
+ * within ~100ms.
+ */
+export function hydratePaintCache (
+    state:AppState,
+    did:string|null
+):boolean {
+    if (did === null) return false
+    const snap:PaintCacheV1|null = readPaintCache(did)
+    if (snap === null) return false
+    batch(() => {
+        state.feeds.value = snap.feeds
+        state.items.value = snap.items
+        state.counts.value = snap.counts
+        state.selectedFeedId.value = snap.selectedFeedId
+        paintCacheHydratedOnBootstrap.value = true
+    })
+    return true
+}
+
+let _pendingPaintCacheWrite:IdleHandle|null = null
+
+const PAINT_CACHE_WRITE_DEBOUNCE_MS = 1000
+
+/**
+ * Schedule a debounced paint-cache write. Coalesces multiple loads
+ * within the same idle window into a single write. The write only
+ * happens when a logged-in DID is available — otherwise it is a
+ * no-op (there is no per-tab cache for unauthenticated users).
+ */
+export function schedulePaintCacheWrite (state:AppState):void {
+    const did = state.user.value?.did
+    if (!did) return
+    cancelIdle(_pendingPaintCacheWrite)
+    _pendingPaintCacheWrite = scheduleIdle(() => {
+        _pendingPaintCacheWrite = null
+        const snap = snapshotFromState(
+            state.feeds.peek(),
+            state.items.peek(),
+            state.counts.peek(),
+            state.selectedFeedId.peek()
+        )
+        writePaintCache(did, snap)
+    }, { timeout: PAINT_CACHE_WRITE_DEBOUNCE_MS })
+}
+
+/**
+ * Test-only helper to cancel the pending paint-cache write idle
+ * callback. Call this in test teardown (finally block) to prevent
+ * the idle callback from firing after the test environment is torn
+ * down. This is needed because schedulePaintCacheWrite queues a
+ * debounced idle callback that may fire after tests complete.
+ */
+export function _resetPaintCacheWriteHandleForTest ():void {
+    cancelIdle(_pendingPaintCacheWrite)
+    _pendingPaintCacheWrite = null
+}
+
 State.handleSyncAuthError = function (
     state:AppState,
     err:unknown
@@ -740,9 +803,27 @@ function scheduleConvergenceForResolvingFeeds (state:AppState):void {
 }
 
 /**
+ * Handles errors from sync cycles (used in both the local-first sync
+ * startup and the online recovery effect). If the error is a billing
+ * error (SyncBillingError or PushSyncBillingError), invokes
+ * loadBillingStatus to re-check entitlement and trigger the downgrade
+ * flow if the subscription has lapsed. Other errors are logged.
+ * Auth errors should be handled before this is called in the calling code.
+ */
+State.handleSyncCycleError = function (err:unknown):void {
+    if (
+        err instanceof SyncBillingError ||
+        err instanceof PushSyncBillingError
+    ) {
+        State.loadBillingStatus()
+        return
+    }
+    debug('sync cycle error:', err)
+}
+
+/**
  * First post-auth load. Pulls feeds, indicator, items, counts, and
- * the route item if applicable. Sets initialLoadComplete on the way
- * out so the App shell can swap from skeleton to real UI.
+ * the route item if applicable.
  */
 State.loadInitialView = async function (
     state:AppState
@@ -750,36 +831,30 @@ State.loadInitialView = async function (
     state.viewItemsCache.clear()
     const route = state.route.value
 
-    try {
-        // Load feeds and schedule convergence in parallel with other loads.
-        // Chain scheduling on the feeds promise to avoid serialization.
-        const feedsLoaded = State.loadFeeds(state).then(() => {
-            // Schedule convergence for any feeds that are still resolving after
-            // the initial load (FR-006, AC1.3: reload preserves terminal state).
-            scheduleConvergenceForResolvingFeeds(state)
-        })
+    // Load feeds and schedule convergence in parallel with other loads.
+    // Chain scheduling on the feeds promise to avoid serialization.
+    const feedsLoaded = State.loadFeeds(state).then(() => {
+        // Schedule convergence for any feeds that are still resolving after
+        // the initial load (FR-006, AC1.3: reload preserves terminal state).
+        scheduleConvergenceForResolvingFeeds(state)
+    })
 
-        await Promise.all([
-            feedsLoaded,
-            State.loadFeedStatus(state),
-            State.loadItems(state),
-            State.loadCounts(state)
-        ])
+    await Promise.all([
+        feedsLoaded,
+        State.loadFeedStatus(state),
+        State.loadItems(state),
+        State.loadCounts(state)
+    ])
 
-        if (!isItemRoute(route)) return
+    if (!isItemRoute(route)) return
 
-        const item = await State.loadItemByRoute(state, route)
-        if (state.route.value !== route) return
+    const item = await State.loadItemByRoute(state, route)
+    if (state.route.value !== route) return
 
-        batch(() => {
-            state.routeItem.value = item
-            state.routeItemLoading.value = false
-        })
-    } finally {
-        if (!state.initialLoadComplete.value) {
-            state.initialLoadComplete.value = true
-        }
-    }
+    batch(() => {
+        state.routeItem.value = item
+        state.routeItemLoading.value = false
+    })
 }
 
 /**
@@ -813,10 +888,8 @@ State.reconcileAfterRefresh = async function (
 }
 
 // Back-compat shim: external callers (online/offline handlers and the
-// bootstrap path) continue to call refreshAfterSync. Route them to the
-// initial-load path because they all run before initialLoadComplete is
-// set or as part of resuming sync after a network event -- both of
-// which legitimately want the feeds list re-fetched.
+// bootstrap path) continue to call refreshAfterSync. Online/offline handlers
+// and the bootstrap path legitimately want the feeds list re-fetched.
 State.refreshAfterSync = State.loadInitialView
 
 export function currentFilterKey (state:AppState):FilterKey|null {
@@ -841,6 +914,7 @@ export function applyItemsResult (
         state.itemsTotal.value = result.total
         state.itemsLoading.value = false
     })
+    schedulePaintCacheWrite(state)
     if (requestKey !== null) {
         state.viewItemsCache.set(requestKey, {
             items: result.items as Item[],
@@ -1200,6 +1274,7 @@ State.checkAuth = async function (
                     avatar: data.avatar
                 }
                 state.user.value = user
+                setStoredDid(data.did)
                 State.openEventStream(state)
             } else {
                 state.user.value = null
@@ -1715,6 +1790,7 @@ State.resumeSubscription = async function ():Promise<void> {
 State.logout = async function (
     state:AppState
 ):Promise<void> {
+    const did = state.user.value?.did
     let serverLogoutOk = false
     try {
         const res = await api.post('auth/logout', {
@@ -1738,6 +1814,8 @@ State.logout = async function (
         resetBilling()
         resetPaymentMethods()
     })
+    if (did) clearPaintCache(did)
+    clearStoredDid()
     State.closeEventStream()
     state._setRoute('/login')
 }
@@ -1763,6 +1841,7 @@ State.loadFeeds = async function (
             state.feedsError.value = null
             state.feedsLoading.value = false
         })
+        schedulePaintCacheWrite(state)
     } catch (err) {
         debug('Error loading feeds:', err)
         batch(() => {
@@ -2060,6 +2139,7 @@ State.loadCounts = async function (
         )
         const counts = await adapter.getCounts()
         state.counts.value = counts
+        schedulePaintCacheWrite(state)
     } catch (err) {
         debug('Error loading counts:', err)
     }

@@ -7,7 +7,13 @@ import {
     State,
     type AppState,
     stripProtocol,
+    paintCacheHydratedOnBootstrap,
 } from '../state.js'
+import {
+    bootstrapInProgress,
+    bootstrapFeedsCount,
+    bootstrapItemsCount
+} from '../db/bootstrap.js'
 import { ItemRow } from '../components/item-row.js'
 import { Sidebar } from '../components/sidebar.js'
 import { CacheSettings } from '../components/cache-settings.js'
@@ -16,6 +22,8 @@ import {
 } from '../components/pending-update-empty-state.js'
 import Debug from '@substrate-system/debug'
 const debug = Debug('rsss:view:feed-reader')
+
+export const BOOTSTRAP_CARD_TITLE = 'Setting up your local cache'
 
 /**
  * This is the home route.
@@ -118,6 +126,29 @@ export const FeedReader:FunctionComponent<{
     }, [])
 
     const renderEmptyState = ():unknown => {
+        // First-ever device bootstrap: show explicit progress card
+        // instead of "Maybe add some feeds" while OPFS pulls the
+        // initial dataset.
+        if (
+            bootstrapInProgress.value &&
+            !paintCacheHydratedOnBootstrap.value
+        ) {
+            return html`
+                <div class="bootstrap-card" role="status" aria-live="polite">
+                    <h3 class="bootstrap-card-title">
+                        ${BOOTSTRAP_CARD_TITLE}
+                    </h3>
+                    <p class="bootstrap-card-body">
+                        This only happens once on this device.
+                    </p>
+                    <p class="bootstrap-card-progress">
+                        ${bootstrapFeedsCount.value} feeds &middot;
+                        ${bootstrapItemsCount.value} items
+                    </p>
+                </div>
+            `
+        }
+
         if (feeds.value.length === 0) {
             return html`<div class="empty-state">
                 Maybe add some feeds to start reading.

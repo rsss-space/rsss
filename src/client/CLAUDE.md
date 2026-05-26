@@ -1,6 +1,6 @@
 # Client: Billing / Payment Methods
 
-Last verified: 2026-05-18
+Last verified: 2026-05-25
 
 ## Purpose
 Client-side surface for managing Stripe PaymentMethods. Mirrors the
@@ -39,16 +39,24 @@ Stripe Elements inside a `<modal-window>` web component.
 - **Guarantees**: Renders `@substrate-system/dialog`'s `<modal-window>`
   (NOT the native `<dialog>`); the element exposes `role="dialog"`,
   `aria-modal="true"`, and an `active="true|false"` attribute that
-  drives open/close. Loads Stripe.js lazily via `@stripe/stripe-js`'s
-  `loadStripe()` using the publishable key from `billingStatus`.
+  drives open/close. Loads Stripe.js lazily via `@stripe/stripe-js/pure`'s
+  `loadStripe()` using the publishable key from `billingStatus`. The
+  `/pure` entrypoint defers injection of the Stripe.js `<script>` tag
+  until `loadStripe()` is first awaited (i.e. when the modal opens),
+  so the SDK is never on the initial-render critical path.
+  `index.html` includes
+  `<link rel="preconnect" crossorigin href="https://js.stripe.com">`
+  to warm DNS/TLS for that deferred fetch.
 
 ## Dependencies
-- **Uses**: `@stripe/stripe-js` (Elements + SetupIntent confirmation),
+- **Uses**: `@stripe/stripe-js/pure` (deferred script injection;
+  Elements + SetupIntent confirmation), types from `@stripe/stripe-js`,
   `@substrate-system/dialog`, server billing routes (see
   `src/server/CLAUDE.md`)
 - **Used by**: `routes/settings.ts` — "Manage payment methods" button
 - **Boundary**: Only `payment-method-modal.ts` may import
-  `@stripe/stripe-js` or `@substrate-system/dialog`.
+  `@stripe/stripe-js` (or `@stripe/stripe-js/pure`) or
+  `@substrate-system/dialog`.
 
 ## Key Decisions
 - **Server is source of truth**: every mutation reads the canonical

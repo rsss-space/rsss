@@ -47,7 +47,6 @@ function makeState ():AppState {
         pageSize: signal(20),
         selectedFeedId: signal<number|null>(null),
         viewItemsCache: new Map() as ViewItemsCache,
-        initialLoadComplete: signal<boolean>(false),
         cleanup: () => {}
     } as unknown as AppState
     ;(state as unknown as {

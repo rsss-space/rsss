@@ -91,12 +91,15 @@ This phase implements and tests:
 
 ### 023-fix-initial-load.AC7: Third-party latency does not block paint
 - **023-fix-initial-load.AC7.2 Success:** `loadBillingStatus()` is
-  not awaited anywhere on the render critical path
-  (`src/client/state.ts:572` remains fire-and-forget; no other
-  awaiter exists).
+  not awaited on the **initial render critical path** (app bootstrap,
+  the first user effect at state.ts:572, the first sync cycle).
+  User-initiated action handlers fired in response to user clicks
+  AFTER first paint MAY await `loadBillingStatus()`; these are not
+  on the initial-render path.
 
   *Verified by code search in Task 2 — this AC is a *constraint*
-  this phase confirms, not a new behavior.*
+  this phase confirms, not a new behavior. See phase_06_findings.md
+  for the complete audit results.*
 
 ---
 
@@ -266,16 +269,19 @@ to claim AC7.2.
    ```
 
    For each match, classify it as:
-   - Fire-and-forget (no await): OK.
-   - Awaited: BLOCKER — investigate and refactor.
+   - Fire-and-forget (no await) on render critical path: OK.
+   - Awaited call in effect or bootstrap code: BLOCKER — investigate and refactor.
+   - Awaited call in user-initiated action handler (checkout, account deletion, etc.): OK
+     (not on the initial-render path).
 
-3. Document the audit results in the PR description (or in the
-   `phase_06_findings.md` scratch note alongside Phase 1's). The
-   note records the result of step 1-2 and links each occurrence to
-   its file:line.
+3. Document the audit results in `phase_06_findings.md`. The note
+   records the result of step 1-2, links each occurrence to its
+   file:line, and classifies each match (critical-path vs. user-action).
 
-If step 1 returns any matches, the implementation plan needs an
-additional task to remove the await before the AC can be claimed.
+If step 1 finds awaited calls on the initial-render critical path
+(app bootstrap, the user effect, the first sync cycle), the
+implementation plan needs an additional task to remove the await
+before the AC can be claimed.
 
 **Verification:**
 

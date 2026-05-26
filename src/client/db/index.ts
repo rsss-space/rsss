@@ -1,5 +1,4 @@
 import { batch, signal } from '@preact/signals'
-import { billingStatus } from '../billing-status.js'
 import {
     syncSubscriptions,
     setSyncSubscriptions,
@@ -34,6 +33,7 @@ import {
     beginLocalFirstDisable,
     endLocalFirstDisable
 } from './sync.js'
+import { clearPaintCache } from '../paint-cache.js'
 import type { DbAdapter, Item } from './types.js'
 import type {
     LocalDbErrorCategory,
@@ -167,14 +167,17 @@ interface ResetLocalFirstOptions {
 }
 
 /**
- * Returns `localAdapter` when the user has opted in AND the browser
- * supports OPFS.  Otherwise returns `remoteAdapter`.
+ * Returns `localAdapter` when the user has opted in to local-first
+ * sync AND the browser supports OPFS. Otherwise returns
+ * `remoteAdapter`.
  *
  * Pass `did` only when local-first is active (used to open the DB).
+ *
+ * Lapsed-billing enforcement happens at sync time via SyncBillingError
+ * / PushSyncBillingError handlers in state.ts — not here.
  */
 export async function getAdapter (did?:string):Promise<DbAdapter> {
     if (
-        billingStatus.value?.entitled &&
         syncSubscriptions.value &&
         did &&
         !bootstrapInProgress.value &&
@@ -285,6 +288,7 @@ export async function disableLocalFirst (
         _resetAdapterCache()
         await releaseLocalTabLock()
         await removeOpfsDb(did)
+        clearPaintCache(did)
         batch(() => {
             setSyncSubscriptions(false)
         })
