@@ -93,6 +93,22 @@
 	"env": {
 		"staging": {
 			"name": "rsss-staging",
+			"routes": [
+				{
+					"pattern": "staging.rsss.app",
+					"custom_domain": true
+				}
+			],
+			"vars": {
+				"NODE_ENV": "staging",
+				"APP_ORIGIN": "https://staging.rsss.app"
+			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": ["UserDO"]
+				}
+			],
 			"durable_objects": {
 				"bindings": [
 					{
@@ -121,22 +137,19 @@
 			"queues": {
 				"producers": [
 					{
-						"binding": "blurhash_jobs",
-						"queue": "blurhash-jobs"
+						"binding": "BLURHASH_QUEUE",
+						"queue": "blurhash-jobs-staging"
 					}
 				],
 				"consumers": [
 					{
-						"queue": "blurhash-jobs",
+						"queue": "blurhash-jobs-staging",
 						"max_batch_size": 10,
 						"max_batch_timeout": 30,
 						"max_retries": 3,
-						"dead_letter_queue": "blurhash-dlq"
+						"dead_letter_queue": "blurhash-dlq-staging"
 					}
 				]
-			},
-			"vars": {
-				"NODE_ENV": "staging"
 			}
 		},
 		"production": {
