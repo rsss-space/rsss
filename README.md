@@ -276,14 +276,31 @@ Keep secret bindings out of `wrangler.jsonc` `vars`. In production,
 npm run deploy:staging
 ```
 
+This deploys the `rsss-staging` Worker bound to
+`https://staging.rsss.space` (custom domain on the `rsss.space` zone).
+
 5. Smoke test staging:
 
 ```sh
-curl https://<your-domain>/api/health
-curl https://<your-domain>/oauth/client-metadata.json
-curl -i -X POST https://<your-domain>/api/auth/dev-login
-curl -i -X POST https://<your-domain>/api/billing/checkout
+curl https://staging.rsss.space/api/health
+curl https://staging.rsss.space/oauth/client-metadata.json
+curl -i -X POST https://staging.rsss.space/api/auth/dev-login
+curl -i -X POST https://staging.rsss.space/api/billing/checkout
 ```
+
+### Workers Builds (CI deploys from Git)
+
+The `staging` git branch is wired to deploy automatically via
+Cloudflare Workers Builds. In the Cloudflare dashboard, under the
+`rsss` Worker, set **Settings > Build**:
+
+- Git branch (production): `main`
+- Deploy command: `npx wrangler deploy --env production`
+- Non-production branch deploy command: `npx wrangler deploy --env staging`
+
+The non-production command runs for every non-`main` branch push,
+including `staging`. It picks up `env.staging` from `wrangler.jsonc`
+and targets the `rsss-staging` Worker on `staging.rsss.space`.
 
 6. Deploy to production:
 

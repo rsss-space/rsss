@@ -93,15 +93,17 @@
 	"env": {
 		"staging": {
 			"name": "rsss-staging",
+			"workers_dev": false,
+			"preview_urls": false,
 			"routes": [
 				{
-					"pattern": "staging.rsss.app",
+					"pattern": "staging.rsss.space",
 					"custom_domain": true
 				}
 			],
 			"vars": {
 				"NODE_ENV": "staging",
-				"APP_ORIGIN": "https://staging.rsss.app"
+				"APP_ORIGIN": "https://staging.rsss.space"
 			},
 			"durable_objects": {
 				"bindings": [
