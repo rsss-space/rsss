@@ -20,6 +20,7 @@ import './style.css'
 const state = State()
 const router = Router(state)
 
+// Synchronous: must run before render() so the first paint sees the cached snapshot.
 hydratePaintCache(state, getStoredDid())
 
 if (import.meta.hot) {

@@ -6,6 +6,7 @@
  * Verifies AC1.3, AC1.4, AC5.1, AC5.2, AC5.3, AC5.4 from phase 7.
  */
 import { test } from '@substrate-system/tapzero'
+import { BOOTSTRAP_CARD_TITLE } from '../src/client/routes/feed-reader.js'
 
 /**
  * Mirror the signal state needed for renderEmptyState decision.
@@ -68,14 +69,15 @@ test('AC5.1: bootstrap card renders when bootstrapInProgress && !paintCacheHydra
 // AC5.2: Bootstrap card contains literal text and counts
 test('AC5.2: bootstrap card text template includes literal phrase and counts',
     t => {
-        // Simulating template literal output
-        const cardTitle = 'Setting up your local cache'
         const cardBody = 'This only happens once on this device.'
         const feeds = 12
         const items = 240
 
-        // Check literal text
-        t.equal(cardTitle.includes('Setting up your local cache'), true,
+        // Check literal text from production export
+        t.equal(BOOTSTRAP_CARD_TITLE, 'Setting up your local cache',
+            'card title matches production constant')
+        t.equal(BOOTSTRAP_CARD_TITLE.includes('Setting up your local cache'),
+            true,
             'card title contains exact phrase')
         t.equal(cardBody.includes('This only happens once'), true,
             'card body contains promise text')

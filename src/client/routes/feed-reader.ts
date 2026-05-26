@@ -23,6 +23,8 @@ import {
 import Debug from '@substrate-system/debug'
 const debug = Debug('rsss:view:feed-reader')
 
+export const BOOTSTRAP_CARD_TITLE = 'Setting up your local cache'
+
 /**
  * This is the home route.
  */
@@ -134,7 +136,7 @@ export const FeedReader:FunctionComponent<{
             return html`
                 <div class="bootstrap-card" role="status" aria-live="polite">
                     <h3 class="bootstrap-card-title">
-                        Setting up your local cache
+                        ${BOOTSTRAP_CARD_TITLE}
                     </h3>
                     <p class="bootstrap-card-body">
                         This only happens once on this device.

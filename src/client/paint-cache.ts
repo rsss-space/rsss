@@ -27,9 +27,9 @@ const MAX_ITEMS = 200
 const MAX_BYTES = 1_000_000
 
 /**
- * FeedSummary matches the full `Feed` shape — feeds are small (100
- * max) so we keep them whole for direct assignment to the feeds
- * signal on hydrate.
+ * FeedSummary is a superset of the design plan's "narrow" shape,
+ * intentionally mirroring the full `Feed` interface so direct signal
+ * assignment works at hydration without per-record padding logic.
  */
 export interface FeedSummary {
     id:number
@@ -45,10 +45,10 @@ export interface FeedSummary {
 }
 
 /**
- * ItemSummary mirrors `Item` minus the heavy text fields (description,
- * content, full_content*). These are filled with `null` defaults so
- * the shape can be assigned directly to the items signal without
- * padding logic at the hydration site.
+ * ItemSummary is a superset of the design plan's "narrow" shape,
+ * intentionally mirroring the full `Item` interface so direct signal
+ * assignment works at hydration without per-record padding logic.
+ * Heavy text fields (description, content, full_content*) are set to `null`.
  */
 export interface ItemSummary {
     id:number
