@@ -21,21 +21,6 @@
 	},
 
 	/**
-	 * Migrations for Durable Objects
-	 */
-	"migrations": [
-		{
-			"tag": "v1",
-			"new_sqlite_classes": ["CollieUserDO"]
-		},
-		{
-			"tag": "v2",
-			"deleted_classes": ["CollieUserDO"],
-			"new_sqlite_classes": ["UserDO"]
-		}
-	],
-
-	/**
 	 * KV namespace for user session data and user->DO mappings
 	 */
 	"kv_namespaces": [
