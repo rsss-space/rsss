@@ -251,6 +251,63 @@ export function _releaseRefreshForTest (state:AppState):void {
     releaseRefresh(state)
 }
 
+/**
+ * Stable name for an in-flight background refresh operation.
+ * Used for debugging and for tying SSE / timer events to the
+ * specific acquire that should release.
+ */
+export type RefreshOpName =
+    | 'add-feed'
+    | 'resolve-convergence'
+    | 'sse-feed-updated'
+    | 'online-recovery'
+
+/**
+ * Wrap an async background-sync operation with refresh-indicator
+ * lifecycle.
+ *
+ * - Acquires the refcount synchronously before `fn` runs.
+ * - Releases on settle (resolve OR reject) via try/finally.
+ * - On rejection, sets `state.feedSyncStatus.value = 'error'` in the
+ *   same `batch()` as the release, so the UI transitions from
+ *   yellow ("updating…") directly to red ("error") without an
+ *   intermediate "synced"/"inactive" frame.
+ * - On resolve, `feedSyncStatus` is not touched by the helper —
+ *   the caller (or downstream SSE handler) decides the post-success
+ *   status.
+ *
+ * The `name` is for debugging only; it is logged at acquire and on
+ * rejection but does not affect behavior.
+ *
+ * Concurrent `trackRefresh` calls each independently acquire and
+ * release; the underlying refcount keeps the signal `true` until
+ * every acquire has been released.
+ */
+export async function trackRefresh<T> (
+    state:AppState,
+    name:RefreshOpName,
+    fn:() => Promise<T>,
+):Promise<T> {
+    acquireRefresh(state)
+    debug('trackRefresh acquire', name)
+    try {
+        const result = await fn()
+        releaseRefresh(state)
+        return result
+    } catch (err) {
+        batch(() => {
+            releaseRefresh(state)
+            state.feedSyncStatus.value = 'error'
+        })
+        debug(
+            'trackRefresh rejected',
+            name,
+            err instanceof Error ? err.message : err,
+        )
+        throw err
+    }
+}
+
 export const _resolveConvergenceForTest = {
     schedule (state:AppState, url:string):void {
         scheduleResolveConvergence(state, url)
