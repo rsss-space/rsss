@@ -8,14 +8,17 @@ import {
 } from '../src/client/state.js'
 import type { AppState } from '../src/client/state.js'
 
+type SyncStatus =
+    | 'inactive'
+    | 'updates'
+    | 'syncing'
+    | 'error'
+    | 'synced'
+
 function makeMinimalState ():AppState {
     const refreshInProgress = signal<boolean>(false)
-    const feedSyncStatus = signal<
-        'inactive'|'updates'|'syncing'|'error'|'synced'
-    >('inactive')
-    const displayedFeedSyncStatus = computed<
-        'inactive'|'updates'|'syncing'|'error'|'synced'
-    >(() => (
+    const feedSyncStatus = signal<SyncStatus>('inactive')
+    const displayedFeedSyncStatus = computed<SyncStatus>(() => (
         refreshInProgress.value ?
             'syncing' :
             feedSyncStatus.value
@@ -30,7 +33,8 @@ function makeMinimalState ():AppState {
 }
 
 test(
-    'trackRefresh resolve path: holds signal true during fn, releases on settle',
+    'trackRefresh resolve path: holds signal true during fn, ' +
+    'releases on settle',
     async (t) => {
         const state = makeMinimalState()
         _resetRefreshRefCountForTest(state)
@@ -81,7 +85,7 @@ test(
 
         state.feedSyncStatus.value = 'synced'
 
-        const observed: Array<'inactive'|'updates'|'syncing'|'error'|'synced'> = []
+        const observed:SyncStatus[] = []
 
         // Set up the effect BEFORE trackRefresh so we observe from the
         // beginning. The initial subscription will see 'synced'.
@@ -130,13 +134,15 @@ test(
         t.equal(
             JSON.stringify(observed),
             JSON.stringify(['syncing', 'error']),
-            'displayedFeedSyncStatus observes only syncing->error, no intermediate'
+            'displayedFeedSyncStatus observes syncing->error, ' +
+            'no intermediate'
         )
     }
 )
 
 test(
-    'trackRefresh reject: feedSyncStatus is overwritten regardless of prior value',
+    'trackRefresh reject: feedSyncStatus is overwritten ' +
+    'regardless of prior value',
     async (t) => {
         const state = makeMinimalState()
         _resetRefreshRefCountForTest(state)
@@ -254,9 +260,9 @@ test(
         await _promise1
         await promise2
         t.equal(
-            true,
-            true,
-            'both promises resolved'
+            state.refreshInProgress.value,
+            false,
+            'signal is false after both trackRefresh calls settle',
         )
     }
 )
