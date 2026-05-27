@@ -391,7 +391,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-05-27-fix-silent-update-gap.md .
+/ed3d-plan-and-execute:execute-implementation-plan DOCS/implementation-plans/2026-05-27-fix-silent-update-gap/ .
 ```
 
 --------------------------------------------------------------
