@@ -20,15 +20,6 @@
 		]
 	},
 
-	"migrations": [
-		{
-			"tag": "v1",
-			"new_sqlite_classes": [
-				"UserDO"
-			]
-		}
-	],
-
 	/**
 	 * KV namespace for user session data and user->DO mappings
 	 */
@@ -102,12 +93,6 @@
 				"NODE_ENV": "staging",
 				"APP_ORIGIN": "https://staging.rsss.space"
 			},
-			"migrations": [
-				{
-					"tag": "v1",
-					"new_sqlite_classes": ["UserDO"]
-				}
-			],
 			"durable_objects": {
 				"bindings": [
 					{
