@@ -95,6 +95,11 @@ import {
     clearStoredDid,
     clearPaintCache
 } from './paint-cache.js'
+import {
+    displayedRefreshInProgress,
+    init as initDisplayedRefresh,
+    _resetForTest as resetDisplayedRefresh,
+} from './displayed-refresh-in-progress.js'
 const debug = Debug('rsss:state')
 
 /**
@@ -119,6 +124,93 @@ const REFRESH_FEEDS_SAFETY_TIMEOUT_MS = 60_000
 const REFRESH_FEEDS_ZERO_FEED_SAFETY_MS = 1_000
 export const RESOLVE_WINDOW_MS = 30_000
 export const CLIENT_GRACE_MS = 5_000
+
+/**
+ * Coordination state for add-feed acquires that release on either
+ * SSE `feed-updates-available` (carrying the added feedId) OR a
+ * hard 35-second timeout, whichever fires first. Keyed by feedId.
+ *
+ * Module-private; tests use `_resetPendingAddFeedAcquiresForTest`.
+ */
+type AddFeedAcquireRecord = {
+    /**
+     * Resolves the pending Promise returned by
+     * `waitForAddFeedRelease`. Idempotent (subsequent calls are
+     * no-ops).
+     */
+    settle:() => void
+    /** Timer handle for the hard-timeout fallback. */
+    timer:ReturnType<typeof setTimeout>
+}
+const _pendingAddFeedAcquires =
+    new Map<number, AddFeedAcquireRecord>()
+
+/**
+ * Test-only: clear all pending add-feed acquires and their
+ * timers without firing the settle callbacks.
+ */
+export function _resetPendingAddFeedAcquiresForTest ():void {
+    for (const record of _pendingAddFeedAcquires.values()) {
+        clearTimeout(record.timer)
+    }
+    _pendingAddFeedAcquires.clear()
+}
+
+/**
+ * Test-only override for the hard-timeout duration used by
+ * `waitForAddFeedRelease`. Allows tests to exercise the timeout
+ * path without waiting a real 35 seconds. Pass `undefined` to
+ * restore the production value
+ * (RESOLVE_WINDOW_MS + CLIENT_GRACE_MS).
+ */
+let _addFeedHardTimeoutMs:number =
+    RESOLVE_WINDOW_MS + CLIENT_GRACE_MS
+export function _setAddFeedHardTimeoutForTest (
+    ms:number|undefined,
+):void {
+    _addFeedHardTimeoutMs = ms ?? (RESOLVE_WINDOW_MS + CLIENT_GRACE_MS)
+}
+
+/**
+ * Returns a Promise that resolves when one of:
+ * - SSE `feed-updates-available` fires for the given feedId
+ *   (drained by the augmented handler in Task 2).
+ * - The hard-timeout (35 s in production) elapses.
+ *
+ * Side-effect: registers a record in `_pendingAddFeedAcquires`.
+ * The record's `settle` callback is invoked exactly once. Both
+ * the SSE drain path and the timeout fire-path call `settle`.
+ */
+function waitForAddFeedRelease (feedId:number):Promise<void> {
+    return new Promise<void>((resolve) => {
+        let settled = false
+        const settle = ():void => {
+            if (settled) return
+            settled = true
+            clearTimeout(record.timer)
+            _pendingAddFeedAcquires.delete(feedId)
+            resolve()
+        }
+        const timer = setTimeout(settle, _addFeedHardTimeoutMs)
+        const record:AddFeedAcquireRecord = { settle, timer }
+        _pendingAddFeedAcquires.set(feedId, record)
+    })
+}
+
+/**
+ * Drain any pending add-feed acquires whose feedId appears in
+ * `feedIds`. Called from the SSE `feed-updates-available`
+ * handler. Each drained acquire settles its waiting Promise,
+ * which releases the `trackRefresh` wrapper in `State.addFeed`.
+ */
+function drainAddFeedAcquires (feedIds:Iterable<number>):void {
+    for (const feedId of feedIds) {
+        const record = _pendingAddFeedAcquires.get(feedId)
+        if (record !== undefined) {
+            record.settle()
+        }
+    }
+}
 
 let refreshFeedsSafetyTimeout:ReturnType<typeof setTimeout>|null = null
 
@@ -148,6 +240,211 @@ function isFeedStillResolving (state:AppState, feedId:number):boolean {
     return row.last_fetched === null && !row.last_error
 }
 
+// Module-private refcount for refreshInProgress.
+// Keyed per-AppState so test instances do not pollute each other.
+const _refreshRefCounts = new WeakMap<AppState, number>()
+
+// Module-private writable handle to the refresh signal.
+// The public AppState interface exposes a ReadonlySignal view to
+// prevent external direct writes; the helpers below mutate the
+// signal via this map, keeping the refcount the only valid path.
+const _refreshSignals = new WeakMap<AppState, Signal<boolean>>()
+
+/**
+ * Register the writable refresh signal for the given AppState so the
+ * refcount helpers can mutate it. Called by the AppState factory.
+ * Module-private.
+ */
+function registerRefreshSignal (
+    state:AppState,
+    sig:Signal<boolean>,
+):void {
+    _refreshSignals.set(state, sig)
+}
+
+/**
+ * Increment the refcount for the given AppState. If the counter
+ * transitions from 0 -> 1, set `state.refreshInProgress.value = true`
+ * inside a `batch()`.
+ *
+ * Module-private (not exported). External callers ship in Phase 2
+ * via `trackRefresh`.
+ */
+function acquireRefresh (state:AppState):void {
+    const sig = _refreshSignals.get(state)
+    if (sig === undefined) return
+    const current = _refreshRefCounts.get(state) ?? 0
+    const next = current + 1
+    _refreshRefCounts.set(state, next)
+    if (current === 0) {
+        batch(() => {
+            sig.value = true
+        })
+    }
+}
+
+/**
+ * Decrement the refcount for the given AppState. Bounded at zero:
+ * extra releases are no-ops, never make the counter negative, and
+ * never re-toggle the signal back to `true` on a subsequent acquire.
+ * If the counter transitions from 1 -> 0, set
+ * `state.refreshInProgress.value = false` inside a `batch()`.
+ *
+ * Module-private (not exported). External callers ship in Phase 2.
+ */
+function releaseRefresh (state:AppState):void {
+    const sig = _refreshSignals.get(state)
+    if (sig === undefined) return
+    const current = _refreshRefCounts.get(state) ?? 0
+    if (current <= 0) return
+    const next = current - 1
+    _refreshRefCounts.set(state, next)
+    if (next === 0) {
+        batch(() => {
+            sig.value = false
+        })
+    }
+}
+
+/**
+ * Test-only: reset both the refcount and the mirrored signal for the
+ * given AppState. Used so test cases that exercise acquire/release
+ * directly do not leak state across tests.
+ */
+export function _resetRefreshRefCountForTest (state:AppState):void {
+    _refreshRefCounts.delete(state)
+    const sig = _refreshSignals.get(state)
+    if (sig !== undefined) {
+        sig.value = false
+    }
+}
+
+/**
+ * Test-only: register a writable refresh signal for an ad-hoc AppState.
+ */
+export function _registerRefreshSignalForTest (
+    state:AppState,
+    sig:Signal<boolean>,
+):void {
+    _refreshSignals.set(state, sig)
+}
+
+/**
+ * Test-only: wrapper for acquireRefresh.
+ */
+export function _acquireRefreshForTest (state:AppState):void {
+    acquireRefresh(state)
+}
+
+/**
+ * Test-only: wrapper for releaseRefresh.
+ */
+export function _releaseRefreshForTest (state:AppState):void {
+    releaseRefresh(state)
+}
+
+/**
+ * Stable name for an in-flight background refresh operation.
+ * Used for debugging and for tying SSE / timer events to the
+ * specific acquire that should release.
+ */
+export type RefreshOpName =
+    | 'add-feed'
+    | 'resolve-convergence'
+    | 'sse-feed-updated'
+    | 'online-recovery'
+
+/**
+ * Wrap an async background-sync operation with refresh-indicator
+ * lifecycle.
+ *
+ * - Acquires the refcount synchronously before `fn` runs.
+ * - Releases on settle (resolve OR reject) via try/finally.
+ * - On rejection, sets `state.feedSyncStatus.value = 'error'` in the
+ *   same `batch()` as the release, so the UI transitions from
+ *   yellow ("updating…") directly to red ("error") without an
+ *   intermediate "synced"/"inactive" frame.
+ * - On resolve, `feedSyncStatus` is not touched by the helper —
+ *   the caller (or downstream SSE handler) decides the post-success
+ *   status.
+ *
+ * The `name` is for debugging only; it is logged at acquire and on
+ * rejection but does not affect behavior.
+ *
+ * Concurrent `trackRefresh` calls each independently acquire and
+ * release; the underlying refcount keeps the signal `true` until
+ * every acquire has been released.
+ */
+export async function trackRefresh<T> (
+    state:AppState,
+    name:RefreshOpName,
+    fn:() => Promise<T>,
+):Promise<T> {
+    acquireRefresh(state)
+    debug('trackRefresh acquire', name)
+    try {
+        const result = await fn()
+        releaseRefresh(state)
+        return result
+    } catch (err) {
+        batch(() => {
+            releaseRefresh(state)
+            state.feedSyncStatus.value = 'error'
+        })
+        debug(
+            'trackRefresh rejected',
+            name,
+            err instanceof Error ? err.message : err,
+        )
+        throw err
+    }
+}
+
+// Test-injection seams for runResolveConvergence. Production uses
+// the real imports from './db/sync.js' and './db/index.js'.
+// Tests can override via `_setRunResolveConvergenceDepsForTest`.
+type RunSyncFn = typeof runSync
+type GetLocalDbFn = typeof getLocalDb
+let _runSyncImpl:RunSyncFn = runSync
+let _getLocalDbImpl:GetLocalDbFn = getLocalDb
+export function _setRunResolveConvergenceDepsForTest (
+    deps:{
+        runSync?:RunSyncFn,
+        getLocalDb?:GetLocalDbFn,
+    },
+):void {
+    if (deps.runSync !== undefined) _runSyncImpl = deps.runSync
+    if (deps.getLocalDb !== undefined) _getLocalDbImpl = deps.getLocalDb
+}
+export function _resetRunResolveConvergenceDepsForTest ():void {
+    _runSyncImpl = runSync
+    _getLocalDbImpl = getLocalDb
+}
+
+// Test-injection seam for isLocalFirstActive selector in
+// _onlineRecoverySync. Tests can override via
+// `_setIsLocalFirstActiveForTest`.
+type IsLocalFirstActiveFn = () => ReadonlySignal<boolean>
+let _isLocalFirstActiveSelectorImpl:IsLocalFirstActiveFn =
+    () => isLocalFirstActive
+export function _setIsLocalFirstActiveForTest (
+    selector:IsLocalFirstActiveFn|undefined,
+):void {
+    _isLocalFirstActiveSelectorImpl = selector ?? (() => isLocalFirstActive)
+}
+export function _resetIsLocalFirstActiveForTest ():void {
+    _isLocalFirstActiveSelectorImpl = () => isLocalFirstActive
+}
+
+// Test-injection seam for getAdapter in State.addFeed.
+type GetAdapterFn = typeof getAdapter
+let _getAdapterImpl:GetAdapterFn = getAdapter
+export function _setAddFeedAdapterForTest (
+    impl:GetAdapterFn|undefined,
+):void {
+    _getAdapterImpl = impl ?? getAdapter
+}
+
 export const _resolveConvergenceForTest = {
     schedule (state:AppState, url:string):void {
         scheduleResolveConvergence(state, url)
@@ -166,6 +463,36 @@ export const _resolveConvergenceForTest = {
 }
 
 /**
+ * Run the resolve-convergence sync operation for a given feed.
+ * Wrapped in trackRefresh to acquire/release the indicator.
+ * Test-only export for direct invocation in unit tests.
+ */
+async function runResolveConvergence (
+    state:AppState,
+    feedId:number,
+):Promise<void> {
+    if (!isFeedStillResolving(state, feedId)) return
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+    return trackRefresh(state, 'resolve-convergence', async () => {
+        await _runSyncImpl(db)
+        await State.refreshAfterSync(state)
+    }).catch((err) => {
+        // trackRefresh has already set feedSyncStatus = 'error'
+        // and released. We log here for parity with the prior
+        // `.catch(debug(...))` behavior.
+        debug(
+            'resolve-convergence runSync failed',
+            err instanceof Error ? err.message : err,
+        )
+    })
+}
+
+// Test-only export for direct invocation:
+export const _runResolveConvergenceForTest = runResolveConvergence
+
+/**
  * Defense in depth (FR-006): if the just-added feed is still in the
  * resolving state after RESOLVE_WINDOW_MS + CLIENT_GRACE_MS, fire a
  * one-shot pull so the client converges on the server-side terminal
@@ -181,22 +508,9 @@ function scheduleResolveConvergence (
     if (!isFeedStillResolving(state, feedId)) return
 
     clearResolveConvergenceTimer(feedId)
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
         resolveConvergenceTimers.delete(feedId)
-        if (!isFeedStillResolving(state, feedId)) return
-        const did = state.user.value?.did
-        const db = did ? getLocalDb(did) : null
-        if (!db) return
-        runSync(db)
-            .then(() => {
-                return State.refreshAfterSync(state)
-            })
-            .catch((err) => {
-                debug(
-                    'resolve-convergence runSync failed',
-                    err instanceof Error ? err.message : err
-                )
-            })
+        await runResolveConvergence(state, feedId)
     }, RESOLVE_WINDOW_MS + CLIENT_GRACE_MS)
     resolveConvergenceTimers.set(feedId, timer)
 }
@@ -334,7 +648,13 @@ export type AppState = {
     // POST failure, 401, or 60s safety timeout. Distinct from
     // feedsLoading so per-feed loadFeeds calls cannot flicker the
     // refresh button mid-window.
-    refreshInProgress:Signal<boolean>,
+    /**
+     * Read-only view of the refresh-in-progress signal. Writes flow only
+     * through `trackRefresh(state, name, fn)` (see Phase 2) and the
+     * module-private `acquireRefresh`/`releaseRefresh` helpers backed by
+     * a refcount. Do not assign to `.value` directly.
+     */
+    refreshInProgress:ReadonlySignal<boolean>,
     feedSyncStatus:Signal<
         'inactive'|'updates'|'syncing'|'error'|'synced'
     >,
@@ -343,9 +663,10 @@ export type AppState = {
     feedUpdateStatus:ReadonlySignal<'synced'|'updates'>,
     feedsWithUpdates:ReadonlySignal<string[]>,
     // Display-only view over `feedSyncStatus`. Returns 'syncing' for
-    // the entire `refreshInProgress` window so secondary writers
-    // (loadFeedStatus, SSE listeners, background polling) cannot
-    // flicker the pill out of yellow during a manual refresh.
+    // the debounced refresh window (see displayed-refresh-in-progress.ts
+    // for the 300 ms show-delay and 500 ms min-visible floor) so
+    // secondary writers (loadFeedStatus, SSE listeners, background polling)
+    // cannot flicker the pill out of yellow during a manual refresh.
     displayedFeedSyncStatus:ReadonlySignal<
         'inactive'|'updates'|'syncing'|'error'|'synced'
     >,
@@ -374,6 +695,36 @@ function clearFeedUpdateCounts (
     return next
 }
 
+/**
+ * Run the online-recovery sync operation: runSync and
+ * refreshAfterSync wrapped in trackRefresh for observable indicator.
+ * Test-only export for direct invocation in unit tests.
+ */
+async function _onlineRecoverySync (
+    state:AppState,
+):Promise<void> {
+    if (!_isLocalFirstActiveSelectorImpl().value) return
+    const did = state.user.value?.did
+    const db = _getLocalDbImpl(did)
+    if (!db) return
+    await trackRefresh(state, 'online-recovery', async () => {
+        await _runSyncImpl(db)
+        await State.refreshAfterSync(state)
+    }).catch((err) => {
+        // trackRefresh has set feedSyncStatus = 'error'
+        // and released. Defer to existing
+        // auth/error handlers for additional side effects
+        // (sign-out, lapsed-billing, etc.).
+        if (State.handleSyncAuthError(state, err)) {
+            return
+        }
+        State.handleSyncCycleError(err)
+    })
+}
+
+// Test-only export for direct invocation:
+export const _onlineRecoverySyncForTest = _onlineRecoverySync
+
 export function State ():AppState {
     // Hydrate localStorage-backed settings before any reactive code runs,
     // so header gates that read syncSubscriptions / storeContent reflect
@@ -393,6 +744,10 @@ export function State ():AppState {
 
     const onRoute = Route()
 
+    // Hoist refreshInProgress signal so we can register it with the
+    // refcount helpers after state construction.
+    const refreshInProgressSignal = signal<boolean>(false)
+
     const state = {
         _setRoute: onRoute.setRoute.bind(onRoute),
         route: signal(location.pathname),
@@ -408,7 +763,7 @@ export function State ():AppState {
         feeds: signal<Feed[]>(seededFeeds),
         feedsLoading: signal<boolean>(false),
         feedsError: signal<string|null>(null),
-        refreshInProgress: signal<boolean>(false),
+        refreshInProgress: refreshInProgressSignal,
         feedSyncStatus: signal<
             'inactive'|'updates'|'syncing'|'error'|'synced'
         >('inactive'),
@@ -427,7 +782,7 @@ export function State ():AppState {
         displayedFeedSyncStatus: computed<
             'inactive'|'updates'|'syncing'|'error'|'synced'
         >(() => (
-            state.refreshInProgress.value ?
+            displayedRefreshInProgress.value ?
                 'syncing' :
                 state.feedSyncStatus.value
         )),
@@ -443,6 +798,9 @@ export function State ():AppState {
         viewItemsCache: new Map() as ViewItemsCache,
         cleanup: () => {},
     }
+
+    // Register the writable signal so refcount helpers can mutate it
+    registerRefreshSignal(state, refreshInProgressSignal)
 
     onRoute((path:string, data) => {
         state.route.value = path.split('?').shift()
@@ -618,19 +976,7 @@ export function State ():AppState {
                 debug('online loadFeedStatus error:', err)
             })
         }
-        if (!isLocalFirstActive.value) return
-        const did = state.user.value?.did
-        const db = getLocalDb(did)
-        if (db) {
-            runSync(db).then(() => {
-                State.refreshAfterSync(state)
-            }).catch((err) => {
-                if (State.handleSyncAuthError(state, err)) {
-                    return
-                }
-                State.handleSyncCycleError(err)
-            })
-        }
+        _onlineRecoverySync(state).catch(() => {})
     }
 
     const handleOffline = () => {
@@ -699,6 +1045,8 @@ export function State ():AppState {
         State.handleOAuthCallback(state)
     })()
 
+    initDisplayedRefresh(state.refreshInProgress)
+
     return state
 }
 
@@ -764,6 +1112,10 @@ export function schedulePaintCacheWrite (state:AppState):void {
 export function _resetPaintCacheWriteHandleForTest ():void {
     cancelIdle(_pendingPaintCacheWrite)
     _pendingPaintCacheWrite = null
+}
+
+export function _resetDisplayedRefreshForTest ():void {
+    resetDisplayedRefresh()
 }
 
 State.handleSyncAuthError = function (
@@ -975,7 +1327,17 @@ State.openEventStream = function (state:AppState):void {
         if (pendingRefresh !== null) return
         pendingRefresh = setTimeout(() => {
             pendingRefresh = null
-            State.refreshAfterSync(state)
+            trackRefresh(state, 'sse-feed-updated', async () => {
+                await State.refreshAfterSync(state)
+            }).catch((err) => {
+                // trackRefresh already set feedSyncStatus = 'error'
+                // and released. Log for parity with prior implicit
+                // unhandled-rejection behavior.
+                debug(
+                    'sse-feed-updated refreshAfterSync failed',
+                    err instanceof Error ? err.message : err,
+                )
+            })
         }, SSE_REFRESH_DEBOUNCE_MS)
     }
 
@@ -997,7 +1359,7 @@ State.openEventStream = function (state:AppState):void {
             debug('refresh-complete reconcile error:', err)
         }).finally(() => {
             batch(() => {
-                state.refreshInProgress.value = false
+                releaseRefresh(state)
                 state.feedsLoading.value = false
             })
         })
@@ -1047,6 +1409,12 @@ State.openEventStream = function (state:AppState):void {
                         'updates' :
                         'synced'
                 })
+                // Drain any add-feed acquires waiting for these feed ids. Note
+                // that the SSE event signals server-side resolve completion, so
+                // items are ready for the next refreshAfterSync to surface.
+                drainAddFeedAcquires(
+                    filteredEntries.map(([feedId]) => Number(feedId)),
+                )
                 return
             }
             // Legacy `feedIds` shape: defer to the authoritative
@@ -1104,7 +1472,7 @@ State.openEventStream = function (state:AppState):void {
                     debug('reconnect reconcileAfterRefresh error:', err)
                 }).finally(() => {
                     batch(() => {
-                        state.refreshInProgress.value = false
+                        releaseRefresh(state)
                         state.feedsLoading.value = false
                     })
                 })
@@ -1914,11 +2282,27 @@ State.addFeed = async function (
     state:AppState,
     url:string
 ):Promise<void> {
-    try {
-        const adapter = await getAdapter(
-            state.user.value?.did
-        )
-        await adapter.addFeed(url)
+    const adapter = await _getAdapterImpl(
+        state.user.value?.did
+    )
+    await trackRefresh(state, 'add-feed', async () => {
+        try {
+            await adapter.addFeed(url)
+        } catch (err) {
+            if (
+                err instanceof Error &&
+                'response' in err &&
+                (err as { response:Response }).response
+                    .status === 409
+            ) {
+                // Treat as success for the indicator;
+                // re-load and exit without error.
+                debug('Feed already exists, reloading...')
+                await State.loadFeeds(state)
+                return
+            }
+            throw err
+        }
         // Do NOT reload items: a freshly-added feed has
         // `last_pulled_at IS NULL`, so its items are
         // intentionally hidden from the reading list until
@@ -1929,19 +2313,18 @@ State.addFeed = async function (
         await State.loadFeeds(state)
         await State.loadCounts(state)
         scheduleResolveConvergence(state, url)
-    } catch (err) {
-        if (
-            err instanceof Error &&
-            'response' in err &&
-            (err as { response:Response }).response
-                .status === 409
-        ) {
-            debug('Feed already exists, reloading...')
-            await State.loadFeeds(state)
-            return
+        // Discover the newly-added feed id and wait for the
+        // SSE release condition (or hard timeout).
+        const newRow = state.feeds.value.find(
+            (f) => f.url === url,
+        )
+        if (newRow !== undefined) {
+            await waitForAddFeedRelease(newRow.id)
         }
-        throw err
-    }
+        // If newRow is undefined (e.g., loadFeeds didn't
+        // return the new row for some reason), do NOT wait;
+        // fall through and let trackRefresh release.
+    })
 }
 
 /**
@@ -1997,7 +2380,7 @@ State.refreshFeeds = async function (
     const priorCounts = state.feedUpdateCounts.value
 
     batch(() => {
-        state.refreshInProgress.value = true
+        acquireRefresh(state)
         state.feedSyncError.value = null
     })
 
@@ -2005,7 +2388,7 @@ State.refreshFeeds = async function (
     refreshFeedsSafetyTimeout = setTimeout(() => {
         refreshFeedsSafetyTimeout = null
         batch(() => {
-            state.refreshInProgress.value = false
+            releaseRefresh(state)
             state.feedsLoading.value = false
         })
     }, REFRESH_FEEDS_SAFETY_TIMEOUT_MS)
@@ -2032,7 +2415,7 @@ State.refreshFeeds = async function (
             refreshFeedsSafetyTimeout = setTimeout(() => {
                 refreshFeedsSafetyTimeout = null
                 batch(() => {
-                    state.refreshInProgress.value = false
+                    releaseRefresh(state)
                     state.feedsLoading.value = false
                 })
             }, REFRESH_FEEDS_ZERO_FEED_SAFETY_MS)
@@ -2046,7 +2429,7 @@ State.refreshFeeds = async function (
                 state.feedSyncStatus.value = 'error'
                 state.feedSyncError.value = SYNC_AUTH_EXPIRED
                 state.feedsLoading.value = false
-                state.refreshInProgress.value = false
+                releaseRefresh(state)
             })
             state._setRoute('/login')
             return
@@ -2058,7 +2441,7 @@ State.refreshFeeds = async function (
                 'Failed to refresh feeds'
             state.feedUpdateCounts.value = priorCounts
             state.feedsLoading.value = false
-            state.refreshInProgress.value = false
+            releaseRefresh(state)
         })
         throw err
     }

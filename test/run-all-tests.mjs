@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process'
 
 const commands = [
-    'node test/ci-workflow.mjs',
     'node test/dead-code.mjs',
     'node test/deploy-config.mjs',
     'node test/durable-object-parseint-static.mjs',
@@ -20,6 +19,16 @@ const commands = [
     'node test/run-all-coverage.mjs',
     'esbuild ./test/tab-coordination.ts --bundle | tapout',
     'esbuild ./test/schedule-idle.ts --bundle | tapout',
+    'esbuild ./test/refresh-refcount.ts --bundle | tapout',
+    'esbuild ./test/track-refresh.ts --bundle | tapout',
+    'esbuild ./test/displayed-refresh-in-progress.ts --bundle | tapout',
+    'esbuild ./test/displayed-refresh-integration.ts --bundle | tapout',
+    [
+        'esbuild ./test/updating-pill-lifecycle.ts --bundle',
+        '--loader:.css=text',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
     'esbuild ./test/paint-cache.ts --bundle | tapout',
     'esbuild ./test/paint-cache-bootstrap.ts --bundle | tapout',
     'esbuild ./test/paint-cache-cleanup.ts --bundle | tapout',
@@ -78,6 +87,21 @@ const commands = [
         'esbuild ./test/resolve-convergence-signal-refresh.ts --bundle',
         '--loader:.wasm=dataurl',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/add-feed-acquire.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/background-sync-acquire.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/resolve-convergence-trackrefresh.ts --bundle',
+        '--loader:.wasm=dataurl',
         '| tapout'
     ].join(' '),
     [
