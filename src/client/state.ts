@@ -95,6 +95,11 @@ import {
     clearStoredDid,
     clearPaintCache
 } from './paint-cache.js'
+import {
+    displayedRefreshInProgress,
+    init as initDisplayedRefresh,
+    _resetForTest as resetDisplayedRefresh,
+} from './displayed-refresh-in-progress.js'
 const debug = Debug('rsss:state')
 
 /**
@@ -597,7 +602,7 @@ export function State ():AppState {
         displayedFeedSyncStatus: computed<
             'inactive'|'updates'|'syncing'|'error'|'synced'
         >(() => (
-            state.refreshInProgress.value ?
+            displayedRefreshInProgress.value ?
                 'syncing' :
                 state.feedSyncStatus.value
         )),
@@ -872,6 +877,8 @@ export function State ():AppState {
         State.handleOAuthCallback(state)
     })()
 
+    initDisplayedRefresh(state.refreshInProgress)
+
     return state
 }
 
@@ -937,6 +944,10 @@ export function schedulePaintCacheWrite (state:AppState):void {
 export function _resetPaintCacheWriteHandleForTest ():void {
     cancelIdle(_pendingPaintCacheWrite)
     _pendingPaintCacheWrite = null
+}
+
+export function _resetDisplayedRefreshForTest ():void {
+    resetDisplayedRefresh()
 }
 
 State.handleSyncAuthError = function (
