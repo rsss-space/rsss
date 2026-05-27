@@ -135,8 +135,6 @@ async function settle (count = 4):Promise<void> {
     }
 }
 
-const SSE_REFRESH_DEBOUNCE_MS = 300
-
 // Group A: SSE feed-updated tests
 
 test('AC1.3.1: feed-updated fires -> debounce elapses -> ' +
@@ -171,8 +169,8 @@ async t => {
                 'immediately after feed-updated is still false (debounced)'
             )
 
-            // Wait for debounce to elapse
-            await new Promise(_resolve => setTimeout(_resolve, SSE_REFRESH_DEBOUNCE_MS + 5))
+            // Production SSE_REFRESH_DEBOUNCE_MS = 250; wait for it to elapse
+            await new Promise(_resolve => setTimeout(_resolve, 250 + 5))
             await nextTask()
 
             t.equal(
@@ -236,7 +234,7 @@ async t => {
 
             // Wait for debounce + completion
             await new Promise(_resolve => setTimeout(_resolve,
-                SSE_REFRESH_DEBOUNCE_MS + 50))
+                250 + 50))
             await settle()
 
             // Count false->true and true->false transitions
@@ -289,9 +287,9 @@ async t => {
             state.feedSyncStatus.value = 'synced'
             source.fire('feed-updated')
 
-            // Wait for debounce + completion
+            // Production SSE_REFRESH_DEBOUNCE_MS = 250; wait for it
             await new Promise(_resolve => setTimeout(_resolve,
-                SSE_REFRESH_DEBOUNCE_MS + 10))
+                250 + 10))
             await settle()
 
             t.equal(
@@ -317,7 +315,7 @@ async t => {
 test('AC1.4.1: _onlineRecoverySyncForTest acquires and releases',
     async t => {
         const state = makeMinimalState()
-        _resetRefreshRefCountForTest()
+        _resetRefreshRefCountForTest(state)
         resetDisplayedRefresh()
         initDisplayedRefresh(state.refreshInProgress)
 
@@ -376,7 +374,7 @@ test('AC1.4.1: _onlineRecoverySyncForTest acquires and releases',
 test('AC1.4.2: runSync rejects -> feedSyncStatus is error',
     async t => {
         const state = makeMinimalState()
-        _resetRefreshRefCountForTest()
+        _resetRefreshRefCountForTest(state)
         resetDisplayedRefresh()
         initDisplayedRefresh(state.refreshInProgress)
 
@@ -427,7 +425,7 @@ test('AC1.4.2: runSync rejects -> feedSyncStatus is error',
 test('AC1.4.3: isLocalFirstActive === false -> no acquire',
     async t => {
         const state = makeMinimalState()
-        _resetRefreshRefCountForTest()
+        _resetRefreshRefCountForTest(state)
 
         _setIsLocalFirstActiveForTest(() => signal(false))
 
@@ -448,7 +446,7 @@ test('AC1.4.3: isLocalFirstActive === false -> no acquire',
 test('AC1.4.4: no DB -> no acquire',
     async t => {
         const state = makeMinimalState()
-        _resetRefreshRefCountForTest()
+        _resetRefreshRefCountForTest(state)
 
         _setRunResolveConvergenceDepsForTest({
             runSync: async () => {},
