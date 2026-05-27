@@ -2019,7 +2019,7 @@ app.all('*', (c) => {
         return c.notFound()
     }
 
-    if (shouldSkipLazyHtml({ dev: import.meta.env.DEV })) {
+    if (shouldSkipLazyHtml({ dev: c.env.NODE_ENV === 'development' })) {
         return c.env.ASSETS.fetch(c.req.raw)
     }
 

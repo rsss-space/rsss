@@ -11,6 +11,7 @@
     "stylelint": "stylelint \"**/*.css\" --ignore-pattern \"public/**\"",
     "build-tests": "esbuild test/index.ts --bundle --format=cjs --keep-names > test/test-bundle.js",
     "test": "node test/run-all-tests.mjs",
+    "tail:staging": "wrangler tail --env staging --format pretty",
     "typecheck": "tsc --noEmit",
     "test:sync": "esbuild ./test/sync.ts --bundle | tapout",
     "test:db": "esbuild ./test/db-adapter.ts --bundle | tapout",

@@ -21,6 +21,19 @@
 	},
 
 	/**
+	 * Durable Object migrations.
+	 * UserDO is SQLite-backed (uses ctx.storage.sql).
+	 * Migrations are NOT inherited into named environments, so they must
+	 * also be declared inside env.staging and env.production below.
+	 */
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["UserDO"]
+		}
+	],
+
+	/**
 	 * KV namespace for user session data and user->DO mappings
 	 */
 	"kv_namespaces": [
@@ -101,6 +114,12 @@
 					}
 				]
 			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": ["UserDO"]
+				}
+			],
 			"kv_namespaces": [
 				{
 					"binding": "SESSIONS",
@@ -146,6 +165,12 @@
 					}
 				]
 			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": ["UserDO"]
+				}
+			],
 			"kv_namespaces": [
 				{
 					"binding": "SESSIONS",
