@@ -91,6 +91,16 @@ const commands = [
         '| tapout'
     ].join(' '),
     [
+        'esbuild ./test/add-feed-acquire.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
+    [
+        'esbuild ./test/resolve-convergence-trackrefresh.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
+    [
         'esbuild ./test/bootstrap.ts --bundle',
         '--loader:.wasm=dataurl',
         '| tapout'
