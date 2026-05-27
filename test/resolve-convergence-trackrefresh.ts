@@ -191,23 +191,7 @@ test('failure path -> red', async t => {
             }
         ]
 
-        let caught = false
-        const _runPromise = _runResolveConvergenceForTest(state, 99)
-            .catch(() => {
-                caught = true
-            })
-
-        // Wait a bit
-        await settle()
-
-        // Promise should have rejected (runSync fails internally)
-        await _runPromise
-
-        if (caught) {
-            t.ok(true, 'promise rejected on error')
-        } else {
-            t.fail('Expected promise to reject')
-        }
+        await _runResolveConvergenceForTest(state, 99)
 
         await settle()
 

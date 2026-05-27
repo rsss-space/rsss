@@ -1,4 +1,4 @@
-import { signal, batch, computed, effect } from '@preact/signals'
+import { signal, computed, effect } from '@preact/signals'
 import { test } from '@substrate-system/tapzero'
 import {
     State,
@@ -423,29 +423,51 @@ test('AC4.1: non-409 error -> red', async t => {
 
     state.feedSyncStatus.value = 'inactive'
 
-    // Simulate non-409 error
-    const testErr = new Error('Server error')
-    ;(testErr as any).response = new Response('', { status: 500 })
+    const origLoadFeeds = State.loadFeeds
+    const origLoadCounts = State.loadCounts
 
-    if (
-        testErr instanceof Error &&
-        'response' in testErr &&
-        (testErr as { response:Response }).response.status !== 409
-    ) {
-        t.ok(true, 'non-409 error is properly detected')
-        // Simulate trackRefresh error handling
-        batch(() => {
-            state.feedSyncStatus.value = 'error'
-        })
-    }
-
-    await settle()
-
-    t.equal(
-        state.feedSyncStatus.value,
-        'error',
-        'feedSyncStatus becomes error on non-409 failure (AC4.1)',
+    _setAddFeedAdapterForTest(
+        makeStubAdapter({
+            addFeed: async () => {
+                const err = new Error('Server error')
+                ;(err as any).response = new Response('', { status: 500 })
+                throw err
+            },
+        }) as any,
     )
+
+    try {
+        State.loadFeeds = async () => {}
+        State.loadCounts = async () => {}
+
+        let thrown:unknown = null
+        try {
+            await State.addFeed(state, 'http://example.com')
+        } catch (err) {
+            thrown = err
+        }
+
+        t.ok(
+            thrown instanceof Error,
+            'non-409 error re-thrown to caller',
+        )
+        t.equal(
+            state.feedSyncStatus.value,
+            'error',
+            'feedSyncStatus is error after non-409 (AC4.1)',
+        )
+        t.equal(
+            state.refreshInProgress.value,
+            false,
+            'refreshInProgress released after error',
+        )
+    } finally {
+        State.loadFeeds = origLoadFeeds
+        State.loadCounts = origLoadCounts
+        _setAddFeedAdapterForTest(undefined)
+        _resetRefreshRefCountForTest(state)
+        _resetPendingAddFeedAcquiresForTest()
+    }
 })
 
 // AC5.2: end-state transition (no intermediate)
@@ -542,6 +564,10 @@ test('AC5.2: end-state transition (no intermediate)', async t => {
                 // Check no intermediate after first syncing
                 const firstSyncingIdx =
                     observedStates.indexOf('syncing')
+                t.ok(
+                    firstSyncingIdx >= 0,
+                    'displayed reached syncing during the test',
+                )
                 if (firstSyncingIdx >= 0) {
                     for (let i = firstSyncingIdx + 1;
                         i < observedStates.length;

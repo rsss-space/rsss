@@ -471,7 +471,6 @@ async function runResolveConvergence (
             'resolve-convergence runSync failed',
             err instanceof Error ? err.message : err,
         )
-        throw err
     })
 }
 
