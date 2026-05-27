@@ -148,6 +148,73 @@ function isFeedStillResolving (state:AppState, feedId:number):boolean {
     return row.last_fetched === null && !row.last_error
 }
 
+// Module-private refcount for refreshInProgress.
+// Keyed per-AppState so test instances do not pollute each other.
+const _refreshRefCounts = new WeakMap<AppState, number>()
+
+/**
+ * Increment the refcount for the given AppState. If the counter
+ * transitions from 0 -> 1, set `state.refreshInProgress.value = true`
+ * inside a `batch()`.
+ *
+ * Module-private (not exported). External callers ship in Phase 2
+ * via `trackRefresh`.
+ */
+function acquireRefresh (state:AppState):void {
+    const current = _refreshRefCounts.get(state) ?? 0
+    const next = current + 1
+    _refreshRefCounts.set(state, next)
+    if (current === 0) {
+        batch(() => {
+            state.refreshInProgress.value = true
+        })
+    }
+}
+
+/**
+ * Decrement the refcount for the given AppState. Bounded at zero:
+ * extra releases are no-ops, never make the counter negative, and
+ * never re-toggle the signal back to `true` on a subsequent acquire.
+ * If the counter transitions from 1 -> 0, set
+ * `state.refreshInProgress.value = false` inside a `batch()`.
+ *
+ * Module-private (not exported). External callers ship in Phase 2.
+ */
+function releaseRefresh (state:AppState):void {
+    const current = _refreshRefCounts.get(state) ?? 0
+    if (current <= 0) return
+    const next = current - 1
+    _refreshRefCounts.set(state, next)
+    if (next === 0) {
+        batch(() => {
+            state.refreshInProgress.value = false
+        })
+    }
+}
+
+/**
+ * Test-only: reset the refcount for the given AppState to zero
+ * without touching the signal. Used so test cases that exercise
+ * acquire/release directly do not leak state across tests.
+ */
+export function _resetRefreshRefCountForTest (state:AppState):void {
+    _refreshRefCounts.delete(state)
+}
+
+/**
+ * Test-only: wrapper for acquireRefresh.
+ */
+export function _acquireRefreshForTest (state:AppState):void {
+    acquireRefresh(state)
+}
+
+/**
+ * Test-only: wrapper for releaseRefresh.
+ */
+export function _releaseRefreshForTest (state:AppState):void {
+    releaseRefresh(state)
+}
+
 export const _resolveConvergenceForTest = {
     schedule (state:AppState, url:string):void {
         scheduleResolveConvergence(state, url)
@@ -997,7 +1064,7 @@ State.openEventStream = function (state:AppState):void {
             debug('refresh-complete reconcile error:', err)
         }).finally(() => {
             batch(() => {
-                state.refreshInProgress.value = false
+                releaseRefresh(state)
                 state.feedsLoading.value = false
             })
         })
@@ -1104,7 +1171,7 @@ State.openEventStream = function (state:AppState):void {
                     debug('reconnect reconcileAfterRefresh error:', err)
                 }).finally(() => {
                     batch(() => {
-                        state.refreshInProgress.value = false
+                        releaseRefresh(state)
                         state.feedsLoading.value = false
                     })
                 })
@@ -1997,7 +2064,7 @@ State.refreshFeeds = async function (
     const priorCounts = state.feedUpdateCounts.value
 
     batch(() => {
-        state.refreshInProgress.value = true
+        acquireRefresh(state)
         state.feedSyncError.value = null
     })
 
@@ -2005,7 +2072,7 @@ State.refreshFeeds = async function (
     refreshFeedsSafetyTimeout = setTimeout(() => {
         refreshFeedsSafetyTimeout = null
         batch(() => {
-            state.refreshInProgress.value = false
+            releaseRefresh(state)
             state.feedsLoading.value = false
         })
     }, REFRESH_FEEDS_SAFETY_TIMEOUT_MS)
@@ -2032,7 +2099,7 @@ State.refreshFeeds = async function (
             refreshFeedsSafetyTimeout = setTimeout(() => {
                 refreshFeedsSafetyTimeout = null
                 batch(() => {
-                    state.refreshInProgress.value = false
+                    releaseRefresh(state)
                     state.feedsLoading.value = false
                 })
             }, REFRESH_FEEDS_ZERO_FEED_SAFETY_MS)
@@ -2046,7 +2113,7 @@ State.refreshFeeds = async function (
                 state.feedSyncStatus.value = 'error'
                 state.feedSyncError.value = SYNC_AUTH_EXPIRED
                 state.feedsLoading.value = false
-                state.refreshInProgress.value = false
+                releaseRefresh(state)
             })
             state._setRoute('/login')
             return
@@ -2058,7 +2125,7 @@ State.refreshFeeds = async function (
                 'Failed to refresh feeds'
             state.feedUpdateCounts.value = priorCounts
             state.feedsLoading.value = false
-            state.refreshInProgress.value = false
+            releaseRefresh(state)
         })
         throw err
     }
