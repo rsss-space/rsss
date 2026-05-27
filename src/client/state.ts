@@ -125,6 +125,93 @@ const REFRESH_FEEDS_ZERO_FEED_SAFETY_MS = 1_000
 export const RESOLVE_WINDOW_MS = 30_000
 export const CLIENT_GRACE_MS = 5_000
 
+/**
+ * Coordination state for add-feed acquires that release on either
+ * SSE `feed-updates-available` (carrying the added feedId) OR a
+ * hard 35-second timeout, whichever fires first. Keyed by feedId.
+ *
+ * Module-private; tests use `_resetPendingAddFeedAcquiresForTest`.
+ */
+type AddFeedAcquireRecord = {
+    /**
+     * Resolves the pending Promise returned by
+     * `waitForAddFeedRelease`. Idempotent (subsequent calls are
+     * no-ops).
+     */
+    settle:() => void
+    /** Timer handle for the hard-timeout fallback. */
+    timer:ReturnType<typeof setTimeout>
+}
+const _pendingAddFeedAcquires =
+    new Map<number, AddFeedAcquireRecord>()
+
+/**
+ * Test-only: clear all pending add-feed acquires and their
+ * timers without firing the settle callbacks.
+ */
+export function _resetPendingAddFeedAcquiresForTest ():void {
+    for (const record of _pendingAddFeedAcquires.values()) {
+        clearTimeout(record.timer)
+    }
+    _pendingAddFeedAcquires.clear()
+}
+
+/**
+ * Test-only override for the hard-timeout duration used by
+ * `waitForAddFeedRelease`. Allows tests to exercise the timeout
+ * path without waiting a real 35 seconds. Pass `undefined` to
+ * restore the production value
+ * (RESOLVE_WINDOW_MS + CLIENT_GRACE_MS).
+ */
+let _addFeedHardTimeoutMs:number =
+    RESOLVE_WINDOW_MS + CLIENT_GRACE_MS
+export function _setAddFeedHardTimeoutForTest (
+    ms:number|undefined,
+):void {
+    _addFeedHardTimeoutMs = ms ?? (RESOLVE_WINDOW_MS + CLIENT_GRACE_MS)
+}
+
+/**
+ * Returns a Promise that resolves when one of:
+ * - SSE `feed-updates-available` fires for the given feedId
+ *   (drained by the augmented handler in Task 2).
+ * - The hard-timeout (35 s in production) elapses.
+ *
+ * Side-effect: registers a record in `_pendingAddFeedAcquires`.
+ * The record's `settle` callback is invoked exactly once. Both
+ * the SSE drain path and the timeout fire-path call `settle`.
+ */
+function waitForAddFeedRelease (feedId:number):Promise<void> {
+    return new Promise<void>((resolve) => {
+        let settled = false
+        const settle = ():void => {
+            if (settled) return
+            settled = true
+            clearTimeout(record.timer)
+            _pendingAddFeedAcquires.delete(feedId)
+            resolve()
+        }
+        const timer = setTimeout(settle, _addFeedHardTimeoutMs)
+        const record:AddFeedAcquireRecord = { settle, timer }
+        _pendingAddFeedAcquires.set(feedId, record)
+    })
+}
+
+/**
+ * Drain any pending add-feed acquires whose feedId appears in
+ * `feedIds`. Called from the SSE `feed-updates-available`
+ * handler. Each drained acquire settles its waiting Promise,
+ * which releases the `trackRefresh` wrapper in `State.addFeed`.
+ */
+function drainAddFeedAcquires (feedIds:Iterable<number>):void {
+    for (const feedId of feedIds) {
+        const record = _pendingAddFeedAcquires.get(feedId)
+        if (record !== undefined) {
+            record.settle()
+        }
+    }
+}
+
 let refreshFeedsSafetyTimeout:ReturnType<typeof setTimeout>|null = null
 
 function clearRefreshFeedsSafetyTimeout ():void {
@@ -331,6 +418,36 @@ export const _resolveConvergenceForTest = {
 }
 
 /**
+ * Run the resolve-convergence sync operation for a given feed.
+ * Wrapped in trackRefresh to acquire/release the indicator.
+ * Test-only export for direct invocation in unit tests.
+ */
+async function runResolveConvergence (
+    state:AppState,
+    feedId:number,
+):Promise<void> {
+    if (!isFeedStillResolving(state, feedId)) return
+    const did = state.user.value?.did
+    const db = did ? getLocalDb(did) : null
+    if (!db) return
+    return trackRefresh(state, 'resolve-convergence', async () => {
+        await runSync(db)
+        await State.refreshAfterSync(state)
+    }).catch((err) => {
+        // trackRefresh has already set feedSyncStatus = 'error'
+        // and released. We log here for parity with the prior
+        // `.catch(debug(...))` behavior.
+        debug(
+            'resolve-convergence runSync failed',
+            err instanceof Error ? err.message : err,
+        )
+    })
+}
+
+// Test-only export for direct invocation:
+export const _runResolveConvergenceForTest = runResolveConvergence
+
+/**
  * Defense in depth (FR-006): if the just-added feed is still in the
  * resolving state after RESOLVE_WINDOW_MS + CLIENT_GRACE_MS, fire a
  * one-shot pull so the client converges on the server-side terminal
@@ -346,22 +463,9 @@ function scheduleResolveConvergence (
     if (!isFeedStillResolving(state, feedId)) return
 
     clearResolveConvergenceTimer(feedId)
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
         resolveConvergenceTimers.delete(feedId)
-        if (!isFeedStillResolving(state, feedId)) return
-        const did = state.user.value?.did
-        const db = did ? getLocalDb(did) : null
-        if (!db) return
-        runSync(db)
-            .then(() => {
-                return State.refreshAfterSync(state)
-            })
-            .catch((err) => {
-                debug(
-                    'resolve-convergence runSync failed',
-                    err instanceof Error ? err.message : err
-                )
-            })
+        await runResolveConvergence(state, feedId)
     }, RESOLVE_WINDOW_MS + CLIENT_GRACE_MS)
     resolveConvergenceTimers.set(feedId, timer)
 }
@@ -1232,6 +1336,12 @@ State.openEventStream = function (state:AppState):void {
                         'updates' :
                         'synced'
                 })
+                // Drain any add-feed acquires waiting for these feed ids. Note
+                // that the SSE event signals server-side resolve completion, so
+                // items are ready for the next refreshAfterSync to surface.
+                drainAddFeedAcquires(
+                    filteredEntries.map(([feedId]) => Number(feedId)),
+                )
                 return
             }
             // Legacy `feedIds` shape: defer to the authoritative
@@ -2099,11 +2209,27 @@ State.addFeed = async function (
     state:AppState,
     url:string
 ):Promise<void> {
-    try {
-        const adapter = await getAdapter(
-            state.user.value?.did
-        )
-        await adapter.addFeed(url)
+    const adapter = await getAdapter(
+        state.user.value?.did
+    )
+    await trackRefresh(state, 'add-feed', async () => {
+        try {
+            await adapter.addFeed(url)
+        } catch (err) {
+            if (
+                err instanceof Error &&
+                'response' in err &&
+                (err as { response:Response }).response
+                    .status === 409
+            ) {
+                // Treat as success for the indicator;
+                // re-load and exit without error.
+                debug('Feed already exists, reloading...')
+                await State.loadFeeds(state)
+                return
+            }
+            throw err
+        }
         // Do NOT reload items: a freshly-added feed has
         // `last_pulled_at IS NULL`, so its items are
         // intentionally hidden from the reading list until
@@ -2114,19 +2240,18 @@ State.addFeed = async function (
         await State.loadFeeds(state)
         await State.loadCounts(state)
         scheduleResolveConvergence(state, url)
-    } catch (err) {
-        if (
-            err instanceof Error &&
-            'response' in err &&
-            (err as { response:Response }).response
-                .status === 409
-        ) {
-            debug('Feed already exists, reloading...')
-            await State.loadFeeds(state)
-            return
+        // Discover the newly-added feed id and wait for the
+        // SSE release condition (or hard timeout).
+        const newRow = state.feeds.value.find(
+            (f) => f.url === url,
+        )
+        if (newRow !== undefined) {
+            await waitForAddFeedRelease(newRow.id)
         }
-        throw err
-    }
+        // If newRow is undefined (e.g., loadFeeds didn't
+        // return the new row for some reason), do NOT wait;
+        // fall through and let trackRefresh release.
+    })
 }
 
 /**
