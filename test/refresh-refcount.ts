@@ -4,15 +4,19 @@ import { signal } from '@preact/signals'
 import {
     _acquireRefreshForTest,
     _releaseRefreshForTest,
-    _resetRefreshRefCountForTest
+    _resetRefreshRefCountForTest,
+    _registerRefreshSignalForTest
 } from '../src/client/state.js'
 import type { AppState } from '../src/client/state.js'
 
 function makeMinimalState ():AppState {
     // Minimal stub: only the fields these tests read.
-    return {
-        refreshInProgress: signal<boolean>(false)
+    const refreshInProgress = signal<boolean>(false)
+    const state = {
+        refreshInProgress
     } as AppState
+    _registerRefreshSignalForTest(state, refreshInProgress)
+    return state
 }
 
 test('refcount: single acquire toggles signal true; single release toggles false',

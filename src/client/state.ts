@@ -152,6 +152,24 @@ function isFeedStillResolving (state:AppState, feedId:number):boolean {
 // Keyed per-AppState so test instances do not pollute each other.
 const _refreshRefCounts = new WeakMap<AppState, number>()
 
+// Module-private writable handle to the refresh signal.
+// The public AppState interface exposes a ReadonlySignal view to
+// prevent external direct writes; the helpers below mutate the
+// signal via this map, keeping the refcount the only valid path.
+const _refreshSignals = new WeakMap<AppState, Signal<boolean>>()
+
+/**
+ * Register the writable refresh signal for the given AppState so the
+ * refcount helpers can mutate it. Called by the AppState factory.
+ * Module-private.
+ */
+function registerRefreshSignal (
+    state:AppState,
+    sig:Signal<boolean>,
+):void {
+    _refreshSignals.set(state, sig)
+}
+
 /**
  * Increment the refcount for the given AppState. If the counter
  * transitions from 0 -> 1, set `state.refreshInProgress.value = true`
@@ -165,8 +183,10 @@ function acquireRefresh (state:AppState):void {
     const next = current + 1
     _refreshRefCounts.set(state, next)
     if (current === 0) {
+        const sig = _refreshSignals.get(state)
+        if (sig === undefined) return
         batch(() => {
-            state.refreshInProgress.value = true
+            sig.value = true
         })
     }
 }
@@ -186,8 +206,10 @@ function releaseRefresh (state:AppState):void {
     const next = current - 1
     _refreshRefCounts.set(state, next)
     if (next === 0) {
+        const sig = _refreshSignals.get(state)
+        if (sig === undefined) return
         batch(() => {
-            state.refreshInProgress.value = false
+            sig.value = false
         })
     }
 }
@@ -199,6 +221,16 @@ function releaseRefresh (state:AppState):void {
  */
 export function _resetRefreshRefCountForTest (state:AppState):void {
     _refreshRefCounts.delete(state)
+}
+
+/**
+ * Test-only: register a writable refresh signal for an ad-hoc AppState.
+ */
+export function _registerRefreshSignalForTest (
+    state:AppState,
+    sig:Signal<boolean>,
+):void {
+    _refreshSignals.set(state, sig)
 }
 
 /**
@@ -460,6 +492,10 @@ export function State ():AppState {
 
     const onRoute = Route()
 
+    // Hoist refreshInProgress signal so we can register it with the
+    // refcount helpers after state construction.
+    const refreshInProgressSignal = signal<boolean>(false)
+
     const state = {
         _setRoute: onRoute.setRoute.bind(onRoute),
         route: signal(location.pathname),
@@ -475,7 +511,7 @@ export function State ():AppState {
         feeds: signal<Feed[]>(seededFeeds),
         feedsLoading: signal<boolean>(false),
         feedsError: signal<string|null>(null),
-        refreshInProgress: signal<boolean>(false),
+        refreshInProgress: refreshInProgressSignal,
         feedSyncStatus: signal<
             'inactive'|'updates'|'syncing'|'error'|'synced'
         >('inactive'),
@@ -510,6 +546,9 @@ export function State ():AppState {
         viewItemsCache: new Map() as ViewItemsCache,
         cleanup: () => {},
     }
+
+    // Register the writable signal so refcount helpers can mutate it
+    registerRefreshSignal(state, refreshInProgressSignal)
 
     onRoute((path:string, data) => {
         state.route.value = path.split('?').shift()

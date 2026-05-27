@@ -7,6 +7,7 @@ import {
     _acquireRefreshForTest,
     _releaseRefreshForTest,
     _resetRefreshRefCountForTest,
+    _registerRefreshSignalForTest,
 } from '../src/client/state.js'
 
 type EventListenerFn = (ev:MessageEvent|Event) => void
@@ -141,6 +142,8 @@ function buildPartialState ():AppState {
     } as unknown as AppState
 
     ;(state as unknown as PartialState)._routeHistory = routes
+
+    _registerRefreshSignalForTest(state, refreshInProgress)
 
     return state
 }
