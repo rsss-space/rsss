@@ -96,6 +96,11 @@ const commands = [
         '| tapout'
     ].join(' '),
     [
+        'esbuild ./test/background-sync-acquire.ts --bundle',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
+    [
         'esbuild ./test/resolve-convergence-trackrefresh.ts --bundle',
         '--loader:.wasm=dataurl',
         '| tapout'

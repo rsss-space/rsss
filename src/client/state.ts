@@ -421,6 +421,20 @@ export function _resetRunResolveConvergenceDepsForTest ():void {
     _getLocalDbImpl = getLocalDb
 }
 
+// Test-injection seam for isLocalFirstActive selector in
+// _onlineRecoverySync. Tests can override via
+// `_setIsLocalFirstActiveForTest`.
+type IsLocalFirstActiveFn = () => ReadonlySignal<boolean>
+let _isLocalFirstActiveSelectorForTest:IsLocalFirstActiveFn = () => isLocalFirstActive
+export function _setIsLocalFirstActiveForTest (
+    selector:IsLocalFirstActiveFn|undefined,
+):void {
+    _isLocalFirstActiveSelectorForTest = selector ?? (() => isLocalFirstActive)
+}
+export function _resetIsLocalFirstActiveForTest ():void {
+    _isLocalFirstActiveSelectorForTest = () => isLocalFirstActive
+}
+
 // Test-injection seam for getAdapter in State.addFeed.
 type GetAdapterFn = typeof getAdapter
 let _getAdapterImpl:GetAdapterFn = getAdapter
@@ -680,6 +694,36 @@ function clearFeedUpdateCounts (
     return next
 }
 
+/**
+ * Run the online-recovery sync operation: runSync and
+ * refreshAfterSync wrapped in trackRefresh for observable indicator.
+ * Test-only export for direct invocation in unit tests.
+ */
+async function _onlineRecoverySync (
+    state:AppState,
+):Promise<void> {
+    if (!_isLocalFirstActiveSelectorForTest().value) return
+    const did = state.user.value?.did
+    const db = _getLocalDbImpl(did)
+    if (!db) return
+    await trackRefresh(state, 'online-recovery', async () => {
+        await _runSyncImpl(db)
+        await State.refreshAfterSync(state)
+    }).catch((err) => {
+        // trackRefresh has set feedSyncStatus = 'error'
+        // and released. Defer to existing
+        // auth/error handlers for additional side effects
+        // (sign-out, lapsed-billing, etc.).
+        if (State.handleSyncAuthError(state, err)) {
+            return
+        }
+        State.handleSyncCycleError(err)
+    })
+}
+
+// Test-only export for direct invocation:
+export const _onlineRecoverySyncForTest = _onlineRecoverySync
+
 export function State ():AppState {
     // Hydrate localStorage-backed settings before any reactive code runs,
     // so header gates that read syncSubscriptions / storeContent reflect
@@ -931,19 +975,7 @@ export function State ():AppState {
                 debug('online loadFeedStatus error:', err)
             })
         }
-        if (!isLocalFirstActive.value) return
-        const did = state.user.value?.did
-        const db = getLocalDb(did)
-        if (db) {
-            runSync(db).then(() => {
-                State.refreshAfterSync(state)
-            }).catch((err) => {
-                if (State.handleSyncAuthError(state, err)) {
-                    return
-                }
-                State.handleSyncCycleError(err)
-            })
-        }
+        _onlineRecoverySync(state).catch(() => {})
     }
 
     const handleOffline = () => {
@@ -1294,7 +1326,17 @@ State.openEventStream = function (state:AppState):void {
         if (pendingRefresh !== null) return
         pendingRefresh = setTimeout(() => {
             pendingRefresh = null
-            State.refreshAfterSync(state)
+            trackRefresh(state, 'sse-feed-updated', async () => {
+                await State.refreshAfterSync(state)
+            }).catch((err) => {
+                // trackRefresh already set feedSyncStatus = 'error'
+                // and released. Log for parity with prior implicit
+                // unhandled-rejection behavior.
+                debug(
+                    'sse-feed-updated refreshAfterSync failed',
+                    err instanceof Error ? err.message : err,
+                )
+            })
         }, SSE_REFRESH_DEBOUNCE_MS)
     }
 
