@@ -6,6 +6,8 @@ import {
     _registerRefreshSignalForTest,
     _resetRefreshRefCountForTest,
     _runResolveConvergenceForTest,
+    _setRunResolveConvergenceDepsForTest,
+    _resetRunResolveConvergenceDepsForTest,
 } from '../src/client/state.js'
 
 function nextTask ():Promise<void> {
@@ -82,7 +84,15 @@ test('success path: acquire and release', async t => {
     _resetRefreshRefCountForTest(state)
 
     const origRefreshAfterSync = State.refreshAfterSync
-    State.refreshAfterSync = async () => {}
+    State.refreshAfterSync = async () => {
+        // Small delay to keep operation pending through first settlement
+        await new Promise(resolve => setTimeout(resolve, 50))
+    }
+
+    _setRunResolveConvergenceDepsForTest({
+        runSync: async () => { /* success */ },
+        getLocalDb: () => ({} as any),  // non-null stub
+    })
 
     try {
         // Populate feeds with resolving feed
@@ -121,14 +131,14 @@ test('success path: acquire and release', async t => {
             false,
             'refreshInProgress is false after convergence success',
         )
-        t.notEqual(
-            state.feedSyncStatus.value,
-            'error',
+        t.ok(
+            state.feedSyncStatus.value !== 'error',
             'feedSyncStatus unchanged on success',
         )
     } finally {
         State.refreshAfterSync = origRefreshAfterSync
         _resetRefreshRefCountForTest(state)
+        _resetRunResolveConvergenceDepsForTest()
     }
 })
 
@@ -140,7 +150,15 @@ test('failure path -> red', async t => {
     state.feedSyncStatus.value = 'inactive'
 
     const _origRefreshAfterSync = State.refreshAfterSync
-    State.refreshAfterSync = async () => {}
+    State.refreshAfterSync = async () => {
+        // Small delay to ensure error is properly handled
+        await new Promise(resolve => setTimeout(resolve, 10))
+    }
+
+    _setRunResolveConvergenceDepsForTest({
+        runSync: async () => { throw new Error('boom') },
+        getLocalDb: () => ({} as any),
+    })
 
     const observedStates: Array<
         'inactive'|'updates'|'syncing'|'error'|'synced'
@@ -173,17 +191,22 @@ test('failure path -> red', async t => {
             }
         ]
 
+        let caught = false
         const _runPromise = _runResolveConvergenceForTest(state, 99)
+            .catch(() => {
+                caught = true
+            })
 
         // Wait a bit
         await settle()
 
-        // Promise should reject (runSync fails internally)
-        try {
-            await _runPromise
-            t.fail('Expected promise to reject')
-        } catch (_err) {
+        // Promise should have rejected (runSync fails internally)
+        await _runPromise
+
+        if (caught) {
             t.ok(true, 'promise rejected on error')
+        } else {
+            t.fail('Expected promise to reject')
         }
 
         await settle()
@@ -201,6 +224,7 @@ test('failure path -> red', async t => {
     } finally {
         State.refreshAfterSync = _origRefreshAfterSync
         _resetRefreshRefCountForTest(state)
+        _resetRunResolveConvergenceDepsForTest()
         unsubscribe()
     }
 })

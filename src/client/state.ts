@@ -400,6 +400,36 @@ export async function trackRefresh<T> (
     }
 }
 
+// Test-injection seams for runResolveConvergence. Production uses
+// the real imports from './db/sync.js' and './db/index.js'.
+// Tests can override via `_setRunResolveConvergenceDepsForTest`.
+type RunSyncFn = typeof runSync
+type GetLocalDbFn = typeof getLocalDb
+let _runSyncImpl:RunSyncFn = runSync
+let _getLocalDbImpl:GetLocalDbFn = getLocalDb
+export function _setRunResolveConvergenceDepsForTest (
+    deps:{
+        runSync?:RunSyncFn,
+        getLocalDb?:GetLocalDbFn,
+    },
+):void {
+    if (deps.runSync !== undefined) _runSyncImpl = deps.runSync
+    if (deps.getLocalDb !== undefined) _getLocalDbImpl = deps.getLocalDb
+}
+export function _resetRunResolveConvergenceDepsForTest ():void {
+    _runSyncImpl = runSync
+    _getLocalDbImpl = getLocalDb
+}
+
+// Test-injection seam for getAdapter in State.addFeed.
+type GetAdapterFn = typeof getAdapter
+let _getAdapterImpl:GetAdapterFn = getAdapter
+export function _setAddFeedAdapterForTest (
+    impl:GetAdapterFn|undefined,
+):void {
+    _getAdapterImpl = impl ?? getAdapter
+}
+
 export const _resolveConvergenceForTest = {
     schedule (state:AppState, url:string):void {
         scheduleResolveConvergence(state, url)
@@ -428,10 +458,10 @@ async function runResolveConvergence (
 ):Promise<void> {
     if (!isFeedStillResolving(state, feedId)) return
     const did = state.user.value?.did
-    const db = did ? getLocalDb(did) : null
+    const db = did ? _getLocalDbImpl(did) : null
     if (!db) return
     return trackRefresh(state, 'resolve-convergence', async () => {
-        await runSync(db)
+        await _runSyncImpl(db)
         await State.refreshAfterSync(state)
     }).catch((err) => {
         // trackRefresh has already set feedSyncStatus = 'error'
@@ -441,6 +471,7 @@ async function runResolveConvergence (
             'resolve-convergence runSync failed',
             err instanceof Error ? err.message : err,
         )
+        throw err
     })
 }
 
@@ -2209,7 +2240,7 @@ State.addFeed = async function (
     state:AppState,
     url:string
 ):Promise<void> {
-    const adapter = await getAdapter(
+    const adapter = await _getAdapterImpl(
         state.user.value?.did
     )
     await trackRefresh(state, 'add-feed', async () => {

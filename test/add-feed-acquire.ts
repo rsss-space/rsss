@@ -7,6 +7,7 @@ import {
     _resetRefreshRefCountForTest,
     _resetPendingAddFeedAcquiresForTest,
     _setAddFeedHardTimeoutForTest,
+    _setAddFeedAdapterForTest,
 } from '../src/client/state.js'
 import {
     init as initDisplayedRefresh,
@@ -104,6 +105,13 @@ async function settle (count = 4):Promise<void> {
     }
 }
 
+function makeStubAdapter (options:{
+    addFeed?:(url:string) => Promise<void>,
+}):() => Promise<{ addFeed:(url:string) => Promise<void> }> {
+    const addFeed = options.addFeed ?? (async () => {})
+    return async () => ({ addFeed })
+}
+
 function makeMinimalState ():AppState {
     const refreshInProgress = signal(false)
     const feedSyncStatus = signal<
@@ -172,6 +180,12 @@ test('AC1.1: acquire is synchronous', async t => {
     const _origLoadFeeds = State.loadFeeds
     const _origLoadCounts = State.loadCounts
 
+    _setAddFeedAdapterForTest(
+        makeStubAdapter({
+            addFeed: () => new Promise(() => {}), // Never resolve
+        })
+    )
+
     try {
         // Stub to keep addFeed hanging
         State.loadFeeds = async (_s:AppState) => {
@@ -196,6 +210,7 @@ test('AC1.1: acquire is synchronous', async t => {
     } finally {
         State.loadFeeds = _origLoadFeeds
         State.loadCounts = _origLoadCounts
+        _setAddFeedAdapterForTest(undefined)
     }
 })
 
@@ -208,6 +223,12 @@ test('AC1.2: SSE event releases the acquire', async t => {
 
     const _origLoadFeeds = State.loadFeeds
     const _origLoadCounts = State.loadCounts
+
+    _setAddFeedAdapterForTest(
+        makeStubAdapter({
+            addFeed: async () => {},
+        })
+    )
 
     await withStubbedEventSource(async () => {
         await withStubbedFetch(async () => {
@@ -269,6 +290,7 @@ test('AC1.2: SSE event releases the acquire', async t => {
                 State.loadCounts = _origLoadCounts
                 State.closeEventStream()
                 _resetPendingAddFeedAcquiresForTest()
+                _setAddFeedAdapterForTest(undefined)
             }
         })
     })
@@ -285,6 +307,11 @@ test('AC1.5: hard-timeout force-release', async t => {
     const origLoadCounts = State.loadCounts
 
     _setAddFeedHardTimeoutForTest(50)
+    _setAddFeedAdapterForTest(
+        makeStubAdapter({
+            addFeed: async () => {},
+        })
+    )
 
     try {
         State.loadFeeds = async (s:AppState) => {
@@ -335,6 +362,7 @@ test('AC1.5: hard-timeout force-release', async t => {
         State.loadFeeds = origLoadFeeds
         State.loadCounts = origLoadCounts
         _setAddFeedHardTimeoutForTest(undefined)
+        _setAddFeedAdapterForTest(undefined)
         _resetPendingAddFeedAcquiresForTest()
     }
 })
@@ -360,9 +388,8 @@ test('409 short-circuit does NOT raise error', async t => {
         t.ok(true, '409 is detected correctly')
     }
 
-    t.notEqual(
-        state.feedSyncStatus.value,
-        'error',
+    t.ok(
+        state.feedSyncStatus.value !== 'error',
         '409 does not set error status',
     )
 })
@@ -426,6 +453,12 @@ test('AC5.2: end-state transition (no intermediate)', async t => {
 
     const origLoadFeeds = State.loadFeeds
     const origLoadCounts = State.loadCounts
+
+    _setAddFeedAdapterForTest(
+        makeStubAdapter({
+            addFeed: async () => {},
+        })
+    )
 
     try {
         await withStubbedEventSource(async () => {
@@ -494,14 +527,12 @@ test('AC5.2: end-state transition (no intermediate)', async t => {
                         i < observedStates.length;
                         i++) {
                         const s = observedStates[i]
-                        t.notEqual(
-                            s,
-                            'inactive',
+                        t.ok(
+                            s !== 'inactive',
                             'no inactive after syncing',
                         )
-                        t.notEqual(
-                            s,
-                            'synced',
+                        t.ok(
+                            s !== 'synced',
                             'no synced after syncing',
                         )
                     }
@@ -514,6 +545,7 @@ test('AC5.2: end-state transition (no intermediate)', async t => {
     } finally {
         State.loadFeeds = origLoadFeeds
         State.loadCounts = origLoadCounts
+        _setAddFeedAdapterForTest(undefined)
         unsubscribe()
     }
 })
