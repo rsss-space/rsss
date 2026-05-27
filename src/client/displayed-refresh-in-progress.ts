@@ -25,7 +25,6 @@ import {
     signal,
     computed,
     effect,
-    type Signal,
     type ReadonlySignal,
 } from '@preact/signals'
 
@@ -133,18 +132,16 @@ function handleRawChange (raw:boolean):void {
     }
 }
 
-let _initialized = false
 let _disposeEffect:(() => void)|null = null
-let _currentRawSignal:Signal<boolean>|null = null
+let _currentRawSignal:ReadonlySignal<boolean>|null = null
 
-export function init (rawSignal:Signal<boolean>):void {
+export function init (rawSignal:ReadonlySignal<boolean>):void {
     if (_currentRawSignal === rawSignal) return
     if (_disposeEffect !== null) {
         _disposeEffect()
         _disposeEffect = null
     }
     _currentRawSignal = rawSignal
-    _initialized = true
     // Reset the state machine to a known IDLE baseline so the new
     // raw signal starts from a clean slate without inheriting
     // any timers or shown state from the previous subscription.
@@ -170,7 +167,6 @@ export function _resetForTest ():void {
         _disposeEffect()
         _disposeEffect = null
     }
-    _initialized = false
     _currentRawSignal = null
     if (_showTimer !== null) {
         _clock.clearTimeout(_showTimer)
