@@ -9,6 +9,7 @@ import {
     _setAddFeedHardTimeoutForTest,
     _setAddFeedAdapterForTest,
 } from '../src/client/state.js'
+import type { DbAdapter } from '../src/client/db/types.js'
 import {
     init as initDisplayedRefresh,
     _resetForTest as resetDisplayedRefresh,
@@ -107,9 +108,9 @@ async function settle (count = 4):Promise<void> {
 
 function makeStubAdapter (options:{
     addFeed?:(url:string) => Promise<void>,
-}):() => Promise<{ addFeed:(url:string) => Promise<void> }> {
+}):(did?:string) => Promise<DbAdapter> {
     const addFeed = options.addFeed ?? (async () => {})
-    return async () => ({ addFeed })
+    return async () => ({ addFeed } as unknown as DbAdapter)
 }
 
 function makeMinimalState ():AppState {
@@ -376,22 +377,41 @@ test('409 short-circuit does NOT raise error', async t => {
 
     state.feedSyncStatus.value = 'inactive'
 
-    // Simulate 409 response
-    const testErr = new Error('Conflict')
-    ;(testErr as any).response = new Response('', { status: 409 })
+    const origLoadFeeds = State.loadFeeds
+    const origLoadCounts = State.loadCounts
 
-    if (
-        testErr instanceof Error &&
-        'response' in testErr &&
-        (testErr as { response:Response }).response.status === 409
-    ) {
-        t.ok(true, '409 is detected correctly')
-    }
-
-    t.ok(
-        state.feedSyncStatus.value !== 'error',
-        '409 does not set error status',
+    _setAddFeedAdapterForTest(
+        makeStubAdapter({
+            addFeed: async () => {
+                const err = new Error('Conflict')
+                ;(err as any).response = new Response('', { status: 409 })
+                throw err
+            },
+        }) as any,
     )
+
+    try {
+        State.loadFeeds = async () => {}
+        State.loadCounts = async () => {}
+
+        await State.addFeed(state, 'http://example.com')
+
+        t.ok(
+            String(state.feedSyncStatus.value) !== 'error',
+            '409 does not set feedSyncStatus to error',
+        )
+        t.equal(
+            state.refreshInProgress.value,
+            false,
+            'refreshInProgress released after 409',
+        )
+    } finally {
+        State.loadFeeds = origLoadFeeds
+        State.loadCounts = origLoadCounts
+        _setAddFeedAdapterForTest(undefined)
+        _resetRefreshRefCountForTest(state)
+        _resetPendingAddFeedAcquiresForTest()
+    }
 })
 
 // AC4.1: non-409 error -> red
