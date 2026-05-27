@@ -1,6 +1,12 @@
 import { signal, computed } from '@preact/signals'
 import { test } from '@substrate-system/tapzero'
-import { State, type AppState } from '../src/client/state.js'
+import {
+    State,
+    type AppState,
+    _acquireRefreshForTest,
+    _releaseRefreshForTest,
+    _resetRefreshRefCountForTest,
+} from '../src/client/state.js'
 
 type EventListenerFn = (ev:MessageEvent|Event) => void
 
@@ -215,11 +221,12 @@ test(
     'underlying signals but does NOT exit the displayed yellow state',
     async t => {
         const state = buildPartialState()
+        _resetRefreshRefCountForTest(state)
         // Pre-click resting state.
         state.feedSyncStatus.value = 'updates'
         state.feedUpdateCounts.value = { 1: 2 }
         // Simulate that a manual refresh is in flight.
-        state.refreshInProgress.value = true
+        _acquireRefreshForTest(state)
 
         t.equal(
             state.displayedFeedSyncStatus.value,
@@ -259,7 +266,7 @@ test(
         )
 
         // Simulate the settle batch clearing refreshInProgress.
-        state.refreshInProgress.value = false
+        _releaseRefreshForTest(state)
 
         t.equal(
             state.displayedFeedSyncStatus.value,

@@ -42,7 +42,7 @@ test('refcount: single acquire toggles signal true; single release toggles false
     }
 )
 
-test('AC3.1: two concurrent acquires keep signal true until both release',
+test('AC3.1: nested acquires (sequential) keep signal true until both release',
     (t) => {
         const state = makeMinimalState()
         _resetRefreshRefCountForTest(state)

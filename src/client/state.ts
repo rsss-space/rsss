@@ -401,7 +401,7 @@ export type AppState = {
     // POST failure, 401, or 60s safety timeout. Distinct from
     // feedsLoading so per-feed loadFeeds calls cannot flicker the
     // refresh button mid-window.
-    refreshInProgress:Signal<boolean>,
+    refreshInProgress:ReadonlySignal<boolean>,
     feedSyncStatus:Signal<
         'inactive'|'updates'|'syncing'|'error'|'synced'
     >,

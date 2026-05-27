@@ -4,6 +4,9 @@ import {
     State,
     type AppState,
     _resetPaintCacheWriteHandleForTest,
+    _acquireRefreshForTest,
+    _releaseRefreshForTest,
+    _resetRefreshRefCountForTest,
 } from '../src/client/state.js'
 
 type EventListenerFn = (ev:MessageEvent|Event) => void
@@ -361,7 +364,8 @@ test('rapid duplicate refreshFeeds calls dispatch only one POST (FR-008)',
 test('SSE feed-updated does NOT clear refreshInProgress (FR-011)',
     async t => {
         const state = buildPartialState()
-        state.refreshInProgress.value = true
+        _resetRefreshRefCountForTest(state)
+        _acquireRefreshForTest(state)
         state.feedSyncStatus.value = 'syncing'
 
         try {
@@ -393,7 +397,8 @@ test('SSE reopen with refreshInProgress runs reconcileAfterRefresh and ' +
     'clears the busy state',
 async t => {
     const state = buildPartialState()
-    state.refreshInProgress.value = true
+    _resetRefreshRefCountForTest(state)
+    _acquireRefreshForTest(state)
     state.feedSyncStatus.value = 'syncing'
 
     const originalReconcileAfterRefresh = State.reconcileAfterRefresh
@@ -765,6 +770,7 @@ test('012-US3: background feed-updates-available during refresh ' +
     'leaves displayedFeedSyncStatus = syncing until settle',
 async t => {
     const state = buildPartialState()
+    _resetRefreshRefCountForTest(state)
     state.feeds.value = [
         { id: 1, url: 'a' },
         { id: 7, url: 'b' }
@@ -773,7 +779,7 @@ async t => {
     state.feedSyncStatus.value = 'updates'
 
     // Simulate the in-flight manual refresh.
-    state.refreshInProgress.value = true
+    _acquireRefreshForTest(state)
 
     t.equal(
         state.displayedFeedSyncStatus.value,
@@ -809,7 +815,7 @@ async t => {
 
         // Simulate the settle batch clearing refreshInProgress.
         batch(() => {
-            state.refreshInProgress.value = false
+            _releaseRefreshForTest(state)
             state.feedsLoading.value = false
         })
 
@@ -840,6 +846,7 @@ test('a caller writing refreshInProgress=true before calling ' +
     'refreshFeeds short-circuits and dispatches zero POSTs (FR-008)',
 async t => {
     const state = buildPartialState()
+    _resetRefreshRefCountForTest(state)
 
     let postCalls = 0
     try {
@@ -859,7 +866,7 @@ async t => {
             // refreshFeeds ran. After the fix this pattern is forbidden;
             // the test guarantees the consequence is observable so any
             // future caller that re-introduces it fails CI here.
-            state.refreshInProgress.value = true
+            _acquireRefreshForTest(state)
 
             await State.refreshFeeds(state)
         })
