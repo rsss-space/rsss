@@ -425,14 +425,15 @@ export function _resetRunResolveConvergenceDepsForTest ():void {
 // _onlineRecoverySync. Tests can override via
 // `_setIsLocalFirstActiveForTest`.
 type IsLocalFirstActiveFn = () => ReadonlySignal<boolean>
-let _isLocalFirstActiveSelectorForTest:IsLocalFirstActiveFn = () => isLocalFirstActive
+let _isLocalFirstActiveSelectorImpl:IsLocalFirstActiveFn =
+    () => isLocalFirstActive
 export function _setIsLocalFirstActiveForTest (
     selector:IsLocalFirstActiveFn|undefined,
 ):void {
-    _isLocalFirstActiveSelectorForTest = selector ?? (() => isLocalFirstActive)
+    _isLocalFirstActiveSelectorImpl = selector ?? (() => isLocalFirstActive)
 }
 export function _resetIsLocalFirstActiveForTest ():void {
-    _isLocalFirstActiveSelectorForTest = () => isLocalFirstActive
+    _isLocalFirstActiveSelectorImpl = () => isLocalFirstActive
 }
 
 // Test-injection seam for getAdapter in State.addFeed.
@@ -702,7 +703,7 @@ function clearFeedUpdateCounts (
 async function _onlineRecoverySync (
     state:AppState,
 ):Promise<void> {
-    if (!_isLocalFirstActiveSelectorForTest().value) return
+    if (!_isLocalFirstActiveSelectorImpl().value) return
     const did = state.user.value?.did
     const db = _getLocalDbImpl(did)
     if (!db) return

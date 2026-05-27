@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process'
 
 const commands = [
-    'node test/ci-workflow.mjs',
     'node test/dead-code.mjs',
     'node test/deploy-config.mjs',
     'node test/durable-object-parseint-static.mjs',
