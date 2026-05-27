@@ -7,9 +7,11 @@ import {
     _resetRefreshRefCountForTest,
     _resetPendingAddFeedAcquiresForTest,
     _setAddFeedHardTimeoutForTest,
-    _resetForTest as resetDisplayedRefresh,
 } from '../src/client/state.js'
-import { init as initDisplayedRefresh } from '../src/client/displayed-refresh-in-progress.js'
+import {
+    init as initDisplayedRefresh,
+    _resetForTest as resetDisplayedRefresh,
+} from '../src/client/displayed-refresh-in-progress.js'
 
 type EventListenerFn = (ev:MessageEvent|Event) => void
 
@@ -162,7 +164,11 @@ function makeMinimalState ():AppState {
 
 // AC1.1: acquire is synchronous (signal `true` before POST resolves)
 test('AC1.1: acquire is synchronous', async t => {
+    resetDisplayedRefresh()
     const state = makeMinimalState()
+    _resetRefreshRefCountForTest(state)
+    initDisplayedRefresh(state.refreshInProgress)
+
     const _origLoadFeeds = State.loadFeeds
     const _origLoadCounts = State.loadCounts
 
@@ -195,7 +201,11 @@ test('AC1.1: acquire is synchronous', async t => {
 
 // AC1.2: SSE event releases the acquire
 test('AC1.2: SSE event releases the acquire', async t => {
+    resetDisplayedRefresh()
     const state = makeMinimalState()
+    _resetRefreshRefCountForTest(state)
+    initDisplayedRefresh(state.refreshInProgress)
+
     const _origLoadFeeds = State.loadFeeds
     const _origLoadCounts = State.loadCounts
 
@@ -212,8 +222,14 @@ test('AC1.2: SSE event releases the acquire', async t => {
                     {
                         id: 42,
                         url: 'http://example.com',
+                        title: null,
+                        description: null,
+                        site_url: null,
                         last_fetched: null,
-                        last_error: null
+                        last_error: null,
+                        last_status: null,
+                        created_at: '2025-01-01T00:00:00.000Z',
+                        updated_at: '2025-01-01T00:00:00.000Z',
                     }
                 ]
             }
@@ -260,7 +276,11 @@ test('AC1.2: SSE event releases the acquire', async t => {
 
 // AC1.5: hard-timeout force-release
 test('AC1.5: hard-timeout force-release', async t => {
+    resetDisplayedRefresh()
     const state = makeMinimalState()
+    _resetRefreshRefCountForTest(state)
+    initDisplayedRefresh(state.refreshInProgress)
+
     const origLoadFeeds = State.loadFeeds
     const origLoadCounts = State.loadCounts
 
@@ -272,8 +292,14 @@ test('AC1.5: hard-timeout force-release', async t => {
                 {
                     id: 42,
                     url: 'http://example.com',
+                    title: null,
+                    description: null,
+                    site_url: null,
                     last_fetched: null,
-                    last_error: null
+                    last_error: null,
+                    last_status: null,
+                    created_at: '2025-01-01T00:00:00.000Z',
+                    updated_at: '2025-01-01T00:00:00.000Z',
                 }
             ]
         }
@@ -315,7 +341,11 @@ test('AC1.5: hard-timeout force-release', async t => {
 
 // 409 short-circuit does NOT raise error
 test('409 short-circuit does NOT raise error', async t => {
+    resetDisplayedRefresh()
     const state = makeMinimalState()
+    _resetRefreshRefCountForTest(state)
+    initDisplayedRefresh(state.refreshInProgress)
+
     state.feedSyncStatus.value = 'inactive'
 
     // Simulate 409 response
@@ -327,7 +357,7 @@ test('409 short-circuit does NOT raise error', async t => {
         'response' in testErr &&
         (testErr as { response:Response }).response.status === 409
     ) {
-        t.pass('409 is detected correctly')
+        t.ok(true, '409 is detected correctly')
     }
 
     t.notEqual(
@@ -339,7 +369,11 @@ test('409 short-circuit does NOT raise error', async t => {
 
 // AC4.1: non-409 error -> red
 test('AC4.1: non-409 error -> red', async t => {
+    resetDisplayedRefresh()
     const state = makeMinimalState()
+    _resetRefreshRefCountForTest(state)
+    initDisplayedRefresh(state.refreshInProgress)
+
     state.feedSyncStatus.value = 'inactive'
 
     // Simulate non-409 error
@@ -351,7 +385,7 @@ test('AC4.1: non-409 error -> red', async t => {
         'response' in testErr &&
         (testErr as { response:Response }).response.status !== 409
     ) {
-        t.pass('non-409 error is properly detected')
+        t.ok(true, 'non-409 error is properly detected')
         // Simulate trackRefresh error handling
         batch(() => {
             state.feedSyncStatus.value = 'error'
@@ -369,11 +403,12 @@ test('AC4.1: non-409 error -> red', async t => {
 
 // AC5.2: end-state transition (no intermediate)
 test('AC5.2: end-state transition (no intermediate)', async t => {
-    const state = makeMinimalState()
-    state.feedSyncStatus.value = 'inactive'
-
     resetDisplayedRefresh()
+    const state = makeMinimalState()
+    _resetRefreshRefCountForTest(state)
     initDisplayedRefresh(state.refreshInProgress)
+
+    state.feedSyncStatus.value = 'inactive'
 
     const observedStates: Array<
         'inactive'|'updates'|'syncing'|'error'|'synced'
@@ -405,8 +440,14 @@ test('AC5.2: end-state transition (no intermediate)', async t => {
                         {
                             id: 42,
                             url: 'http://example.com',
+                            title: null,
+                            description: null,
+                            site_url: null,
                             last_fetched: null,
-                            last_error: null
+                            last_error: null,
+                            last_status: null,
+                            created_at: '2025-01-01T00:00:00.000Z',
+                            updated_at: '2025-01-01T00:00:00.000Z',
                         }
                     ]
                 }

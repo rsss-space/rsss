@@ -79,6 +79,7 @@ function makeTestState ():AppState {
 // Test 1: Success path acquires and releases
 test('success path: acquire and release', async t => {
     const state = makeTestState()
+    _resetRefreshRefCountForTest(state)
 
     const origRefreshAfterSync = State.refreshAfterSync
     State.refreshAfterSync = async () => {}
@@ -89,8 +90,14 @@ test('success path: acquire and release', async t => {
             {
                 id: 99,
                 url: 'http://example.com',
+                title: null,
+                description: null,
+                site_url: null,
                 last_fetched: null,
-                last_error: null
+                last_error: null,
+                last_status: null,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T00:00:00.000Z',
             }
         ]
 
@@ -128,6 +135,8 @@ test('success path: acquire and release', async t => {
 // Test 2: Failure path -> red
 test('failure path -> red', async t => {
     const state = makeTestState()
+    _resetRefreshRefCountForTest(state)
+
     state.feedSyncStatus.value = 'inactive'
 
     const _origRefreshAfterSync = State.refreshAfterSync
@@ -153,8 +162,14 @@ test('failure path -> red', async t => {
             {
                 id: 99,
                 url: 'http://example.com',
+                title: null,
+                description: null,
+                site_url: null,
                 last_fetched: null,
-                last_error: null
+                last_error: null,
+                last_status: null,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T00:00:00.000Z',
             }
         ]
 
@@ -168,7 +183,7 @@ test('failure path -> red', async t => {
             await _runPromise
             t.fail('Expected promise to reject')
         } catch (_err) {
-            t.pass('promise rejected on error')
+            t.ok(true, 'promise rejected on error')
         }
 
         await settle()
@@ -193,6 +208,7 @@ test('failure path -> red', async t => {
 // Test 3: isFeedStillResolving === false -> no acquire
 test('isFeedStillResolving false: no acquire', async t => {
     const state = makeTestState()
+    _resetRefreshRefCountForTest(state)
 
     const _origRefreshAfterSync = State.refreshAfterSync
     State.refreshAfterSync = async () => {}
@@ -203,8 +219,14 @@ test('isFeedStillResolving false: no acquire', async t => {
             {
                 id: 99,
                 url: 'http://example.com',
-                last_fetched: 1000,
-                last_error: null
+                title: null,
+                description: null,
+                site_url: null,
+                last_fetched: '2025-01-01T00:00:00.000Z',
+                last_error: null,
+                last_status: null,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T00:00:00.000Z',
             }
         ]
 
@@ -228,6 +250,8 @@ test('isFeedStillResolving false: no acquire', async t => {
 // Test 4: No DB -> no acquire
 test('no DB: no acquire', async t => {
     const state = makeTestState()
+    _resetRefreshRefCountForTest(state)
+
     state.user.value = null
 
     const _origRefreshAfterSync = State.refreshAfterSync
@@ -239,8 +263,14 @@ test('no DB: no acquire', async t => {
             {
                 id: 99,
                 url: 'http://example.com',
+                title: null,
+                description: null,
+                site_url: null,
                 last_fetched: null,
-                last_error: null
+                last_error: null,
+                last_status: null,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T00:00:00.000Z',
             }
         ]
 
