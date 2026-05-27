@@ -514,9 +514,10 @@ export type AppState = {
     feedUpdateStatus:ReadonlySignal<'synced'|'updates'>,
     feedsWithUpdates:ReadonlySignal<string[]>,
     // Display-only view over `feedSyncStatus`. Returns 'syncing' for
-    // the entire `refreshInProgress` window so secondary writers
-    // (loadFeedStatus, SSE listeners, background polling) cannot
-    // flicker the pill out of yellow during a manual refresh.
+    // the debounced refresh window (see displayed-refresh-in-progress.ts
+    // for the 300 ms show-delay and 500 ms min-visible floor) so
+    // secondary writers (loadFeedStatus, SSE listeners, background polling)
+    // cannot flicker the pill out of yellow during a manual refresh.
     displayedFeedSyncStatus:ReadonlySignal<
         'inactive'|'updates'|'syncing'|'error'|'synced'
     >,

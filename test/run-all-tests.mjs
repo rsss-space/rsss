@@ -23,6 +23,7 @@ const commands = [
     'esbuild ./test/refresh-refcount.ts --bundle | tapout',
     'esbuild ./test/track-refresh.ts --bundle | tapout',
     'esbuild ./test/displayed-refresh-in-progress.ts --bundle | tapout',
+    'esbuild ./test/displayed-refresh-integration.ts --bundle | tapout',
     [
         'esbuild ./test/updating-pill-lifecycle.ts --bundle',
         '--loader:.css=text',

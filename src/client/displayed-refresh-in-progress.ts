@@ -1,3 +1,26 @@
+/**
+ * Debounced derived signal for the refresh-in-progress indicator.
+ *
+ * Exposes `displayedRefreshInProgress` (a `ReadonlySignal<boolean>`)
+ * that mirrors the raw `refreshInProgress` signal from `state.ts`
+ * with two flicker-preventing filters:
+ *
+ * - **Show-delay (SHOW_DELAY_MS = 300):** the displayed signal does
+ *   not become `true` until the raw signal has been continuously
+ *   `true` for at least 300 ms. Prevents the UI from flashing
+ *   "updating…" on operations that complete instantly.
+ *
+ * - **Minimum-visible (MIN_VISIBLE_MS = 500):** once the displayed
+ *   signal becomes `true`, it stays `true` for at least 500 ms even
+ *   if the raw signal clears sooner. Prevents the UI from blinking
+ *   when the raw signal oscillates.
+ *
+ * Driven by a 5-state machine (IDLE, PENDING_SHOW,
+ * SHOWN_MIN_VISIBLE, SHOWN_MIN_PENDING_CLEAR, SHOWN). Call `init`
+ * once per AppState (the factory does this automatically). Call
+ * `_resetForTest` between tests that construct multiple AppStates.
+ */
+
 import {
     signal,
     computed,
@@ -90,8 +113,10 @@ function handleRawChange (raw:boolean):void {
                 // no-op
                 break
             case 'PENDING_SHOW':
-                _clock.clearTimeout(_showTimer!)
-                _showTimer = null
+                if (_showTimer !== null) {
+                    _clock.clearTimeout(_showTimer)
+                    _showTimer = null
+                }
                 _state = 'IDLE'
                 break
             case 'SHOWN_MIN_VISIBLE':
@@ -110,10 +135,30 @@ function handleRawChange (raw:boolean):void {
 
 let _initialized = false
 let _disposeEffect:(() => void)|null = null
+let _currentRawSignal:Signal<boolean>|null = null
 
 export function init (rawSignal:Signal<boolean>):void {
-    if (_initialized) return
+    if (_currentRawSignal === rawSignal) return
+    if (_disposeEffect !== null) {
+        _disposeEffect()
+        _disposeEffect = null
+    }
+    _currentRawSignal = rawSignal
     _initialized = true
+    // Reset the state machine to a known IDLE baseline so the new
+    // raw signal starts from a clean slate without inheriting
+    // any timers or shown state from the previous subscription.
+    if (_showTimer !== null) {
+        _clock.clearTimeout(_showTimer)
+        _showTimer = null
+    }
+    if (_minVisibleTimer !== null) {
+        _clock.clearTimeout(_minVisibleTimer)
+        _minVisibleTimer = null
+    }
+    _state = 'IDLE'
+    _lastObservedRaw = false
+    _internalSignal.value = false
     _disposeEffect = effect(() => {
         const v = rawSignal.value
         handleRawChange(v)
@@ -126,6 +171,7 @@ export function _resetForTest ():void {
         _disposeEffect = null
     }
     _initialized = false
+    _currentRawSignal = null
     if (_showTimer !== null) {
         _clock.clearTimeout(_showTimer)
         _showTimer = null
