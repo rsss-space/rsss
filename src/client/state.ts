@@ -179,12 +179,12 @@ function registerRefreshSignal (
  * via `trackRefresh`.
  */
 function acquireRefresh (state:AppState):void {
+    const sig = _refreshSignals.get(state)
+    if (sig === undefined) return
     const current = _refreshRefCounts.get(state) ?? 0
     const next = current + 1
     _refreshRefCounts.set(state, next)
     if (current === 0) {
-        const sig = _refreshSignals.get(state)
-        if (sig === undefined) return
         batch(() => {
             sig.value = true
         })
@@ -201,13 +201,13 @@ function acquireRefresh (state:AppState):void {
  * Module-private (not exported). External callers ship in Phase 2.
  */
 function releaseRefresh (state:AppState):void {
+    const sig = _refreshSignals.get(state)
+    if (sig === undefined) return
     const current = _refreshRefCounts.get(state) ?? 0
     if (current <= 0) return
     const next = current - 1
     _refreshRefCounts.set(state, next)
     if (next === 0) {
-        const sig = _refreshSignals.get(state)
-        if (sig === undefined) return
         batch(() => {
             sig.value = false
         })
@@ -215,12 +215,16 @@ function releaseRefresh (state:AppState):void {
 }
 
 /**
- * Test-only: reset the refcount for the given AppState to zero
- * without touching the signal. Used so test cases that exercise
- * acquire/release directly do not leak state across tests.
+ * Test-only: reset both the refcount and the mirrored signal for the
+ * given AppState. Used so test cases that exercise acquire/release
+ * directly do not leak state across tests.
  */
 export function _resetRefreshRefCountForTest (state:AppState):void {
     _refreshRefCounts.delete(state)
+    const sig = _refreshSignals.get(state)
+    if (sig !== undefined) {
+        sig.value = false
+    }
 }
 
 /**
@@ -433,6 +437,12 @@ export type AppState = {
     // POST failure, 401, or 60s safety timeout. Distinct from
     // feedsLoading so per-feed loadFeeds calls cannot flicker the
     // refresh button mid-window.
+    /**
+     * Read-only view of the refresh-in-progress signal. Writes flow only
+     * through `trackRefresh(state, name, fn)` (see Phase 2) and the
+     * module-private `acquireRefresh`/`releaseRefresh` helpers backed by
+     * a refcount. Do not assign to `.value` directly.
+     */
     refreshInProgress:ReadonlySignal<boolean>,
     feedSyncStatus:Signal<
         'inactive'|'updates'|'syncing'|'error'|'synced'

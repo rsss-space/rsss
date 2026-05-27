@@ -6,7 +6,11 @@ import {
     SidebarFooter
 } from '../src/client/components/sidebar-footer.js'
 import { FeedStatus } from '../src/client/components/feed-status.js'
-import { State, type AppState } from '../src/client/state.js'
+import {
+    State,
+    type AppState,
+    _registerRefreshSignalForTest
+} from '../src/client/state.js'
 
 type EventListenerFn = (ev:MessageEvent|Event) => void
 
@@ -145,6 +149,8 @@ function buildPartialState ():AppState {
 
     ;(state as unknown as { _routeHistory:string[] })
         ._routeHistory = routes
+
+    _registerRefreshSignalForTest(state, refreshInProgress)
 
     return state
 }

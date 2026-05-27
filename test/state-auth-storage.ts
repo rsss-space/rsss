@@ -27,7 +27,11 @@ import {
     storeContent
 } from '../src/client/local-first-settings.js'
 import { billingStatus } from '../src/client/billing-status.js'
-import { State, type AppState } from '../src/client/state.js'
+import {
+    State,
+    type AppState,
+    _registerRefreshSignalForTest
+} from '../src/client/state.js'
 import { remoteAdapter } from '../src/client/db/remote-adapter.js'
 import { mockFeeds } from './mock.js'
 
@@ -259,7 +263,7 @@ function feedState ():AppState {
             'syncing' :
             feedSyncStatus.value
     ))
-    return ({
+    const state = ({
         user: signal(null),
         feeds: signal([]),
         feedsLoading: signal(false),
@@ -271,6 +275,8 @@ function feedState ():AppState {
         feedUpdateCounts: signal<Record<string, number>>({}),
         viewItemsCache: new Map()
     } as unknown) as AppState
+    _registerRefreshSignalForTest(state, refreshInProgress)
+    return state
 }
 
 type EventListenerFn = (ev:MessageEvent|Event) => void
