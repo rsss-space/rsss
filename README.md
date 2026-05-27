@@ -391,7 +391,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-05-24-023-fix-initial-load.md .
+/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-05-27-fix-silent-update-gap.md .
 ```
 
 --------------------------------------------------------------
