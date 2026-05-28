@@ -79,7 +79,7 @@ no other section of the settings page changed.
 > existing `_setIsLocalFirstActiveSelectorForTest` injection seam
 > in `src/client/state.ts` (line ~428).
 
-- [ ] T001 [P] [US1] Add a test case to `test/settings-route.ts`
+- [X] T001 [P] [US1] Add a test case to `test/settings-route.ts`
       that renders the settings route with the
       `isLocalFirstActive` selector forced to a signal of `false`,
       asserts the `.cache-section` element has the `is-disabled`
@@ -91,7 +91,7 @@ no other section of the settings page changed.
       attribute. Do NOT assert on visible text content (per
       house-style: no brittle text assertions).
 
-- [ ] T002 [P] [US1] Add a test case to `test/settings-route.ts`
+- [X] T002 [P] [US1] Add a test case to `test/settings-route.ts`
       that renders the settings route with the
       `isLocalFirstActive` selector forced to a signal of `true`,
       asserts the `.cache-section` element does NOT have the
@@ -99,7 +99,7 @@ no other section of the settings page changed.
       do NOT have the `disabled` attribute. Re-uses the harness
       setup from T001.
 
-- [ ] T003 [P] [US1] Add a test case to `test/settings-route.ts`
+- [X] T003 [P] [US1] Add a test case to `test/settings-route.ts`
       that mounts the settings route with
       `isLocalFirstActive.value = false`, then flips it to `true`
       inside a `batch()` (or directly — the signal is set inside
@@ -109,7 +109,7 @@ no other section of the settings page changed.
       reload is required. Then flip back to `false` and assert the
       reverse. This locks in FR-004 / FR-005 reactivity.
 
-- [ ] T004 [US1] Run `npm test` and confirm T001–T003 FAIL with
+- [X] T004 [US1] Run `npm test` and confirm T001–T003 FAIL with
       the current implementation (the `is-disabled` class and
       `disabled` attributes don't exist yet). Record the failure
       messages — they should match "expected class to contain
@@ -118,14 +118,14 @@ no other section of the settings page changed.
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] In `src/client/routes/settings.ts`, add
+- [X] T005 [US1] In `src/client/routes/settings.ts`, add
       `isLocalFirstActive` to the existing import block from
       `../state.js`. The selector is the canonical
       "sync is fully bootstrapped" signal — research.md Decision 1
       explains why this is the correct signal (vs.
       `syncSubscriptions` or `pendingSyncSubscriptions`).
 
-- [ ] T006 [US1] In the same Preact functional component in
+- [X] T006 [US1] In the same Preact functional component in
       `src/client/routes/settings.ts`, derive a `cacheDisabled`
       computed:
       ```ts
@@ -138,7 +138,7 @@ no other section of the settings page changed.
       itself) in the JSX so the reactivity follows the existing
       pattern in this file.
 
-- [ ] T007 [US1] In `src/client/routes/settings.ts`, modify the
+- [X] T007 [US1] In `src/client/routes/settings.ts`, modify the
       `<section class="settings-section cache-section">` opening
       tag (around line 643 in the file at HEAD as of 2026-05-27)
       to toggle the `is-disabled` class. Use the project's existing
@@ -151,7 +151,7 @@ no other section of the settings page changed.
       Do NOT change the order of existing classes; only append
       `is-disabled` conditionally.
 
-- [ ] T008 [US1] In `src/client/routes/settings.ts`, add the
+- [X] T008 [US1] In `src/client/routes/settings.ts`, add the
       `disabled` attribute (bound to `cacheDisabled.value`) to the
       existing `<fieldset class="cache-mode-group">` element
       (around line 652). Use the htm/preact boolean-attribute form
@@ -159,7 +159,7 @@ no other section of the settings page changed.
       cascades to both `<RadioInput>` children automatically;
       do NOT change the radio inputs themselves.
 
-- [ ] T009 [US1] In `src/client/routes/settings.ts`, add the
+- [X] T009 [US1] In `src/client/routes/settings.ts`, add the
       `disabled` attribute (bound to `cacheDisabled.value`) to
       each of the three numeric `<input>` elements:
       - `input[name="default-max-size-mb"]` (max per feed)
@@ -171,7 +171,7 @@ no other section of the settings page changed.
       fieldsets or restructure the markup — minimum blast radius
       per research.md Decision 2.
 
-- [ ] T010 [US1] In `src/client/routes/settings.css`, add ONE new
+- [X] T010 [US1] In `src/client/routes/settings.css`, add ONE new
       rule scoped to `.cache-section.is-disabled`:
       ```css
       .cache-section.is-disabled {
@@ -190,15 +190,15 @@ no other section of the settings page changed.
       acceptable for this single-use case (record the choice in
       the PR description so future audits can normalise).
 
-- [ ] T011 [US1] Run `npm test` and confirm T001–T003 now PASS
+- [X] T011 [US1] Run `npm test` and confirm T001–T003 now PASS
       with the implementation in place. If any fail, fix the
       implementation — do NOT modify the tests to match the code.
 
-- [ ] T012 [US1] Run `npm run lint` and fix any new lint findings
+- [X] T012 [US1] Run `npm run lint` and fix any new lint findings
       introduced by T005–T010. Do NOT modify ESLint settings
       (per global CLAUDE.md: "NEVER change eslint settings").
 
-- [ ] T013 [US1] Run the four scenarios in `quickstart.md`
+- [X] T013 [US1] Run the four scenarios in `quickstart.md`
       manually against `npm start` in a Chromium browser with
       DevTools open:
       - Scenario A: disabled on first paint (sync off)
@@ -222,16 +222,16 @@ interactive behaviour when sync is on.
 **Purpose**: Improvements that affect the broader codebase, not
 this one story
 
-- [ ] T014 Run the full `npm test && npm run lint` once at the
+- [X] T014 Run the full `npm test && npm run lint` once at the
       end of the branch to confirm no unrelated regressions.
 
-- [ ] T015 Update `specs/024-gate-cache-on-storage/quickstart.md`
+- [X] T015 Update `specs/024-gate-cache-on-storage/quickstart.md`
       if any step in the manual scenarios diverges from the final
       implementation (e.g. the literal opacity value differs from
       the `0.55` example). Do NOT change `quickstart.md` if the
       implementation matches exactly.
 
-- [ ] T016 Verify `CLAUDE.md` does NOT need an update for this
+- [X] T016 Verify `CLAUDE.md` does NOT need an update for this
       branch — this feature introduces no new tech, no schema
       change, no new dependency, and no new convention. If
       `CLAUDE.md`'s "Active Technologies" or "Recent Changes"
