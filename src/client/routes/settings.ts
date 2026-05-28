@@ -38,6 +38,7 @@ import {
     purgeStoredContent,
     clearFeedCache
 } from '../db/index.js'
+import { isLocalFirstActive } from '../db/sync-status.js'
 import {
     feedPolicies,
     loadFeedPolicies,
@@ -128,6 +129,9 @@ export const SettingsRoute:FunctionComponent<{
     const planLabel = billing.value?.planId ?? 'local-first'
     const pendingDeletion = useComputed(() =>
         billing.value?.pendingDeletion ?? null)
+    const cacheDisabled = useComputed(
+        () => !isLocalFirstActive.value
+    )
 
     async function handleCancelDeletion () {
         try {
@@ -640,7 +644,11 @@ export const SettingsRoute:FunctionComponent<{
             `}
         </section>
 
-        <section class="settings-section cache-section">
+        <section
+            class=${`settings-section cache-section${
+                cacheDisabled.value ? ' is-disabled' : ''
+            }`}
+        >
             <h2>Cache</h2>
             <p class="cache-total">
                 Total storage used: ${formatBytes(totalStorageBytes.value)}
@@ -649,7 +657,10 @@ export const SettingsRoute:FunctionComponent<{
                 These are the defaults. They can be overridden per-feed.
             </p>
             <div class="cache-setting">
-                <fieldset class="cache-mode-group">
+                <fieldset
+                    class="cache-mode-group"
+                    disabled=${cacheDisabled.value}
+                >
                     <legend>Cache mode</legend>
                     <${RadioInput.TAG}
                         name="default-cache-mode"
@@ -678,6 +689,7 @@ export const SettingsRoute:FunctionComponent<{
                             defaultMaxSizeBytes.value / 1_000_000
                         )}
                         onChange=${handleMaxSizeChange}
+                        disabled=${cacheDisabled.value}
                     />
                 </label>
             </div>
@@ -692,6 +704,7 @@ export const SettingsRoute:FunctionComponent<{
                             defaultAccountMaxSizeBytes.value / 1_000_000
                         )}
                         onChange=${handleAccountMaxSizeChange}
+                        disabled=${cacheDisabled.value}
                     />
                 </label>
             </div>
@@ -706,6 +719,7 @@ export const SettingsRoute:FunctionComponent<{
                             defaultMaxAgeSeconds.value / 86400
                         )}
                         onChange=${handleMaxAgeChange}
+                        disabled=${cacheDisabled.value}
                     />
                 </label>
             </div>

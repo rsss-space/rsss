@@ -273,6 +273,10 @@
     }
 }
 
+.cache-section.is-disabled {
+    opacity: 0.55;
+}
+
 .settings-feeds-list {
     display: flex;
     flex-direction: column;

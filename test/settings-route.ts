@@ -19,6 +19,7 @@ import {
     type BillingStatus
 } from '../src/client/billing-status.js'
 import { localFirstSupported } from '../src/client/db/index.js'
+import { isLocalFirstActive } from '../src/client/db/sync-status.js'
 import {
     feedPolicies,
     _resetFeedPolicies
@@ -339,6 +340,153 @@ test('SettingsRoute cache section save persists on change', async (t) => {
         unmount(root)
     }
 })
+
+// 024-gate-cache-on-storage: Cache section gates on isLocalFirstActive
+
+test(
+    'Cache section is disabled when isLocalFirstActive is false',
+    async (t) => {
+        localStorage.removeItem('rsss.localFirst')
+        isLocalFirstActive.value = false
+
+        const root = mount(makeState())
+        try {
+            await nextTick()
+            const section = root.querySelector('.cache-section')
+            t.ok(section, 'cache section is rendered')
+            t.ok(
+                section?.classList.contains('is-disabled'),
+                'cache section has is-disabled class'
+            )
+
+            const fieldset = root.querySelector(
+                'fieldset.cache-mode-group'
+            ) as HTMLFieldSetElement|null
+            t.ok(fieldset, 'cache-mode-group fieldset exists')
+            t.ok(fieldset?.hasAttribute('disabled'),
+                'fieldset has disabled attribute')
+
+            const sizeInput = root.querySelector(
+                'input[name="default-max-size-mb"]'
+            ) as HTMLInputElement|null
+            t.ok(sizeInput?.hasAttribute('disabled'),
+                'default-max-size-mb has disabled attribute')
+
+            const accountInput = root.querySelector(
+                'input[name="account-max-size-mb"]'
+            ) as HTMLInputElement|null
+            t.ok(accountInput?.hasAttribute('disabled'),
+                'account-max-size-mb has disabled attribute')
+
+            const ageInput = root.querySelector(
+                'input[name="default-max-age-days"]'
+            ) as HTMLInputElement|null
+            t.ok(ageInput?.hasAttribute('disabled'),
+                'default-max-age-days has disabled attribute')
+        } finally {
+            isLocalFirstActive.value = false
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'Cache section is enabled when isLocalFirstActive is true',
+    async (t) => {
+        localStorage.removeItem('rsss.localFirst')
+        isLocalFirstActive.value = true
+
+        const root = mount(makeState())
+        try {
+            await nextTick()
+            const section = root.querySelector('.cache-section')
+            t.ok(section, 'cache section is rendered')
+            t.ok(
+                !section?.classList.contains('is-disabled'),
+                'cache section does NOT have is-disabled class'
+            )
+
+            const fieldset = root.querySelector(
+                'fieldset.cache-mode-group'
+            ) as HTMLFieldSetElement|null
+            t.ok(fieldset, 'cache-mode-group fieldset exists')
+            t.ok(!fieldset?.hasAttribute('disabled'),
+                'fieldset is NOT disabled')
+
+            const sizeInput = root.querySelector(
+                'input[name="default-max-size-mb"]'
+            ) as HTMLInputElement|null
+            t.ok(!sizeInput?.hasAttribute('disabled'),
+                'default-max-size-mb is NOT disabled')
+
+            const accountInput = root.querySelector(
+                'input[name="account-max-size-mb"]'
+            ) as HTMLInputElement|null
+            t.ok(!accountInput?.hasAttribute('disabled'),
+                'account-max-size-mb is NOT disabled')
+
+            const ageInput = root.querySelector(
+                'input[name="default-max-age-days"]'
+            ) as HTMLInputElement|null
+            t.ok(!ageInput?.hasAttribute('disabled'),
+                'default-max-age-days is NOT disabled')
+        } finally {
+            isLocalFirstActive.value = false
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'Cache section reacts to isLocalFirstActive flipping',
+    async (t) => {
+        localStorage.removeItem('rsss.localFirst')
+        isLocalFirstActive.value = false
+
+        const root = mount(makeState())
+        try {
+            await nextTick()
+            let section = root.querySelector('.cache-section')
+            t.ok(
+                section?.classList.contains('is-disabled'),
+                'starts disabled'
+            )
+
+            isLocalFirstActive.value = true
+            await nextTick()
+            section = root.querySelector('.cache-section')
+            t.ok(
+                !section?.classList.contains('is-disabled'),
+                'no is-disabled class after flipping true'
+            )
+            const fieldsetOn = root.querySelector(
+                'fieldset.cache-mode-group'
+            ) as HTMLFieldSetElement|null
+            t.ok(
+                !fieldsetOn?.hasAttribute('disabled'),
+                'fieldset enabled after flipping true'
+            )
+
+            isLocalFirstActive.value = false
+            await nextTick()
+            section = root.querySelector('.cache-section')
+            t.ok(
+                section?.classList.contains('is-disabled'),
+                'is-disabled class returns after flipping false'
+            )
+            const fieldsetOff = root.querySelector(
+                'fieldset.cache-mode-group'
+            ) as HTMLFieldSetElement|null
+            t.ok(
+                fieldsetOff?.hasAttribute('disabled'),
+                'fieldset disabled again after flipping false'
+            )
+        } finally {
+            isLocalFirstActive.value = false
+            unmount(root)
+        }
+    }
+)
 
 // US-128: Per-feed cache controls
 
