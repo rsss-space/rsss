@@ -127,18 +127,89 @@ is a placeholder. Therefore "decode small" is correct in every case;
 there is no scenario where a larger decode of a placeholder is useful.
 
 The fix follows directly from that: clamp the dimensions passed to
-`decode(...)` and `createImageData(...)` to a small cap (e.g. 32px on the
-long edge, aspect ratio preserved from `width`/`height`), while continuing
-to honor `width`/`height` for layout (`this.style.width/height`). The
-source dimensions are legitimately needed only to reserve layout space and
-avoid layout shift -- never to size the decode. This needs no API change,
-fixes every existing consumer on upgrade, and makes the expensive path
+`decode(...)` and `createImageData(...)` to a small cap (32px on the long
+edge, aspect ratio preserved from `width`/`height`), while continuing to
+honor `width`/`height` for layout (`this.style.width/height`). The source
+dimensions are legitimately needed only to reserve layout space and avoid
+layout shift -- never to size the decode. This needs no API change, fixes
+every existing consumer on upgrade, and makes the expensive path
 unreachable rather than merely non-default.
 
-Optionally, as defense in depth: move the decode off the synchronous
-`connectedCallback` (e.g. via a worker or `OffscreenCanvas`) so that even
-a pathological caller cannot block paint. Secondary to the cap, not a
-substitute for it.
+The clamp must be applied at every site that sizes the pixel buffer, via a
+single shared pure helper to avoid drift:
+
+- `src/index.ts` `connectedCallback` -- `decode(...)` and
+  `createImageData(...)`.
+- `src/index.ts` `reset()` -- the same two calls on image change.
+- `src/html.ts` `render()` -- the `<canvas>` intrinsic `width`/`height`
+  attributes, which currently bake in the full layout size too.
+
+Extract `clampDecodeDimensions(width, height) -> { width, height }` (32px
+long edge, aspect preserved, short edge floored per the caveat below) and
+call it from all three. The constructor's `this.style.width/height`
+assignment is the layout job and stays exactly as-is.
+
+### Why 32px on the long edge
+
+32px is the principled cap, not just a cheap one -- it is provably
+lossless for any valid blurhash. A blurhash decodes to a sum of cosine
+basis functions; the highest-frequency term along an axis with `c`
+components completes `(c-1)/2` cycles across that edge, so sampling it
+without loss requires more than `(c-1)` pixels on the edge. BlurHash caps
+components at 9, so the worst case ever needs >8px on the long edge; 32px
+is ~2-3.5x oversampled. Above 32px there is no frequency content left to
+capture for any hash -- a larger decode only changes how finely the
+browser interpolates the same gradient, and the canvas (`width: 100%`)
+already does that interpolation on upscale regardless of decode size.
+
+64px was considered and rejected: it is 4x the pixels for zero additional
+detail, since 32px already covers the 9x9 maximum with margin. The
+"headroom for high-component hashes" intuition does not hold.
+
+### Caveat: floor the short edge
+
+With aspect-ratio-preserving scaling and a `min 1px` short edge, an
+extreme aspect ratio (e.g. a 2000x100 banner) crushes the short edge to
+~2px, which can undersample whatever components that hash carries on the
+short axis. The correct guard is to floor the short edge (e.g. at ~8px),
+not to raise the long-edge cap. In practice blurhash encoders choose
+component counts proportional to aspect ratio, so wide images carry few
+vertical components and even a 2px short edge is usually fine -- but the
+short-edge floor is the clean fix if robustness against pathological
+inputs is wanted.
+
+### Decode off the synchronous mount (main thread, no worker)
+
+In scope for this change, but as defense in depth, not the primary fix --
+the 32px cap already turns a list of decodes from ~6 s into single-digit
+milliseconds. The remaining goal is only to keep that small cost out of
+the synchronous mount/commit so it can never delay first paint: have
+`connectedCallback` *schedule* the decode and return immediately rather
+than decode inline.
+
+Do this on the main thread. A Web Worker / `OffscreenCanvas` is explicitly
+rejected here: at 32px the decode is sub-millisecond, so `postMessage` +
+buffer transfer can cost more than the decode it offloads, and it adds a
+worker entry point, cross-format (ESM/CJS/min) bundling, a message
+protocol, and a no-worker fallback -- disproportionate surface to protect
+work that is already cheap.
+
+Use `requestAnimationFrame` to run the decode after the mount commit. It
+keeps the blur present on the first paint that follows mount in the common
+case. (A batch of N elements still decodes in one rAF before that paint,
+so rAF does not fully evict the work from the paint-critical path -- but
+with the cap that batch is ~10-20ms typical, and only approaches ~100ms
+for the rare 9-component hash across many rows. The alternative,
+`requestIdleCallback`/`setTimeout`, fully leaves the paint path but paints
+one frame of empty thumbnail before the blur, which undercuts the
+placeholder's purpose; rAF is the better default.)
+
+Deferral introduces a pending-handle lifecycle that must be managed: a
+second `reset()`, or `disconnectedCallback`, before a scheduled decode
+runs must cancel the stale handle, and the scheduled callback must bail if
+the element is no longer connected (the canvas may be gone). This is the
+same cancellation discipline as a `cancelIdle`/token guard -- without it,
+a stale decode races a newer one or writes to a detached canvas.
 
 ### Rejected: an opt-in decode-size attribute
 
@@ -154,9 +225,21 @@ then -- but the unconditional internal cap should ship regardless.
 
 ## References
 
-- Component: `node_modules/@substrate-system/blur-hash/dist/index.js`
-  (`connectedCallback`, constructor), `dist/style.css`.
+Locations below are in the `@substrate-system/blur-hash` package source
+(confirmed against `src/`, not the built `dist/` a consumer sees):
+
+- `src/index.ts` `connectedCallback` (~lines 108-111) and `reset()`
+  (~lines 65-68): both call `decode(placeholder, width, height)` and
+  `createImageData(width, height)` at full layout size.
+- `src/html.ts` `render()` (~lines 23-28): bakes the full `width`/`height`
+  into the `<canvas>` intrinsic dimensions, so the pixel buffer is sized
+  to layout size too. Any fix must touch this file as well.
+- `src/index.ts` constructor (~lines 36-37): sets `this.style.width/height`
+  from the same attribute -- the legitimate layout job; leave as-is.
+- `src/index.css`: `canvas { width:100%; height:100% }` -- confirms a
+  small decode stretches to fill the host invisibly.
 - `blurhash` decode complexity: `decode(hash, width, height)` is linear
   in `width * height` and in the number of DCT components encoded.
-- Consumer workaround: `src/client/components/item-row.ts`,
+- Consumer workaround already shipped in rsss:
+  `src/client/components/item-row.ts` (`blurhashDecodeSize`, 32px cap),
   `test/item-row.ts` (bounded-decode-resolution assertions).
