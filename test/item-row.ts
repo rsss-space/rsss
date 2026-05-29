@@ -79,8 +79,34 @@ test('ItemRow renders a decorative thumbnail before item text', t => {
                 thumbnail.getAttribute('placeholder'),
                 'LEHV6nWB2yk8pyo0adR*.7kCMdnj'
             )
-            t.equal(thumbnail.getAttribute('width'), '1200')
-            t.equal(thumbnail.getAttribute('height'), '630')
+            // The blur-hash element decodes its placeholder at the
+            // width/height it is given, on the main thread, in
+            // connectedCallback. Decoding at the original image size
+            // (e.g. 1200x630) blocks the main thread for hundreds of
+            // ms per row; across a list this is multi-second jank.
+            // The thumbnail only displays at 80px (CSS-scaled), so the
+            // decode resolution must be bounded small, not the source
+            // dimensions.
+            const decodeW = parseInt(
+                thumbnail.getAttribute('width') ?? '',
+                10
+            )
+            const decodeH = parseInt(
+                thumbnail.getAttribute('height') ?? '',
+                10
+            )
+            t.ok(
+                decodeW >= 1 && decodeW <= 64,
+                'decodes at a small bounded width, not the source width'
+            )
+            t.ok(
+                decodeH >= 1 && decodeH <= 64,
+                'decodes at a small bounded height, not the source height'
+            )
+            t.ok(
+                Math.abs((decodeW / decodeH) - (1200 / 630)) < 0.3,
+                'preserves the source aspect ratio'
+            )
             t.equal(thumbnail.getAttribute('loading'), 'lazy')
             t.equal(thumbnail.getAttribute('alt'), 'Thumbnail story')
         }
