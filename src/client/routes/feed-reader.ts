@@ -21,6 +21,8 @@ import {
     PendingUpdateEmptyState
 } from '../components/pending-update-empty-state.js'
 import Debug from '@substrate-system/debug'
+import { ELLIPSIS } from '../constants.js'
+import { CheckBox } from '@substrate-system/check-box'
 const debug = Debug('rsss:view:feed-reader')
 
 export const BOOTSTRAP_CARD_TITLE = 'Setting up your local cache'
@@ -196,14 +198,14 @@ export const FeedReader:FunctionComponent<{
                             />
                         `}
                         <div class="items-filters">
-                            <check-box
+                            <${CheckBox.TAG}
                                 name="unread"
                                 class="filter-checkbox"
                                 checked=${showUnreadOnly.value}
                                 onChange=${handleToggleUnread}
                             >
                                 Unread only
-                            </check-box>
+                            <//>
                         </div>
                         <button
                             class="btn btn-small"
@@ -216,7 +218,9 @@ export const FeedReader:FunctionComponent<{
 
                     <ul class="items-list">
                         ${itemsLoading.value && items.value.length === 0 && html`
-                            <div class="loading-text">Loading items...</div>
+                            <div class="loading-text">
+                                Loading items${ELLIPSIS}
+                            <div>
                         `}
 
                         ${items.value.map(item => html`
