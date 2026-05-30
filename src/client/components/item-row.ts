@@ -109,6 +109,7 @@ export const ItemRow:FunctionComponent<{
     const route = itemToRoute(item)
     return html`
         <div class="item-row ${isUnread ? 'unread' : ''}">
+            <div class="item-top">
             <a
                 class="item-link ${showThumbnail ?
                     'with-thumbnail' :
@@ -163,13 +164,6 @@ export const ItemRow:FunctionComponent<{
                             </time>
                         `}
                     </div>
-                    ${item.description && html`
-                        <p class="item-excerpt">
-                            ${stripHtml(
-                                item.description
-                            ).slice(0, 200)}
-                        </p>
-                    `}
                 </div>
             </a>
 
@@ -231,6 +225,17 @@ export const ItemRow:FunctionComponent<{
                     </button>
                 </div>
             </div>
+            </div>
+
+            ${item.description && html`
+                <a class="item-excerpt-link" href=${route}>
+                    <p class="item-excerpt">
+                        ${stripHtml(
+                            item.description
+                        ).slice(0, 200)}
+                    </p>
+                </a>
+            `}
         </div>
     `
 }

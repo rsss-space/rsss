@@ -172,6 +172,45 @@ test('ItemRow does not reserve image DOM without an OG image URL', t => {
     }
 })
 
+test('ItemRow renders the excerpt as a full-width link below the row', t => {
+    const root = renderRow(item({
+        link: 'https://example.com/story',
+        description: 'Story summary',
+        og_image_url: 'https://cdn.example.com/thumb.jpg'
+    }))
+
+    try {
+        const link = root.querySelector('.item-link') as HTMLAnchorElement
+        const excerptLink = root.querySelector(
+            'a.item-excerpt-link'
+        ) as HTMLAnchorElement|null
+
+        t.ok(excerptLink, 'renders the excerpt as its own link')
+        t.equal(
+            excerptLink?.getAttribute('href'),
+            '/post/example.com/story',
+            'excerpt link points at the article route'
+        )
+        t.equal(
+            link.contains(excerptLink),
+            false,
+            'excerpt link is a sibling of the main link, not nested in it'
+        )
+        t.ok(
+            excerptLink?.querySelector('.item-excerpt'),
+            'excerpt text lives inside the excerpt link'
+        )
+        t.equal(
+            link.querySelector('.item-excerpt'),
+            null,
+            'excerpt no longer sits inside the main link column'
+        )
+    } finally {
+        render(null, root)
+        root.remove()
+    }
+})
+
 test('ItemRow removes a fallback image after the image fails', async t => {
     const root = renderRow(item({
         og_image_url: 'data:image/png;base64,not-valid'
