@@ -30,6 +30,8 @@ Auto-generated from all feature plans. Last updated: 2026-05-29
 - Per-user Durable Object SQLite (server, unchanged) + (021-fix-view-switch-lag)
 - TypeScript (browser, ES2022 lib via Vite for + Preact, `@preact/signals`, `htm/preact` (024-gate-cache-on-storage)
 - N/A. The feature is UI-state lifecycle only — no SQLite (024-gate-cache-on-storage)
+- TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`; Vite 7 + (026-fix-reader-star-button)
+- N/A for this feature. The `is_starred` state is already (026-fix-reader-star-button)
 
 - TypeScript (Cloudflare Workers runtime, ES2022 lib) + `hono`, `@cloudflare/workers-types`, `fast-xml-parser` (001-fix-og-image-redirects)
 
@@ -50,9 +52,9 @@ npm test && npm run lint
 TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Recent Changes
+- 026-fix-reader-star-button: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`; Vite 7 +
 - 025-fix-sentry-cross-request-warning: Bump `@sentry/cloudflare` + `@sentry/browser` to `^10.55.0` (root-cause fix for cross-request `waitUntil` span-completion); gate `tracesSampleRate` on DSN presence in the worker/DO Sentry options so tracing is fully disabled (key omitted) when no DSN is set. No persistent storage change.
 - 024-gate-cache-on-storage: Added TypeScript (browser, ES2022 lib via Vite for + Preact, `@preact/signals`, `htm/preact`
-- fix-silent-update-gap: Refcount-backed refresh-indicator lifecycle in `src/client/state.ts`. `AppState.refreshInProgress` is now `ReadonlySignal<boolean>` (external writes are a TypeScript error); all writes flow through module-private `acquireRefresh`/`releaseRefresh` backed by `_refreshRefCounts` and `_refreshSignals` WeakMaps, with fail-fast on unregistered states. New canonical wrapper `trackRefresh<T>(state, name, fn)` plus `RefreshOpName` union (`'add-feed' | 'resolve-convergence' | 'sse-feed-updated' | 'online-recovery'`) acquires the refcount, runs `fn`, and on rejection batches release + `feedSyncStatus = 'error'` so the UI transitions atomically. New module `src/client/displayed-refresh-in-progress.ts` exports `displayedRefreshInProgress:ReadonlySignal<boolean>` (5-state machine, `SHOW_DELAY_MS = 300`, `MIN_VISIBLE_MS = 500`) and `init(rawSignal)` / `_resetForTest` / `_setClockForTest`; `displayedFeedSyncStatus` is now debounced through this signal instead of raw `refreshInProgress`, so `'syncing'` requires the raw signal to be true for at least 300 ms before the UI shows it. `State.addFeed`, the extracted `runResolveConvergence(state, feedId)`, the SSE `feed-updated` debounce body, and the new `_onlineRecoverySync(state)` (extracted from `handleOnline`) are all wrapped in `trackRefresh`. New constants `RESOLVE_WINDOW_MS = 30_000`, `CLIENT_GRACE_MS = 5_000` (hard timeout `RESOLVE_WINDOW_MS + CLIENT_GRACE_MS = 35 s` for add-feed acquires). New add-feed coordination: `_pendingAddFeedAcquires` Map + `waitForAddFeedRelease(feedId)` + `drainAddFeedAcquires(feedIds)` (SSE `feed-updates-available` drains acquires after the count-update batch). Test-only exports: `_acquireRefreshForTest`, `_releaseRefreshForTest`, `_resetRefreshRefCountForTest`, `_registerRefreshSignalForTest`, `_setRunResolveConvergenceDepsForTest` / `_resetRunResolveConvergenceDepsForTest`, `_setIsLocalFirstActiveForTest` / `_resetIsLocalFirstActiveForTest`, `_setAddFeedAdapterForTest`, `_setAddFeedHardTimeoutForTest`, `_resetPendingAddFeedAcquiresForTest`, `_onlineRecoverySyncForTest`, `_runResolveConvergenceForTest`, `_resolveConvergenceForTest`, `_resetDisplayedRefreshForTest`. Removed stale `test/ci-workflow.mjs`.
 
 
 <!-- MANUAL ADDITIONS START -->

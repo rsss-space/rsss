@@ -9,6 +9,12 @@
     background: var(--color-surface);
     transition: background-color 0.2s ease;
 
+    & .item-meta {
+        & time {
+            color: var(--color-muted);
+        }
+    }
+
     & .item-controls {
         max-width: 20%;
         /* display: flex;
@@ -72,7 +78,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
 }
 
