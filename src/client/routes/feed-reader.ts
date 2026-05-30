@@ -1,7 +1,6 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
 import { useCallback, useEffect, useMemo } from 'preact/hooks'
-import '@substrate-system/check-box'
 import '@substrate-system/tool-tip'
 import {
     State,

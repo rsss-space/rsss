@@ -14,7 +14,7 @@ import {
 import './item-row.css'
 import '@substrate-system/icons/css'
 import { define } from '@substrate-system/icons/new-tab'
-import { MailSpark } from './mail-spark.js'
+import { Mail } from './mail.js'
 define()
 BlurHash.define()
 
@@ -203,7 +203,7 @@ export const ItemRow:FunctionComponent<{
                                     delay="500"
                                     placement="left"
                                 >
-                                    <${MailSpark} />
+                                    <${MailOpened} />
                                 </tool-tip>
                                 <span class="visually-hidden">
                                     Mark as unread
@@ -215,7 +215,7 @@ export const ItemRow:FunctionComponent<{
                                     delay="500"
                                     placement="left-start"
                                 >
-                                    <${MailOpened} />
+                                    <${Mail} />
                                 </tool-tip>
                                 <span class="visually-hidden">
                                     Mark as read
