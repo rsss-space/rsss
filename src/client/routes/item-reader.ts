@@ -119,15 +119,18 @@ export const ItemReader:FunctionComponent<{
                 </a>
                 <div class="reader-actions">
                     <button
-                        class="btn btn-icon ${
-                            isStarred ? 'starred' : ''
-                        }"
+                        class="btn-star ${isStarred ?
+                            'starred' :
+                            ''}"
                         onClick=${handleStar}
                         title=${isStarred ?
                             'Unstar' :
                             'Star'}
                     >
                         ${isStarred ? '\u2605' : '\u2606'}
+                        <span class="visually-hidden">
+                            star
+                        </span>
                     </button>
                     <button
                         class="btn btn-small"

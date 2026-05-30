@@ -35,7 +35,7 @@ no backend, shared, or service-worker code is touched.
 **Purpose**: Ground the change against the canonical home-row star so the
 reader star mirrors it exactly.
 
-- [ ] T001 Read the reference star in `src/client/components/item-row.ts`
+- [X] T001 Read the reference star in `src/client/components/item-row.ts`
   (markup at lines ~188-199) and `src/client/components/item-row.css`
   (`.btn-star` at lines ~88-104) to confirm the exact class (`btn-star`),
   accessible-name span (`<span class="visually-hidden">star</span>`), glyphs
@@ -72,7 +72,7 @@ from the home-row star shown side by side.
 
 ### Implementation for User Story 1
 
-- [ ] T002 [US1] Update the star button in
+- [X] T002 [US1] Update the star button in
   `src/client/routes/item-reader.ts` (lines ~121-131): change its class from
   `btn btn-icon ${isStarred ? 'starred' : ''}` to
   `btn-star ${isStarred ? 'starred' : ''}`, and add an accessible-name span
@@ -80,7 +80,7 @@ from the home-row star shown side by side.
   `src/client/components/item-row.ts` lines ~195-198). Leave `onClick`
   (`handleStar`) and the `title` (`Unstar`/`Star`) unchanged. Keep lines
   <= 80 columns and the existing TS/markup style.
-- [ ] T003 [P] [US1] Remove the now-redundant nested rule
+- [X] T003 [P] [US1] Remove the now-redundant nested rule
   `& .starred { color: var(--color-accent); }` under `.reader-actions` in
   `src/client/routes/item-reader.css` (lines ~34-36); the shared
   `.btn-star.starred` rule now governs the starred accent color. Leave the
@@ -97,7 +97,7 @@ functional and independently testable.
 
 **Purpose**: Verify the change is correct and introduces no regression.
 
-- [ ] T004 Run `npm run lint` and the build/type-check (`npm test`); fix any
+- [X] T004 Run `npm run lint` and the build/type-check (`npm test`); fix any
   issues introduced by the edits in T002-T003.
 - [ ] T005 Manually verify against `quickstart.md`: at rest the reader star
   has no border/box/background (SC-001/FR-001); hover turns it the accent
