@@ -391,7 +391,8 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:start-implementation-plan @docs/design-plans/2026-05-30-027-mobile-feeds-route.md .
+/ed3d-plan-and-execute:execute-implementation-plan docs/implementation-plans/2026-05-30-027-mobile-feeds-route/ .
+
 ```
 
 --------------------------------------------------------------
