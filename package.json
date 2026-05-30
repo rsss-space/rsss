@@ -60,8 +60,8 @@
   "dependencies": {
     "@cf-wasm/photon": "^0.3.5",
     "@preact/signals": "^2.5.1",
-    "@sentry/browser": "^10.53.1",
-    "@sentry/cloudflare": "^10.53.1",
+    "@sentry/browser": "^10.55.0",
+    "@sentry/cloudflare": "^10.55.0",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
     "@stripe/stripe-js": "^4.10.0",
     "@substrate-system/a11y": "^0.0.17",

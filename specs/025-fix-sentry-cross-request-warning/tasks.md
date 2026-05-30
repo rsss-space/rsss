@@ -50,11 +50,11 @@ validated against the supported SDK version.
 
 **⚠️ CRITICAL**: Complete this phase before validating any user story.
 
-- [ ] T002 Bump `@sentry/cloudflare` and `@sentry/browser` from `^10.53.1`
+- [X] T002 Bump `@sentry/cloudflare` and `@sentry/browser` from `^10.53.1`
   to `^10.55.0` in `package.json` (lines 63-64, the two `@sentry/*` runtime
   deps; keep them in lockstep so they share one `@sentry/core`). Do NOT
   change `@sentry/vite-plugin`.
-- [ ] T003 Run `npm install` to regenerate `package-lock.json`, then verify
+- [X] T003 Run `npm install` to regenerate `package-lock.json`, then verify
   both packages resolve to `10.55.x` via
   `npm ls @sentry/cloudflare @sentry/browser` (depends on T002).
 
@@ -72,7 +72,7 @@ URLs (cached + uncached + reloads) including the reported URL, and confirm
 the terminal stays free of the cross-request promise warning while pages
 serve normally.
 
-- [ ] T004 [US1] Create the pure options-builder module
+- [X] T004 [US1] Create the pure options-builder module
   `src/server/sentry-options.ts`: move `isSentryEnv` out of
   `src/server/index.ts` (currently ~line 2057) and export it, and export
   `buildSentryOptions(env:{ NODE_ENV?:string; SENTRY_DSN?:string })`
@@ -82,7 +82,7 @@ serve normally.
   `tracesSampleRate` key is omitted entirely (INV-1, INV-2, INV-3). Keep
   the module free of `@sentry/*` and `cloudflare:workers` imports so it is
   trivially unit-testable. Follow 80-col / no-space-before-type TS style.
-- [ ] T005 [US1] Wire `src/server/index.ts` to the builder (depends on
+- [X] T005 [US1] Wire `src/server/index.ts` to the builder (depends on
   T004): import `isSentryEnv` and `buildSentryOptions` from
   `./sentry-options`; replace the bodies of `getSentryOptions` (~line 2061)
   and `getDOSentryOptions` (~line 2069) to delegate to `buildSentryOptions`
@@ -91,7 +91,7 @@ serve normally.
   `tracesSampleRate: env.NODE_ENV === 'production' ? 0.2 : 1.0`. Leave
   `withSentry` / `instrumentDurableObjectWithSentry` wiring (~lines
   2078-2084) unchanged in shape.
-- [ ] T006 [P] [US1] Add the options-builder unit test
+- [X] T006 [P] [US1] Add the options-builder unit test
   `test/sentry-options.ts` (depends on T004; different file from T005, so
   parallel) asserting the full behavior matrix from
   `contracts/observability-config.md`: `production` -> `dsn` set +
@@ -151,7 +151,7 @@ navigation, load) and confirm deployed sample rates are unchanged.
   `quickstart.md` section B: open the same blog post item pages used in the
   baseline and confirm content, layout, thumbnails/images, and in-app
   navigation are unchanged from before the fix.
-- [ ] T010 [US3] Confirm deployed telemetry is preserved (SC-003, FR-004)
+- [X] T010 [US3] Confirm deployed telemetry is preserved (SC-003, FR-004)
   via the `test/sentry-options.ts` invariants from T006: `production` keeps
   `tracesSampleRate: 0.2` and `staging` keeps `1.0`, both with a `dsn` set,
   and `sendDefaultPii` stays `false` — so deployed error + performance
@@ -168,7 +168,7 @@ navigation, load) and confirm deployed sample rates are unchanged.
 - [ ] T011 [P] Run the full verification suite (Done criteria /
   `quickstart.md` section D): `npm test`, `npm run lint`,
   `npm run typecheck` — all pass, including the new `test/sentry-options.ts`.
-- [ ] T012 [P] Confirm unchanged non-contract surfaces: `package.json` bumped
+- [X] T012 [P] Confirm unchanged non-contract surfaces: `package.json` bumped
   only the two runtime `@sentry/*` deps (no other `@sentry/*` change), and
   `src/client/instrument.ts` still gates browser init on
   `dsn && import.meta.env.PROD` (untouched). Verify edited TypeScript in
