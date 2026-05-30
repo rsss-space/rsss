@@ -18,6 +18,7 @@ const commands = [
     'node test/isolation-headers-static.mjs',
     'node test/run-all-coverage.mjs',
     'esbuild ./test/tab-coordination.ts --bundle | tapout',
+    'esbuild ./test/sentry-options.ts --bundle | tapout',
     'esbuild ./test/schedule-idle.ts --bundle | tapout',
     'esbuild ./test/refresh-refcount.ts --bundle | tapout',
     'esbuild ./test/track-refresh.ts --bundle | tapout',
