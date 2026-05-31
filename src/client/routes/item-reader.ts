@@ -19,6 +19,8 @@ import {
     publisherLinkHref
 } from '../../shared/publisher-link.js'
 import './item-reader.css'
+import { noticeForStatus } from './item-reader-notice.js'
+import { ArticleNotice } from '../components/article-notice.js'
 import Debug from '@substrate-system/debug'
 const debug = Debug('rsss:view')
 
@@ -67,14 +69,14 @@ export const ItemReader:FunctionComponent<{
         navigator.onLine === false
     )
     const isFetching = articleFetchingItemId.value === itemId
-    const fetchFailed = (
-        typeof item.full_content_status === 'string' &&
-        item.full_content_status.startsWith('failed_')
-    )
     const fetchErrorMessage = (
         articleFetchError.value &&
         articleFetchError.value.itemId === itemId
     ) ? articleFetchError.value.message : null
+    const baseNotice = noticeForStatus(item.full_content_status)
+    const notice = (baseNotice && fetchErrorMessage) ?
+        { ...baseNotice, body: fetchErrorMessage } :
+        baseNotice
 
     const handleRetry = useCallback(async () => {
         await State.fetchFullArticle(state, itemId, { force: true })
@@ -169,22 +171,12 @@ export const ItemReader:FunctionComponent<{
                     </p>
                 `}
 
-                ${(!isFetching && fetchFailed) && html`
-                    <p class="article-fetch-status failed">
-                        Couldn't load the full article.
-                        ${fetchErrorMessage && html`
-                            <span class="article-fetch-detail">
-                                ${' '}(${fetchErrorMessage})
-                            </span>
-                        `}
-                        <button
-                            type="button"
-                            class="btn btn-small article-fetch-retry"
-                            onClick=${handleRetry}
-                        >
-                            Retry
-                        </button>
-                    </p>
+                ${notice && html`
+                    <${ArticleNotice}
+                        notice=${notice}
+                        link=${item.link}
+                        onRetry=${handleRetry}
+                    />
                 `}
 
                 ${contentUnavailable ? html`
@@ -200,7 +192,7 @@ export const ItemReader:FunctionComponent<{
                     ></div>
                 `}
 
-                ${item.link && (() => {
+                ${!notice && item.link && (() => {
                     const label = publisherLinkLabel(item.link)
                     const href = publisherLinkHref(item.link)
                     if (!label || !href) return null
