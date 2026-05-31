@@ -1,6 +1,6 @@
 export type NoticeVariant = 'info'|'error'
 
-export interface ReaderNotice {
+export type ReaderNotice = {
     variant:NoticeVariant;
     title:string;
     body?:string;
