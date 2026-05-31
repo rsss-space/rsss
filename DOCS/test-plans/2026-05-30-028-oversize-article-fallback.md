@@ -2,7 +2,7 @@
 
 Feature: `028-oversize-article-fallback`
 Branch: `article-load-error` (base `staging`)
-Range: `7489164..add2e9a` (through the docs commits on this branch)
+Range: `7489164..89a1355` (including docs commits on this branch)
 
 ## Automated coverage (already green)
 

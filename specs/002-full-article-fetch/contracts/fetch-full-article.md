@@ -181,7 +181,7 @@ retry (an identical fetch result writes identical row state).
    bytes, stop reading at `MAX_ARTICLE_FETCH_BYTES` and mark the result
    truncated; continue to extraction (do not fail here).
 7. Run `extractArticleBody(html, finalUrl, { truncated })` →
-   - `null` (no candidate root) → if truncated, `failed_too_large`;
+   - `{ error: 'no_body' }` (no candidate root) → if truncated, `failed_too_large`;
      else `failed_no_body`.
    - extracted string with `plainTextLength < EXTRACTED_MIN_TEXT` → if
      truncated, `failed_too_large`; else `failed_no_body`.
