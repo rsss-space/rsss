@@ -82,3 +82,19 @@ while logged in.
 
 21. Capture a before-and-after screenshot of the WIRED case (the original
     repro with salvaged body and info notice) for the PR.
+
+## Traceability
+
+Each acceptance criterion maps to its automated coverage and, where the
+criterion needs human eyes (real publisher pages, visual quality, a11y), the
+manual step above. AC7 is fully automated and needs no manual step.
+
+| AC  | Automated test                                              | Manual step      |
+|-----|-------------------------------------------------------------|------------------|
+| AC1 | `article-extract.ts`, `article-fetch.ts`, `fetch-full-endpoint.ts`, `article-notice.ts` | 1–6 |
+| AC2 | `article-fetch.ts`, `article-notice.ts`                     | 7–11             |
+| AC3 | `article-notice.ts`                                         | 12–14            |
+| AC4 | `article-notice.ts`                                         | 3–5              |
+| AC5 | `article-fetch.ts`, `article-extract.ts`, `fetch-full-endpoint.ts`, `article-notice.ts` | 15–17 |
+| AC6 | `article-notice.ts`, `npm run stylelint`                    | 18–20            |
+| AC7 | `article-notice.ts`                                         | fully automated  |
