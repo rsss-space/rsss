@@ -21,8 +21,16 @@ import {
 import { extractArticleBody } from './article-extract.js'
 
 export type FetchFullArticleResult =
-    | { status:'succeeded', html:string, fetchedAt:string }
-    | { status:Exclude<FullContentStatus, 'succeeded'> }
+    | {
+        status:'succeeded'|'succeeded_partial',
+        html:string,
+        fetchedAt:string
+    }
+    | {
+        status:Exclude<
+            FullContentStatus, 'succeeded'|'succeeded_partial'
+        >
+    }
 
 function isHtmlContentType (contentType:string):boolean {
     const type = contentType.split(';', 1)[0]?.trim().toLowerCase()
@@ -33,7 +41,10 @@ function isHtmlContentType (contentType:string):boolean {
 async function readBoundedBody (
     response:Response,
     maxBytes:number
-):Promise<{ ok:true, text:string } | { ok:false, reason:'too_large' | 'no_body' }> {
+):Promise<
+    { ok:true, text:string, truncated:boolean } |
+    { ok:false, reason:'no_body' }
+> {
     if (!response.body) return { ok: false, reason: 'no_body' }
 
     const reader = response.body.getReader()
@@ -47,19 +58,28 @@ async function readBoundedBody (
             if (done) break
             if (!value) continue
 
-            total += value.byteLength
-            if (total > maxBytes) {
+            if (total + value.byteLength > maxBytes) {
+                const fit = maxBytes - total
+                text += decoder.decode(
+                    value.subarray(0, fit), { stream: true }
+                )
                 await reader.cancel()
-                return { ok: false, reason: 'too_large' }
+                return {
+                    ok: true,
+                    text: text + decoder.decode(),
+                    truncated: true
+                }
             }
 
+            total += value.byteLength
             text += decoder.decode(value, { stream: true })
         }
     } finally {
         reader.releaseLock()
     }
 
-    return { ok: true, text: text + decoder.decode() }
+    return { ok: true, text: text + decoder.decode(),
+        truncated: false }
 }
 
 function nowSqlite ():string {
@@ -72,7 +92,11 @@ function nowSqlite ():string {
 
 function classifyFetchError (
     err:unknown
-):Exclude<FullContentStatus, 'succeeded' | 'failed_non_html' | 'failed_too_large' | 'failed_no_body'> {
+):Exclude<
+    FullContentStatus,
+    'succeeded' | 'succeeded_partial' | 'failed_non_html' |
+    'failed_too_large' | 'failed_no_body'
+> {
     if (err instanceof FeedFetchError) {
         if (err.status === 310) return 'failed_redirect'
         if (err.status >= 400 && err.status < 600) {
@@ -121,13 +145,13 @@ export async function fetchFullArticle (
     }
 
     const read = await readBoundedBody(response, MAX_ARTICLE_FETCH_BYTES)
-    if (!read.ok) {
-        if (read.reason === 'too_large') return { status: 'failed_too_large' }
-        return { status: 'failed_no_body' }
-    }
+    if (!read.ok) return { status: 'failed_no_body' }
 
-    const extracted = extractArticleBody(read.text, url)
+    const extracted = extractArticleBody(read.text, url, {
+        truncated: read.truncated
+    })
     if ('error' in extracted) {
+        if (read.truncated) return { status: 'failed_too_large' }
         if (extracted.error === 'too_large') {
             return { status: 'failed_too_large' }
         }
@@ -135,7 +159,7 @@ export async function fetchFullArticle (
     }
 
     return {
-        status: 'succeeded',
+        status: read.truncated ? 'succeeded_partial' : 'succeeded',
         html: extracted.html,
         fetchedAt: nowSqlite()
     }
