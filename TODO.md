@@ -7,3 +7,5 @@
   The input should just have the default set as its value, and if it is the
   default then the word "(default)" above the input -- ie "(MB, blank = default)"
   would be just "(default)".
+* [ ] the "star" button -- when you click it, it is impossible to click it back
+  the other way (can't "un-star" things) until you refresh the page.
