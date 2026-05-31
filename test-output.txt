@@ -1,0 +1,88 @@
+
+> test
+> node test/run-all-tests.mjs
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: staging declares the blurhash queue producer
+    at file:///Users/nick/code/rsss/test/deploy-config.mjs:82:12
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:639:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: '"staging": {\n' +
+    '\t\t\t"name": "rsss-staging",\n' +
+    '\t\t\t"observability": {\n' +
+    '\t\t\t\t"enabled": true\n' +
+    '\t\t\t},\n' +
+    '\t\t\t"workers_dev": false,\n' +
+    '\t\t\t"preview_urls": false,\n' +
+    '\t\t\t"routes": [\n' +
+    '\t\t\t\t{\n' +
+    '\t\t\t\t\t"pattern": "staging.rsss.space",\n' +
+    '\t\t\t\t\t"custom_domain": true\n' +
+    '\t\t\t\t}\n' +
+    '\t\t\t],\n' +
+    '\t\t\t"vars": {\n' +
+    '\t\t\t\t"NODE_ENV": "staging",\n' +
+    '\t\t\t\t"APP_ORIGIN": "https://staging.rsss.space"\n' +
+    '\t\t\t},\n' +
+    '\t\t\t"durable_objects": {\n' +
+    '\t\t\t\t"bindings": [\n' +
+    '\t\t\t\t\t{\n' +
+    '\t\t\t\t\t\t"name": "USER_DO",\n' +
+    '\t\t\t\t\t\t"class_name": "UserDO"\n' +
+    '\t\t\t\t\t}\n' +
+    '\t\t\t\t]\n' +
+    '\t\t\t},\n' +
+    '\t\t\t"migrations": [\n' +
+    '\t\t\t\t{\n' +
+    '\t\t\t\t\t"tag": "v1",\n' +
+    '\t\t\t\t\t"new_sqlite_classes": ["UserDO"]\n' +
+    '\t\t\t\t}\n' +
+    '\t\t\t],\n' +
+    '\t\t\t"kv_namespaces": [\n' +
+    '\t\t\t\t{\n' +
+    '\t\t\t\t\t"binding": "SESSIONS",\n' +
+    '\t\t\t\t\t"id": "ab4cfea82e4546ca8ec79170aaabde38",\n' +
+    '\t\t\t\t\t"preview_id": "ab4cfea82e4546ca8ec79170aaabde38"\n' +
+    '\t\t\t\t},\n' +
+    '\t\t\t\t{\n' +
+    '\t\t\t\t\t"binding": "BLURHASH_KV",\n' +
+    '\t\t\t\t\t"id": "7361bc827bd143aa82a5770bfc3e3a25",\n' +
+    '\t\t\t\t\t"preview_id": "7361bc827bd143aa82a5770bfc3e3a25"\n' +
+    '\t\t\t\t},\n' +
+    '\t\t\t\t{\n' +
+    '\t\t\t\t\t"binding": "HTML_KV",\n' +
+    '\t\t\t\t\t"id": "3051be85a6614268b5497717ff74e596",\n' +
+    '\t\t\t\t\t"preview_id": "3051be85a6614268b5497717ff74e596"\n' +
+    '\t\t\t\t}\n' +
+    '\t\t\t],\n' +
+    '\t\t\t"queues": {\n' +
+    '\t\t\t\t"producers": [\n' +
+    '\t\t\t\t\t{\n' +
+    '\t\t\t\t\t\t"binding": "BLURHASH_QUEUE",\n' +
+    '\t\t\t\t\t\t"queue": "blurhash-jobs-staging"\n' +
+    '\t\t\t\t\t}\n' +
+    '\t\t\t\t],\n' +
+    '\t\t\t\t"consumers": [\n' +
+    '\t\t\t\t\t{\n' +
+    '\t\t\t\t\t\t"queue": "blurhash-jobs-staging",\n' +
+    '\t\t\t\t\t\t"max_batch_size": 10,\n' +
+    '\t\t\t\t\t\t"max_batch_timeout": 30,\n' +
+    '\t\t\t\t\t\t"max_retries": 3,\n' +
+    '\t\t\t\t\t\t"dead_letter_queue": "blurhash-dlq-staging"\n' +
+    '\t\t\t\t\t}\n' +
+    '\t\t\t\t]\n' +
+    '\t\t\t}\n' +
+    '\t\t},\n' +
+    '\t\t',
+  expected: /"binding"\s*:\s*"BLURHASH_QUEUE"[\s\S]*?"queue"\s*:\s*"blurhash-jobs"/,
+  operator: 'match',
+  diff: 'simple'
+}
+
+Node.js v25.8.2
