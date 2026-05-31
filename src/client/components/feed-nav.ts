@@ -245,7 +245,7 @@ export const FeedNav:FunctionComponent<{
                         html`
                             <div class="empty-state">
                                 ${feedsError.value ?
-                                    html`Couldn${'''}t load feeds: ${
+                                    html`Couldn${'’'}t load feeds: ${
                                         feedsError.value
                                     }` :
                                     html`No feeds yet${ELLIPSIS}`}
