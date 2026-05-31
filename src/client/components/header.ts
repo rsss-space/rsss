@@ -119,6 +119,16 @@ export const Header:FunctionComponent<{
                 >
                     About
                 </a>
+                <a
+                    href="/feeds"
+                    class="header-link${
+                        route.value === '/feeds' ?
+                            ' active' :
+                            ''
+                    }"
+                >
+                    Feeds
+                </a>
             </nav>
 
             <div class="mobile-user">

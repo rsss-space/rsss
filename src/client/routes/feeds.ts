@@ -1,14 +1,15 @@
 import { html } from 'htm/preact/index.js'
 import { type FunctionComponent } from 'preact'
 import { type AppState } from '../state.js'
-import { FeedNav } from './feed-nav.js'
+import { FeedNav } from '../components/feed-nav.js'
+import './feeds.css'
 
-export const Sidebar:FunctionComponent<{
+export const FeedsRoute:FunctionComponent<{
     state:AppState
-}> = function ({ state }) {
+}> = function FeedsRoute ({ state }) {
     return html`
-        <aside class="sidebar">
+        <section class="route feeds">
             <${FeedNav} state=${state} />
-        </aside>
+        </section>
     `
 }
