@@ -7,6 +7,7 @@ const commands = [
     'node test/routes-oauth-callback-static.mjs',
     'node test/feeds-route-static.mjs',
     'node test/sidebar-static.mjs',
+    'node test/header-feeds-link-static.mjs',
     'node test/server-routing-static.mjs',
     'node test/sync-invariant-static.mjs',
     'node test/article-fetch-not-in-refresh.mjs',
