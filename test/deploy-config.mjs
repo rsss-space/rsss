@@ -23,7 +23,9 @@ const dlqPattern = [
 ].map((part) => part.source).join('')
 const stagingStart = wrangler.indexOf('"staging"')
 const productionStart = wrangler.indexOf('"production"')
-const observabilityStart = wrangler.indexOf('"observability"')
+// Search from the production block so a staging-scoped "observability"
+// key does not bound production to an empty slice.
+const observabilityStart = wrangler.indexOf('"observability"', productionStart)
 const stagingBlock = stagingStart === -1 || productionStart === -1
     ? ''
     : wrangler.slice(stagingStart, productionStart)
@@ -49,9 +51,9 @@ assert.match(
     'wrangler.jsonc must declare environment-specific blocks'
 )
 
-for (const [envName, envBlock, nodeEnv] of [
-    ['staging', stagingBlock, 'staging'],
-    ['production', productionBlock, 'production']
+for (const [envName, envBlock, nodeEnv, queueName] of [
+    ['staging', stagingBlock, 'staging', 'blurhash-jobs-staging'],
+    ['production', productionBlock, 'production', 'blurhash-jobs']
 ]) {
     assert.notEqual(envBlock, '', `${envName} env block is declared`)
     assert.match(
@@ -81,7 +83,10 @@ for (const [envName, envBlock, nodeEnv] of [
     }
     assert.match(
         envBlock,
-        /"binding"\s*:\s*"BLURHASH_QUEUE"[\s\S]*?"queue"\s*:\s*"blurhash-jobs"/,
+        new RegExp(
+            '"binding"\\s*:\\s*"BLURHASH_QUEUE"[\\s\\S]*?'
+            + `"queue"\\s*:\\s*"${queueName}"`
+        ),
         `${envName} declares the blurhash queue producer`
     )
 }

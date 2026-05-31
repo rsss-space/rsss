@@ -517,6 +517,13 @@ function scheduleResolveConvergence (
 
 let eventSource:EventSource|null = null
 
+// Debounce handle for the SSE `feed-updated` -> refreshAfterSync timer.
+// Lifted to module scope (alongside `eventSource`) so closeEventStream
+// can cancel a pending refresh; otherwise a debounced refresh fires
+// after the stream is closed (e.g. on logout/navigation), re-reading
+// state against a torn-down stream.
+let pendingSseRefresh:ReturnType<typeof setTimeout>|null = null
+
 function hasArticleBody (item:Item):boolean {
     return Boolean(item.content || item.description)
 }
@@ -1322,11 +1329,10 @@ State.openEventStream = function (state:AppState):void {
     })
     eventSource = source
 
-    let pendingRefresh:ReturnType<typeof setTimeout>|null = null
     const scheduleRefresh = () => {
-        if (pendingRefresh !== null) return
-        pendingRefresh = setTimeout(() => {
-            pendingRefresh = null
+        if (pendingSseRefresh !== null) return
+        pendingSseRefresh = setTimeout(() => {
+            pendingSseRefresh = null
             trackRefresh(state, 'sse-feed-updated', async () => {
                 await State.refreshAfterSync(state)
             }).catch((err) => {
@@ -1493,6 +1499,10 @@ State.openEventStream = function (state:AppState):void {
 }
 
 State.closeEventStream = function ():void {
+    if (pendingSseRefresh !== null) {
+        clearTimeout(pendingSseRefresh)
+        pendingSseRefresh = null
+    }
     if (!eventSource) return
     eventSource.close()
     eventSource = null

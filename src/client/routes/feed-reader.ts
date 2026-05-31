@@ -219,7 +219,7 @@ export const FeedReader:FunctionComponent<{
                         ${itemsLoading.value && items.value.length === 0 && html`
                             <div class="loading-text">
                                 Loading items${ELLIPSIS}
-                            <div>
+                            </div>
                         `}
 
                         ${items.value.map(item => html`

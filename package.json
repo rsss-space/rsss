@@ -89,7 +89,7 @@
     "preact": "^10.28.0",
     "resend": "^6.12.2",
     "route-event": "^8.1.0",
-    "stripe": "^17.7.0"
+    "stripe": "17.7.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.19.0",
