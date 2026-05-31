@@ -78,8 +78,11 @@ async function readBoundedBody (
         reader.releaseLock()
     }
 
-    return { ok: true, text: text + decoder.decode(),
-        truncated: false }
+    return {
+        ok: true,
+        text: text + decoder.decode(),
+        truncated: false
+    }
 }
 
 function nowSqlite ():string {

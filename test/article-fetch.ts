@@ -64,33 +64,30 @@ test('fetchFullArticle - non-HTML content-type → failed_non_html', async t => 
     t.equal(result.status, 'failed_non_html', 'PDF → failed_non_html')
 })
 
-test('fetchFullArticle - body over the byte cap, truncated and ' +
-    'unsalvageable → failed_too_large',
-    async t => {
-        // Pure filler with no extractable block: truncation leaves no
-        // salvageable content. This represents the new logic where
-        // truncation itself is not a failure — only truncation-AND-no-body
-        // is.
-        const big = 'x'.repeat(MAX_ARTICLE_FETCH_BYTES + 1)
-        const result = await fetchFullArticle('https://example.com/post', {
-            fetchFn: async () => htmlResponse(big),
-            resolveHostname: okResolve
-        })
-        t.equal(result.status, 'failed_too_large',
-            'truncated with no extractable content → failed_too_large')
+// Truncated pure filler with no extractable block: truncation alone is
+// not a failure, but truncation-AND-no-body is.
+test('fetchFullArticle - body over cap, truncated and unsalvageable ' +
+    '→ failed_too_large', async t => {
+    const big = 'x'.repeat(MAX_ARTICLE_FETCH_BYTES + 1)
+    const result = await fetchFullArticle('https://example.com/post', {
+        fetchFn: async () => htmlResponse(big),
+        resolveHostname: okResolve
     })
+    t.equal(result.status, 'failed_too_large',
+        'truncated with no extractable content → failed_too_large')
+})
 
-// A real publisher page (e.g. WIRED) ships ~1.3 MiB of HTML — mostly
-// inline JSON/scripts — wrapping a small article. The old 1 MiB download
-// cap rejected these as failed_too_large before extraction ever ran.
-// Now we read up to the cap, extract, and mark as succeeded_partial.
+// A real publisher page (e.g. WIRED) ships large amounts of HTML — mostly
+// inline JSON/scripts — wrapping a small article. When the content exceeds
+// the download cap but the article is within the read window, we extract
+// and mark as succeeded_partial.
 test('fetchFullArticle - article near start, trailing bloat ' +
     '→ succeeded_partial', async t => {
     const article = `<article>${longParagraph.repeat(20)}</article>`
     // Bloat that pushes total beyond MAX_ARTICLE_FETCH_BYTES
     const bloat = '<script>' +
-        'x'.repeat(Math.round(3.5 * 1024 * 1024)) +
-        '</script>'
+            'x'.repeat(Math.round(3.5 * 1024 * 1024)) +
+            '</script>'
     const html = `<html><body>${article}${bloat}</body></html>`
     const result = await fetchFullArticle('https://example.com/post', {
         fetchFn: async () => htmlResponse(html),
@@ -105,8 +102,8 @@ test('fetchFullArticle - article near start, trailing bloat ' +
 
 test('fetchFullArticle - leading bloat, article unreachable ' +
     '→ failed_too_large', async t => {
-    // Article is buried after MAX_ARTICLE_FETCH_BYTES of leading junk:
-    // truncation kills it, and no salvageable content remains.
+    // Article is buried after MAX_ARTICLE_FETCH_BYTES of leading
+    // junk: truncation kills it, and no salvageable content remains.
     const leading = 'x'.repeat(MAX_ARTICLE_FETCH_BYTES + 100000)
     const article = `<article>${longParagraph}</article>`
     const html = `<html><body>${leading}${article}</body></html>`
