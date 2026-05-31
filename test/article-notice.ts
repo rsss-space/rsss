@@ -1,8 +1,16 @@
 import { test } from '@substrate-system/tapzero'
 import { html } from 'htm/preact'
 import { render } from 'preact'
+import { signal } from '@preact/signals'
 import { noticeForStatus } from '../src/client/routes/item-reader-notice.js'
 import { ArticleNotice } from '../src/client/components/article-notice.js'
+import { ItemReader } from '../src/client/routes/item-reader.js'
+import {
+    type AppState,
+    articleFetchError,
+    articleFetchingItemId
+} from '../src/client/state.js'
+import { type Item } from '../src/client/db/types.js'
 import '../src/client/components/article-notice.ts'
 
 test('noticeForStatus maps succeeded_partial to info variant', t => {
@@ -236,3 +244,214 @@ test('AC6: icon is decorative with aria-hidden', t => {
         root.remove()
     }
 })
+
+// Reader placement tests
+
+function fakeItemReaderState ():AppState {
+    return {
+        route: signal('/'),
+        routeItem: signal(null),
+        routeItemLoading: signal(false),
+        items: signal([]),
+        _setRoute: () => {}
+    } as unknown as AppState
+}
+
+function fakeItem (overrides:Partial<Item> = {}):Item {
+    return {
+        id: 1,
+        feed_id: 1,
+        guid: 'test-guid',
+        title: 'Test Article',
+        link: 'https://example.com/article',
+        description: 'Article description',
+        content: 'Article content',
+        author: null,
+        pub_date: null,
+        thumbnail_url: null,
+        is_read: 0,
+        is_starred: 0,
+        created_at: '2024-01-01 00:00:00',
+        updated_at: '2024-01-01 00:00:00',
+        feed_title: 'Test Feed',
+        full_content: null,
+        full_content_status: null,
+        ...overrides
+    }
+}
+
+test(
+    'AC7 + AC4: notice and body order; succeeded_partial item',
+    t => {
+        const body = document.querySelector('body') as HTMLElement
+        const root = document.createElement('div')
+        body.appendChild(root)
+
+        try {
+            articleFetchError.value = null
+            articleFetchingItemId.value = null
+
+            const state = fakeItemReaderState()
+            const item = fakeItem({
+                full_content_status: 'succeeded_partial',
+                full_content: 'Full article content here'
+            })
+            state.routeItem.value = item
+            state.route.value = '/post/example.com/article'
+
+            render(html`
+                <${ItemReader} state=${state} splats=${[]} />
+            `, root)
+
+            const notice = root.querySelector('.article-notice')
+            const articleBody = root.querySelector(
+                '.article-body'
+            ) as HTMLElement
+            t.ok(notice, 'renders article-notice element')
+            t.ok(articleBody, 'renders article-body element')
+            t.ok(
+                notice?.classList.contains('info'),
+                'notice has info class for partial success'
+            )
+
+            t.ok(
+                notice &&
+                notice.compareDocumentPosition(articleBody) &
+                Node.DOCUMENT_POSITION_FOLLOWING,
+                'notice precedes body in DOM order'
+            )
+        } finally {
+            render(null, root)
+            root.remove()
+        }
+    }
+)
+
+test(
+    'AC7 fallback: notice and body order; failed_network',
+    t => {
+        const body = document.querySelector('body') as HTMLElement
+        const root = document.createElement('div')
+        body.appendChild(root)
+
+        try {
+            articleFetchError.value = null
+            articleFetchingItemId.value = null
+
+            const state = fakeItemReaderState()
+            const item = fakeItem({
+                full_content_status: 'failed_network',
+                content: 'Fallback summary content',
+                full_content: null
+            })
+            state.routeItem.value = item
+            state.route.value = '/post/example.com/article'
+
+            render(html`
+                <${ItemReader} state=${state} splats=${[]} />
+            `, root)
+
+            const notice = root.querySelector('.article-notice')
+            const articleBody = root.querySelector(
+                '.article-body'
+            ) as HTMLElement
+            t.ok(notice, 'renders article-notice element')
+            t.ok(
+                notice?.classList.contains('error'),
+                'notice has error class for network failure'
+            )
+            t.ok(articleBody, 'renders article-body element')
+            t.ok(
+                articleBody?.innerHTML.length > 0,
+                'body contains fallback content'
+            )
+
+            t.ok(
+                notice &&
+                notice.compareDocumentPosition(articleBody) &
+                Node.DOCUMENT_POSITION_FOLLOWING,
+                'notice precedes body in DOM order'
+            )
+        } finally {
+            render(null, root)
+            root.remove()
+        }
+    }
+)
+
+test(
+    'CTA collapse: notice hides bottom publisher link',
+    t => {
+        const body = document.querySelector('body') as HTMLElement
+        const root = document.createElement('div')
+        body.appendChild(root)
+
+        try {
+            articleFetchError.value = null
+            articleFetchingItemId.value = null
+
+            const state = fakeItemReaderState()
+            const item = fakeItem({
+                full_content_status: 'succeeded_partial',
+                full_content: 'Full article',
+                link: 'https://example.com/article'
+            })
+            state.routeItem.value = item
+            state.route.value = '/post/example.com/article'
+
+            render(html`
+                <${ItemReader} state=${state} splats=${[]} />
+            `, root)
+
+            const publisherLink = root.querySelector(
+                '.article-publisher-link'
+            )
+            t.equal(
+                publisherLink,
+                null,
+                'bottom publisher link is absent when notice exists'
+            )
+        } finally {
+            render(null, root)
+            root.remove()
+        }
+    }
+)
+
+test(
+    'CTA collapse: succeeded item shows bottom link',
+    t => {
+        const body = document.querySelector('body') as HTMLElement
+        const root = document.createElement('div')
+        body.appendChild(root)
+
+        try {
+            articleFetchError.value = null
+            articleFetchingItemId.value = null
+
+            const state = fakeItemReaderState()
+            const item = fakeItem({
+                full_content_status: 'succeeded',
+                content: 'Article content',
+                link: 'https://example.com/article'
+            })
+            state.routeItem.value = item
+            state.route.value = '/post/example.com/article'
+
+            render(html`
+                <${ItemReader} state=${state} splats=${[]} />
+            `, root)
+
+            const publisherLink = root.querySelector(
+                '.article-publisher-link'
+            )
+            t.ok(
+                publisherLink,
+                'bottom publisher link is present when no notice exists'
+            )
+        } finally {
+            render(null, root)
+            root.remove()
+        }
+    }
+)
