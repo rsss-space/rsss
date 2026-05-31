@@ -391,8 +391,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:execute-implementation-plan docs/implementation-plans/2026-05-30-027-mobile-feeds-route/ .
-
+/ed3d-plan-and-execute:execute-implementation-plan DOCS/implementation-plans/2026-05-30-028-oversize-article-fallback/ .
 ```
 
 --------------------------------------------------------------
