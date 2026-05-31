@@ -9,7 +9,7 @@
  */
 
 export const MAX_FULL_CONTENT_BYTES = 256 * 1024
-export const MAX_ARTICLE_FETCH_BYTES = 1 * 1024 * 1024
+export const MAX_ARTICLE_FETCH_BYTES = 3 * 1024 * 1024
 export const EXTRACTED_MIN_TEXT = 500
 export const SUMMARY_TEXT_THRESHOLD = 1500
 export const ARTICLE_FETCH_TIMEOUT_MS = 8_000

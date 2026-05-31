@@ -1,5 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { fetchFullArticle } from '../src/server/article-fetch.js'
+import { MAX_ARTICLE_FETCH_BYTES } from '../src/shared/schema.js'
 
 const okResolve = async () => ['93.184.216.34']
 
@@ -63,13 +64,32 @@ test('fetchFullArticle - non-HTML content-type → failed_non_html', async t => 
     t.equal(result.status, 'failed_non_html', 'PDF → failed_non_html')
 })
 
-test('fetchFullArticle - 2 MiB body → failed_too_large', async t => {
-    const big = 'x'.repeat(2 * 1024 * 1024)
+test('fetchFullArticle - body over the byte cap → failed_too_large',
+    async t => {
+        const big = 'x'.repeat(MAX_ARTICLE_FETCH_BYTES + 1)
+        const result = await fetchFullArticle('https://example.com/post', {
+            fetchFn: async () => htmlResponse(big),
+            resolveHostname: okResolve
+        })
+        t.equal(result.status, 'failed_too_large',
+            'over-cap body → failed_too_large')
+    })
+
+// A real publisher page (e.g. WIRED) ships ~1.3 MiB of HTML — mostly
+// inline JSON/scripts — wrapping a small article. The old 1 MiB download
+// cap rejected these as failed_too_large before extraction ever ran.
+test('fetchFullArticle - 1.3 MiB real-world page → succeeded', async t => {
+    const article = `<article>${longParagraph.repeat(20)}</article>`
+    const bloat = '<script>' +
+        'x'.repeat(Math.round(1.3 * 1024 * 1024)) +
+        '</script>'
+    const html = `<html><body>${article}${bloat}</body></html>`
     const result = await fetchFullArticle('https://example.com/post', {
-        fetchFn: async () => htmlResponse(big),
+        fetchFn: async () => htmlResponse(html),
         resolveHostname: okResolve
     })
-    t.equal(result.status, 'failed_too_large', '2 MiB → failed_too_large')
+    t.equal(result.status, 'succeeded',
+        '~1.3 MiB page extracts instead of failing too_large')
 })
 
 test('fetchFullArticle - paywall stub (<500 chars) → failed_no_body',

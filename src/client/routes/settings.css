@@ -356,14 +356,7 @@
         color: var(--color-primary);
         user-select: none;
         list-style: none;
-
-        &::before {
-            content: '+ ';
-        }
-    }
-
-    &[open] summary::before {
-        content: '- ';
+        gap: 0.5rem;
     }
 }
 
