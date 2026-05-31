@@ -9,6 +9,7 @@ import {
     DEAD_LETTER_OUTBOX_SQL,
     USER_STATE_SQL,
     ALL_FULL_CONTENT_STATUSES,
+    isSuccessStatus,
     FETCH_FULL_MIN_INTERVAL_MS
 } from '../../shared/schema.js'
 import { itemRouteCandidates } from '../../shared/item-route.js'
@@ -1408,10 +1409,11 @@ export class UserDO extends DurableObject<Env> {
                 return c.json({ error: 'item_has_no_link' }, 409)
             }
 
-            // Cache hit: row is already succeeded and force not set.
+            // Cache hit: row already has content (succeeded or partial) and
+            // force not set.
             if (
                 !force &&
-                item.full_content_status === 'succeeded' &&
+                isSuccessStatus(item.full_content_status as string|null) &&
                 typeof item.full_content === 'string' &&
                 item.full_content.length > 0
             ) {
@@ -1438,14 +1440,14 @@ export class UserDO extends DurableObject<Env> {
                 return c.json({ error: 'invalid_status' }, 500)
             }
 
-            if (result.status === 'succeeded') {
+            if ('html' in result) {
                 this.sql.exec(
                     'UPDATE items SET full_content = ?, ' +
                     'full_content_fetched_at = ?, ' +
                     'full_content_status = ? WHERE id = ?',
                     result.html,
                     result.fetchedAt,
-                    'succeeded',
+                    result.status,
                     id
                 )
             } else {

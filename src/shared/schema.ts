@@ -17,6 +17,7 @@ export const FETCH_FULL_MIN_INTERVAL_MS = 5_000
 
 export type FullContentStatus =
     | 'succeeded'
+    | 'succeeded_partial'
     | 'failed_network'
     | 'failed_status'
     | 'failed_redirect'
@@ -26,6 +27,7 @@ export type FullContentStatus =
 
 export const ALL_FULL_CONTENT_STATUSES:FullContentStatus[] = [
     'succeeded',
+    'succeeded_partial',
     'failed_network',
     'failed_status',
     'failed_redirect',
@@ -33,6 +35,12 @@ export const ALL_FULL_CONTENT_STATUSES:FullContentStatus[] = [
     'failed_too_large',
     'failed_no_body'
 ]
+
+export function isSuccessStatus (
+    status:string|null|undefined
+):boolean {
+    return status === 'succeeded' || status === 'succeeded_partial'
+}
 
 export const TABLES_SQL = `
     CREATE TABLE IF NOT EXISTS feeds (

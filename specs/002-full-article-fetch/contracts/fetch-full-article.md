@@ -41,10 +41,10 @@ The body MAY be omitted; an empty body is equivalent to `{ "force": false }`.
 
 ### `200 OK` — already-fetched cache hit (without `force`)
 
-When the row already has `full_content_status === "succeeded"` and a
-non-empty `full_content`, and the request did NOT pass `force: true`,
-the DO returns the existing row immediately without making any
-outbound HTTP request:
+When the row already has `full_content_status === "succeeded"` or
+`"succeeded_partial"`, non-empty `full_content`, and the request did NOT
+pass `force: true`, the DO returns the existing row immediately without
+making any outbound HTTP request:
 
 ```json
 {
@@ -66,14 +66,18 @@ outbound HTTP request:
 
 ### `200 OK` — fetch attempted
 
-When a fetch was attempted (either because status was non-`succeeded`,
-or because `force: true` was passed), the response carries the row
-*after* the attempt completed. The same shape is used for both success
-and failure; the caller distinguishes them by inspecting
+When a fetch was attempted (either because status was not `succeeded` or
+`succeeded_partial`, or because `force: true` was passed), the response
+carries the row *after* the attempt completed. The same shape is used for
+both success and failure; the caller distinguishes them by inspecting
 `item.full_content_status`:
 
-- `"succeeded"` — `full_content` is non-empty,
-  `full_content_fetched_at` is the just-now timestamp.
+- `"succeeded"` — full complete fetch and extraction succeeded;
+  `full_content` is non-empty, `full_content_fetched_at` is the
+  just-now timestamp.
+- `"succeeded_partial"` — fetch was truncated at `MAX_ARTICLE_FETCH_BYTES`
+  but extraction salvaged the prefix to yield a usable body; `full_content`
+  is non-empty, `full_content_fetched_at` is the just-now timestamp.
 - any `"failed_*"` — `full_content` is unchanged from before the call
   (i.e. the previous successful body, if any, is preserved on a forced
   re-fetch that fails).
@@ -162,8 +166,9 @@ retry (an identical fetch result writes identical row state).
 ## Server-side flow
 
 1. Resolve the row by `id`. If missing → `404`.
-2. If `force` is not set and `full_content_status === 'succeeded'` and
-   `full_content` is non-empty → return the row unchanged.
+2. If `force` is not set and (`full_content_status === 'succeeded'` or
+   `'succeeded_partial'`) and `full_content` is non-empty → return the row
+   unchanged.
 3. If `link` is empty or fails `validateFeedUrl` → write
    `full_content_status = 'failed_network'`,
    `full_content_fetched_at = datetime('now')`, return the row.
@@ -172,18 +177,23 @@ retry (an identical fetch result writes identical row state).
 5. Call `fetchValidatedResponse(link, { maxRedirects: 5,
    redirectErrorMessage: 'Article redirected too many times', signal:
    AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS) })`.
-6. Inspect `Content-Type`. Non-HTML → `failed_non_html`. Bytes >
-   `MAX_ARTICLE_FETCH_BYTES` while reading → `failed_too_large`.
-7. Run `extractArticleBody(html, finalUrl)` →
-   - `null` (no candidate root) → `failed_no_body`.
-   - extracted string with `plainTextLength < EXTRACTED_MIN_TEXT` →
-     `failed_no_body`.
+6. Inspect `Content-Type`. Non-HTML → `failed_non_html`. When reading
+   bytes, stop reading at `MAX_ARTICLE_FETCH_BYTES` and mark the result
+   truncated; continue to extraction (do not fail here).
+7. Run `extractArticleBody(html, finalUrl, { truncated })` →
+   - `{ error: 'no_body' }` (no candidate root) → if truncated, `failed_too_large`;
+     else `failed_no_body`.
+   - extracted string with `plainTextLength < EXTRACTED_MIN_TEXT` → if
+     truncated, `failed_too_large`; else `failed_no_body`.
    - oversized after extraction with no clean truncation point →
      `failed_too_large`.
-8. On success, write `full_content`, `full_content_fetched_at =
-   datetime('now')`, `full_content_status = 'succeeded'`. The
-   `items_updated_at` trigger bumps `updated_at` so the row will be
-   delivered on the next `/api/sync` page.
+   - success on truncated input → `succeeded_partial`.
+   - success on complete input → `succeeded`.
+8. On success (either `succeeded` or `succeeded_partial`), write
+   `full_content`, `full_content_fetched_at = datetime('now')`,
+   `full_content_status = 'succeeded'` or `'succeeded_partial'` as
+   appropriate. The `items_updated_at` trigger bumps `updated_at` so the
+   row will be delivered on the next `/api/sync` page.
 9. Return the updated row.
 
 ## Out-of-scope

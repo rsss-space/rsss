@@ -137,3 +137,69 @@ test('extractArticleBody - oversized blob with no </p> → too_large', t => {
     }
     t.equal(result.error, 'too_large', 'no boundary → too_large')
 })
+
+test('extractArticleBody - unclosed <article> with truncated flag ' +
+    '→ salvaged', t => {
+    // Simulates truncation landing mid-<article> (the open tag exists
+    // but the close tag was cut off). With truncated:true, we should
+    // salvage the content.
+    const text = 'article content '.repeat(40)
+    // Unclosed <article> (no </article> tag)
+    const html = `<html><body><article>${text}`
+    const result = extractArticleBody(html, 'https://example.com/', {
+        truncated: true
+    })
+    if ('error' in result) {
+        t.fail('expected success with truncated:true, got ' +
+            result.error)
+        return
+    }
+    t.ok(
+        result.html.includes('article content'),
+        'article text salvaged'
+    )
+})
+
+test('extractArticleBody - unclosed <article> without truncated flag ' +
+    '→ no_body', t => {
+    // Same HTML, but without truncated flag: should return no_body
+    // (complete-document behavior preserved)
+    const text = 'article content '.repeat(40)
+    // Unclosed article (missing closing tag)
+    const html = `<html><body><article>${text}`
+    const result = extractArticleBody(html, 'https://example.com/', {
+        truncated: false
+    })
+    if (!('error' in result)) {
+        t.fail('expected error: no_body without truncated:true')
+        return
+    }
+    t.equal(result.error, 'no_body',
+        'unclosed article with truncated:false → no_body')
+})
+
+test('extractArticleBody - closed <article> ignores truncated flag',
+    t => {
+        // A properly closed <article> should extract identically
+        // with and without truncated:true
+        const text = 'good content '.repeat(50)
+        const html = `<article>${text}</article>`
+        const result1 = extractArticleBody(html,
+            'https://example.com/', { truncated: false })
+        const result2 = extractArticleBody(html,
+            'https://example.com/', { truncated: true })
+
+        if ('error' in result1) {
+            t.fail('expected success for closed article')
+            return
+        }
+        if ('error' in result2) {
+            t.fail('expected success for closed article with truncated')
+            return
+        }
+        t.equal(
+            result1.html, result2.html,
+            'truncated flag does not affect closed tags'
+        )
+    }
+)

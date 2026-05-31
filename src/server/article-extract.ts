@@ -153,9 +153,15 @@ function stripStructuralNoise (html:string):string {
 /**
  * Find the inner HTML of the first occurrence of <tag>...</tag>.
  * Naive: assumes no same-tag nesting at the top of the document.
- * Returns null if not found.
+ * When truncated is true and no close tag is found, returns the
+ * remainder of the window (salvage on truncation). Otherwise returns
+ * null if close tag not found.
  */
-function findFirstTagInner (html:string, tag:string):string|null {
+function findFirstTagInner (
+    html:string,
+    tag:string,
+    truncated:boolean
+):string|null {
     const open = new RegExp(`<${tag}\\b[^>]*>`, 'i')
     const openMatch = open.exec(html)
     if (!openMatch) return null
@@ -164,7 +170,13 @@ function findFirstTagInner (html:string, tag:string):string|null {
     closeRe.lastIndex = start
     const rest = html.slice(start)
     const closeMatch = closeRe.exec(rest)
-    if (!closeMatch) return null
+    if (!closeMatch) {
+        // Truncation cut off the close tag: take everything from the
+        // open tag to the end of the read window. Gated on truncated so
+        // complete documents are unaffected.
+        if (truncated) return rest
+        return null
+    }
     return rest.slice(0, closeMatch.index)
 }
 
@@ -191,9 +203,12 @@ function findDensestBlock (html:string):string|null {
     return best && best.textLength > 0 ? best.inner : null
 }
 
-function pickCandidate (html:string):string|null {
-    return findFirstTagInner(html, 'article') ||
-        findFirstTagInner(html, 'main') ||
+function pickCandidate (
+    html:string,
+    truncated:boolean
+):string|null {
+    return findFirstTagInner(html, 'article', truncated) ||
+        findFirstTagInner(html, 'main', truncated) ||
         findDensestBlock(html)
 }
 
@@ -250,10 +265,11 @@ function truncateAtBoundary (html:string):string|null {
 
 export function extractArticleBody (
     html:string,
-    _baseUrl:string
+    _baseUrl:string,
+    opts:{ truncated?:boolean } = {}
 ):ExtractResult {
     const stripped = stripStructuralNoise(html)
-    const candidate = pickCandidate(stripped)
+    const candidate = pickCandidate(stripped, opts.truncated === true)
     if (!candidate) return { error: 'no_body' }
 
     const sanitised = sanitiseExtractedHtml(candidate)

@@ -58,27 +58,31 @@ status ships later). The set of values is:
 |---|---|---|
 | `NULL` (column unset) | Never attempted. | If `isSummaryOnly(item)` and online, auto-trigger a fetch on open. |
 | `succeeded` | Fetch + extraction succeeded; body in `full_content`. | Render `full_content` (after `sanitizeHtml`). No notice. |
+| `succeeded_partial` | Salvaged from a truncated (oversize) download — `full_content` holds the article as found within the read window, possibly missing late sections. | Render `full_content` (after `sanitizeHtml`). Show a non-error "info" notice above the body. |
 | `failed_network` | DNS / connection / timeout / blocked host. | Show "Couldn't load the full article." + Retry button. |
 | `failed_status` | Publisher returned non-2xx. | Same as `failed_network`. |
 | `failed_redirect` | Exceeded `MAX_ARTICLE_REDIRECTS = 5` (spec 001 cap). | Same. |
 | `failed_non_html` | Response Content-Type was not HTML / XHTML. | Same. |
-| `failed_too_large` | Response > `MAX_ARTICLE_FETCH_BYTES` and could not be truncated to a usable body. | Same. |
+| `failed_too_large` | Read was truncated at `MAX_ARTICLE_FETCH_BYTES` AND no usable body could be extracted from the prefix, OR the extracted body exceeded `MAX_FULL_CONTENT_BYTES` and could not be truncated to a clean boundary. | Same as `failed_network`. |
 | `failed_no_body` | Extracted text < `EXTRACTED_MIN_TEXT = 500` chars (paywall stub, empty page). | Same. |
 
 State transitions (driven by the fetch-full endpoint):
 
 ```text
-NULL  --(success)-->         succeeded
+NULL  --(success)-->         succeeded | succeeded_partial
 NULL  --(failure of kind k)--> failed_<k>
 
-failed_*  --(success)-->        succeeded
+failed_*  --(success)-->        succeeded | succeeded_partial
 failed_*  --(failure of kind k)--> failed_<k>      (kind may change)
 
-succeeded --(force=true success)-->     succeeded   (refresh)
-succeeded --(force=true failure of k)--> failed_<k> (the previous body
-                                                     is overwritten with
-                                                     the new failure)
+succeeded  --(force=true success)-->     succeeded | succeeded_partial
+succeeded  --(force=true failure of k)--> failed_<k>
+succeeded_partial --(force=true success)-->     succeeded | succeeded_partial
+succeeded_partial --(force=true failure of k)--> failed_<k>
 ```
+
+Both `succeeded` and `succeeded_partial` are treated as cache hits when
+the next fetch is initiated without `force: true`.
 
 The auto-trigger only acts when the current status is `NULL`. Re-tries
 require an explicit user click on the Retry button (which sends
@@ -94,8 +98,9 @@ require an explicit user click on the Retry button (which sends
 - `full_content_fetched_at`, when non-NULL, MUST satisfy `pub_date >=
   '1970-01-01'` (ie. a valid timestamp). The DO writes this through
   `datetime('now')`.
-- `full_content_status` MUST be one of the values listed above, or
-  NULL.
+- `full_content_status` MUST be one of (`NULL`, `succeeded`,
+  `succeeded_partial`, `failed_network`, `failed_status`, `failed_redirect`,
+  `failed_non_html`, `failed_too_large`, `failed_no_body`).
 - The DO MUST refuse to fetch when `item.link` is empty or fails
   `validateFeedUrl` (URL-level SSRF check). The status MUST be set to
   `failed_network` in that case.

@@ -32,6 +32,12 @@ const commands = [
         '--loader:.wasm=dataurl',
         '| tapout'
     ].join(' '),
+    [
+        'esbuild ./test/article-notice.ts --bundle',
+        '--loader:.css=text',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
     'esbuild ./test/paint-cache.ts --bundle | tapout',
     'esbuild ./test/paint-cache-bootstrap.ts --bundle | tapout',
     'esbuild ./test/paint-cache-cleanup.ts --bundle | tapout',

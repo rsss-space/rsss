@@ -320,3 +320,56 @@ test('fetch-full - force bypasses throttle', async t => {
     t.equal(forced.status, 200, 'force bypasses throttle')
     t.equal(fetcher.calls, 2, 'force re-fetches')
 })
+
+test(
+    'fetch-full - 200 + succeeded_partial row when pipeline salvages',
+    async t => {
+        const items = [makeItem()]
+        const { app, fetcher } = createHarness(items, {
+            status: 'succeeded_partial',
+            html: '<p>partial body</p>',
+            fetchedAt: '2026-05-01 12:00:00'
+        })
+
+        const r = await app.request('/items/1/fetch-full', {
+            method: 'POST'
+        })
+        t.equal(r.status, 200, '200 OK')
+        const body = await r.json() as { item:ItemRow }
+        t.equal(
+            body.item.full_content_status,
+            'succeeded_partial',
+            'partial status saved'
+        )
+        t.equal(
+            body.item.full_content,
+            '<p>partial body</p>',
+            'partial body saved'
+        )
+        t.equal(fetcher.calls, 1, 'fetch attempted once')
+    }
+)
+
+test(
+    'fetch-full - 200 cache hit when already succeeded_partial, no force',
+    async t => {
+        const items = [makeItem({
+            full_content: '<p>cached partial</p>',
+            full_content_status: 'succeeded_partial',
+            full_content_fetched_at: '2026-04-30 10:00:00'
+        })]
+        const { app, fetcher } = createHarness(items, null)
+
+        const r = await app.request('/items/1/fetch-full', {
+            method: 'POST'
+        })
+        t.equal(r.status, 200, '200 OK')
+        const body = await r.json() as { item:ItemRow }
+        t.equal(
+            body.item.full_content,
+            '<p>cached partial</p>',
+            'cached partial body returned'
+        )
+        t.equal(fetcher.calls, 0, 'no fetch attempted on partial cache hit')
+    }
+)
