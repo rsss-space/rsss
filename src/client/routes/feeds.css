@@ -1,0 +1,19 @@
+.route.feeds {
+    width: 100%;
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 1rem;
+    box-sizing: border-box;
+
+    /* The shared FeedNav's `.sidebar-section` blocks already carry their
+       borders/padding from the global rules; widen touch targets for the
+       feed rows and controls on this page. */
+    & .sidebar-item {
+        min-height: 2.75rem;
+    }
+
+    & .item-controls button {
+        min-height: 2.5rem;
+        min-width: 2.5rem;
+    }
+}
