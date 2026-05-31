@@ -11,6 +11,7 @@ import { TermsRoute } from './terms.js'
 import { PrivacyRoute } from './privacy.js'
 import { ConfirmCloseRoute } from './confirm-close.js'
 import { UpdatesRoute } from './updates.js'
+import { FeedsRoute } from './feeds.js'
 // import Debug from '@substrate-system/debug'
 // const debug = Debug('rsss:routes')
 
@@ -61,6 +62,13 @@ export default function _Router (state:AppState):InstanceType<typeof Router> {
             return state._setRoute('/login')
         }
         return UpdatesRoute
+    })
+
+    router.addRoute('/feeds', () => {
+        if (!state.authLoading.value && !state.isAuthenticated.value) {
+            return state._setRoute('/login')
+        }
+        return FeedsRoute
     })
 
     router.addRoute('/confirm-close', () => {
