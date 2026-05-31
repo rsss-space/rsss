@@ -5,6 +5,7 @@ const commands = [
     'node test/deploy-config.mjs',
     'node test/durable-object-parseint-static.mjs',
     'node test/routes-oauth-callback-static.mjs',
+    'node test/feeds-route-static.mjs',
     'node test/sidebar-static.mjs',
     'node test/server-routing-static.mjs',
     'node test/sync-invariant-static.mjs',
