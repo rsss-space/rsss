@@ -1,14 +1,9 @@
 // Sentry must initialize before any other code runs.
 import './instrument.js'
-
 import { html } from 'htm/preact'
 import { type FunctionComponent, render } from 'preact'
 import { useComputed, effect } from '@preact/signals'
-import {
-    State,
-    type AppState,
-    hydratePaintCache
-} from './state.js'
+import { State, type AppState, hydratePaintCache } from './state.js'
 import { getStoredDid } from './paint-cache.js'
 import Router from './routes/index.js'
 import { NotFound } from './not-found.js'
@@ -20,7 +15,7 @@ import './style.css'
 const state = State()
 const router = Router(state)
 
-// Synchronous: must run before render() so the first paint sees the cached snapshot.
+// must run before render() so the first paint sees the cached snapshot.
 hydratePaintCache(state, getStoredDid())
 
 if (import.meta.hot) {
