@@ -775,8 +775,29 @@ export const SettingsRoute:FunctionComponent<{
                                 </span>
                             </div>
                             <div class="feed-controls">
-                                <details class="feed-cache-controls">
-                                    <summary>Cache settings</summary>
+                                <details
+                                    class=${`feed-cache-controls${
+                                        cacheDisabled.value ?
+                                            ' is-disabled' :
+                                            ''
+                                    }`}
+                                    open=${cacheDisabled.value ?
+                                        false :
+                                        undefined}
+                                >
+                                    <summary
+                                        aria-disabled=${cacheDisabled.value ?
+                                            'true' :
+                                            undefined}
+                                        tabindex=${cacheDisabled.value ?
+                                            -1 :
+                                            undefined}
+                                        onClick=${(e:Event) => {
+                                            if (cacheDisabled.value) {
+                                                e.preventDefault()
+                                            }
+                                        }}
+                                    >Cache settings</summary>
                                     <div class="feed-cache-form">
                                         <label class="cache-field-label">
                                             Cache mode

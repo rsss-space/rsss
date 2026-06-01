@@ -594,6 +594,156 @@ test('Per-feed details element contains cache controls', async (t) => {
     }
 })
 
+// 027-disable-cache-settings-link: per-feed control gates on caching
+
+test(
+    'per-feed cache control is disabled when isLocalFirstActive is false',
+    async (t) => {
+        const state = makeState()
+        state.feeds.value = [makeFeed({ id: 7 })]
+        _resetFeedPolicies()
+        isLocalFirstActive.value = false
+
+        const root = mount(state)
+        try {
+            await nextTick()
+            const details = root.querySelector(
+                '.settings-feed-item details.feed-cache-controls'
+            ) as HTMLDetailsElement|null
+            t.ok(details, 'feed-cache-controls details exists')
+            t.ok(
+                details?.classList.contains('is-disabled'),
+                'has is-disabled class'
+            )
+            t.equal(details?.open, false, 'details is collapsed')
+
+            const summary = details?.querySelector('summary')
+            t.equal(
+                summary?.getAttribute('aria-disabled'),
+                'true',
+                'summary has aria-disabled="true"'
+            )
+            t.equal(
+                summary?.getAttribute('tabindex'),
+                '-1',
+                'summary has tabindex="-1"'
+            )
+        } finally {
+            isLocalFirstActive.value = false
+            _resetFeedPolicies()
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'per-feed cache control is enabled when isLocalFirstActive is true',
+    async (t) => {
+        const state = makeState()
+        state.feeds.value = [makeFeed({ id: 8 })]
+        _resetFeedPolicies()
+        isLocalFirstActive.value = true
+
+        const root = mount(state)
+        try {
+            await nextTick()
+            const details = root.querySelector(
+                '.settings-feed-item details.feed-cache-controls'
+            ) as HTMLDetailsElement|null
+            t.ok(details, 'feed-cache-controls details exists')
+            t.ok(
+                !details?.classList.contains('is-disabled'),
+                'does NOT have is-disabled class'
+            )
+
+            const summary = details?.querySelector('summary')
+            t.ok(
+                !summary?.hasAttribute('aria-disabled'),
+                'summary has no aria-disabled attribute'
+            )
+            t.ok(
+                summary?.getAttribute('tabindex') !== '-1',
+                'summary is not removed from tab order'
+            )
+
+            if (details) details.open = true
+            t.equal(details?.open, true, 'disclosure toggles open')
+        } finally {
+            isLocalFirstActive.value = false
+            _resetFeedPolicies()
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'per-feed cache control toggles disabled state when ' +
+        'isLocalFirstActive flips',
+    async (t) => {
+        const state = makeState()
+        state.feeds.value = [makeFeed({ id: 9 })]
+        _resetFeedPolicies()
+        isLocalFirstActive.value = true
+
+        const root = mount(state)
+        try {
+            await nextTick()
+            const details = root.querySelector(
+                '.settings-feed-item details.feed-cache-controls'
+            ) as HTMLDetailsElement|null
+            t.ok(details, 'feed-cache-controls details exists')
+            t.ok(
+                !details?.classList.contains('is-disabled'),
+                'starts enabled (no is-disabled class)'
+            )
+
+            isLocalFirstActive.value = false
+            await nextTick()
+            t.ok(
+                details?.classList.contains('is-disabled'),
+                'gains is-disabled after flipping false'
+            )
+            t.equal(details?.open, false, 'collapses after flipping false')
+            const summaryOff = details?.querySelector('summary')
+            t.equal(
+                summaryOff?.getAttribute('aria-disabled'),
+                'true',
+                'summary gains aria-disabled after flipping false'
+            )
+            t.equal(
+                summaryOff?.getAttribute('tabindex'),
+                '-1',
+                'summary gains tabindex="-1" after flipping false'
+            )
+
+            isLocalFirstActive.value = true
+            await nextTick()
+            t.ok(
+                !details?.classList.contains('is-disabled'),
+                'loses is-disabled after flipping back true'
+            )
+            const summaryOn = details?.querySelector('summary')
+            t.ok(
+                !summaryOn?.hasAttribute('aria-disabled'),
+                'summary loses aria-disabled after flipping back true'
+            )
+
+            const sameDetails = root.querySelector(
+                '.settings-feed-item details.feed-cache-controls'
+            )
+            t.equal(
+                sameDetails,
+                details,
+                'updates in place (same element instance, no re-mount)'
+            )
+        } finally {
+            isLocalFirstActive.value = false
+            _resetFeedPolicies()
+            unmount(root)
+        }
+    }
+)
+
 test(
     'Changing per-feed cache mode select updates feedPolicies signal',
     async (t) => {

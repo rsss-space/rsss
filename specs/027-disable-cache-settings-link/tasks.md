@@ -41,7 +41,7 @@ disabled tests at ~lines 346-438 are the pattern to mirror). No
 **Purpose**: Orientation only — confirm the existing gate and the target
 markup are where the plan says they are. No code change.
 
-- [ ] T001 Confirm the gating signal and target markup exist before
+- [X] T001 Confirm the gating signal and target markup exist before
   editing: in `src/client/routes/settings.ts` verify the `cacheDisabled`
   computed (`useComputed(() => !isLocalFirstActive.value)`, ~lines
   132-134) and the per-feed `<details class="feed-cache-controls">` with
@@ -83,14 +83,14 @@ and `tabindex="-1"`, and the `<details>` is not `open`.
 
 > Write the test first and watch it FAIL before implementing T004.
 
-- [ ] T002 [P] [US1] Add the disabled visual rule in
+- [X] T002 [P] [US1] Add the disabled visual rule in
   `src/client/routes/settings.css`: a nested
   `.feed-cache-controls.is-disabled { opacity: 0.55; & summary { cursor:
   default; } }` block, mirroring `.cache-section.is-disabled` (~lines
   276-278). Reuse the literal `0.55` (no new color, no font-size change,
   no `_variables.css` edit, no unrelated CSS touched — plan.md
   Constraints; research.md Decision 3).
-- [ ] T003 [US1] Add test "per-feed cache control is disabled when
+- [X] T003 [US1] Add test "per-feed cache control is disabled when
   isLocalFirstActive is false" to `test/settings-route.ts`. Set
   `isLocalFirstActive.value = false`, set `state.feeds.value =
   [makeFeed()]` (and entitled billing if the list needs it, per existing
@@ -103,7 +103,7 @@ and `tabindex="-1"`, and the `<details>` is not `open`.
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] Implement the disabled-state rendering on the per-feed
+- [X] T004 [US1] Implement the disabled-state rendering on the per-feed
   disclosure in `src/client/routes/settings.ts` (the `<details
   class="feed-cache-controls">` / `<summary>` at ~lines 778-779), driven
   by `cacheDisabled.value` (research.md Decision 2):
@@ -140,7 +140,7 @@ feed, render `SettingsRoute`; confirm `.feed-cache-controls` has NO
 
 ### Tests for User Story 2
 
-- [ ] T005 [US2] Add test "per-feed cache control is enabled when
+- [X] T005 [US2] Add test "per-feed cache control is enabled when
   isLocalFirstActive is true" to `test/settings-route.ts`. Set
   `isLocalFirstActive.value = true`, render a feed row; assert
   `.feed-cache-controls` does NOT contain `is-disabled`, its `<summary>`
@@ -150,7 +150,7 @@ feed, render `SettingsRoute`; confirm `.feed-cache-controls` has NO
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] Finalize the enabled branch in
+- [X] T006 [US2] Finalize the enabled branch in
   `src/client/routes/settings.ts`: confirm that when `!cacheDisabled.value`
   the `<details>` `open` resolves to `undefined` (native, uncontrolled),
   `<summary>` emits no `aria-disabled` and no `tabindex` override, and the
@@ -179,7 +179,7 @@ node.
 
 ### Tests for User Story 3
 
-- [ ] T007 [US3] Add test "per-feed cache control toggles disabled state
+- [X] T007 [US3] Add test "per-feed cache control toggles disabled state
   when isLocalFirstActive flips" to `test/settings-route.ts`. Mount with a
   feed and `isLocalFirstActive.value = true`; capture the
   `.feed-cache-controls` element; set `isLocalFirstActive.value = false`,
@@ -192,7 +192,7 @@ node.
 
 ### Implementation for User Story 3
 
-- [ ] T008 [US3] Ensure reactive read in `src/client/routes/settings.ts`:
+- [X] T008 [US3] Ensure reactive read in `src/client/routes/settings.ts`:
   the per-feed render must read `cacheDisabled.value` inline within the
   feeds `.map(...)` template (not capture a plain boolean before the map)
   so a change to `isLocalFirstActive` re-renders each row. This is
@@ -208,10 +208,10 @@ instantaneous.
 
 **Purpose**: Final verification across the whole feature.
 
-- [ ] T009 Run `npm test` (`node test/run-all-tests.mjs`) and confirm the
+- [X] T009 Run `npm test` (`node test/run-all-tests.mjs`) and confirm the
   full `test/settings-route.ts` suite (including T003/T005/T007) passes
   with no regressions.
-- [ ] T010 Run `npm run lint` and fix any issues in the changed files
+- [X] T010 Run `npm run lint` and fix any issues in the changed files
   (`settings.ts`, `settings.css`, `settings-route.ts`); verify TS lines
   are <= 80 columns and CSS follows nested-selector style.
 - [ ] T011 Browser manual verification per `quickstart.md` (constitution
@@ -220,7 +220,12 @@ instantaneous.
   (FR-001/FR-002), siblings unaffected (FR-006), caching-on usable
   (FR-003), toggle reactivity with no reload (FR-005), and open-then-
   disable collapse (FR-007).
-- [ ] T012 Confirm the contract and constitution gates hold: re-check the
+  NOTE: Requires an interactive Bluesky OAuth sign-in, so it must be run
+  by a human. The automated suite already exercises the full contract in
+  a real chromium browser (via tapout) — `is-disabled`, `aria-disabled`,
+  `tabindex`, `open=false`, and in-place reactivity — but the live
+  visual / screen-reader walkthrough (steps 1-6) is left for the user.
+- [X] T012 Confirm the contract and constitution gates hold: re-check the
   state table in `contracts/per-feed-cache-control.md` against the
   implementation, confirm no CSS unrelated to `.feed-cache-controls` was
   modified, no new color or `_variables.css` change, and the `.btn-delete`

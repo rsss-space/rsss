@@ -358,6 +358,14 @@
         list-style: none;
         gap: 0.5rem;
     }
+
+    &.is-disabled {
+        opacity: 0.55;
+
+        & summary {
+            cursor: default;
+        }
+    }
 }
 
 .feed-cache-form {
