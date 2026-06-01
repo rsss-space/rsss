@@ -2,7 +2,7 @@
 import './instrument.js'
 import { html } from 'htm/preact'
 import { type FunctionComponent, render } from 'preact'
-import { useComputed, effect } from '@preact/signals'
+import { useComputed } from '@preact/signals'
 import { State, type AppState, hydratePaintCache } from './state.js'
 import { getStoredDid } from './paint-cache.js'
 import Router from './routes/index.js'
@@ -24,53 +24,12 @@ if (import.meta.hot) {
     })
 }
 
-/**
- * TEMPORARY nav-perf instrumentation (DEV only). Measures the time from
- * a route-signal change to the next painted frame, and reports any long
- * tasks (>50ms) that block the main thread in between. Remove once the
- * settings -> home lag is diagnosed.
- */
 if (import.meta.env.DEV) {
-    let navStart = 0
-    let prevRoute = state.route.peek()
-    let pending = false
-
-    effect(() => {
-        const r = state.route.value
-        if (r === prevRoute) return
-        const from = prevRoute
-        prevRoute = r
-        navStart = performance.now()
-        pending = true
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            if (!pending) return
-            pending = false
-            const dt = performance.now() - navStart
-            // eslint-disable-next-line no-console
-            console.log(
-                `[nav-perf] ${from} -> ${r}: next paint in ` +
-                `${dt.toFixed(0)}ms`
-            )
-        }))
-    })
-
-    if ('PerformanceObserver' in window) {
-        try {
-            const obs = new PerformanceObserver((list) => {
-                for (const entry of list.getEntries()) {
-                    if (entry.duration < 50) continue
-                    // eslint-disable-next-line no-console
-                    console.log(
-                        `[nav-perf] longtask ${entry.duration.toFixed(0)}ms` +
-                        ` @ +${(entry.startTime - navStart).toFixed(0)}ms` +
-                        ' after last route change'
-                    )
-                }
-            })
-            obs.observe({ entryTypes: ['longtask'] })
-        } catch {
-            // longtask not supported in this browser; ignore.
-        }
+    // @ts-expect-error dev
+    window.unregister = async () => {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister()))
+        console.log('SW unregistered')
     }
 }
 
