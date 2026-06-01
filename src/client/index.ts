@@ -1,5 +1,5 @@
 // Sentry must initialize before any other code runs.
-import './instrument.js'
+import './sentry.js'
 import { html } from 'htm/preact'
 import { type FunctionComponent, render } from 'preact'
 import { useComputed } from '@preact/signals'
