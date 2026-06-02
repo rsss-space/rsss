@@ -2,20 +2,24 @@ import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { DetailsSummary } from '@substrate-system/details-summary'
+import { CheckBox } from '@substrate-system/check-box'
 import { type AppState } from '../state.js'
-import { type CacheMode } from '../local-first-settings.js'
+import { type CacheMode, storeContent } from '../local-first-settings.js'
 import {
     feedPolicies,
     loadFeedPolicies,
     upsertFeedCachePolicy,
+    isContentCachedForPolicy,
     type FeedCachePolicyRow
 } from '../db/feed-cache-policy.js'
 import {
     getBootstrappedDb,
     getLocalDb,
     clearFeedCache,
+    localFirstSupported,
     type Feed
 } from '../db/index.js'
+import { billingStatus } from '../billing-status.js'
 import { loadStorageUsage } from '../db/storage-usage.js'
 import { AMP } from '../constants.js'
 
@@ -124,6 +128,14 @@ export const CacheSettings:FunctionComponent<{
         }
     }
 
+    function handleContentToggle (ev:Event) {
+        const checked = (ev.target as HTMLInputElement).checked
+        const override = (checked === storeContent.value) ?
+            null :
+            (checked ? 1 : 0)
+        saveFeedPolicy({ content_enabled: override })
+    }
+
     const policy = feedPolicies.value[selectedFeed.id] ?? null
     const sizeVal = policy?.max_size_bytes != null ?
         String(Math.round(policy.max_size_bytes / 1_000_000)) :
@@ -131,6 +143,15 @@ export const CacheSettings:FunctionComponent<{
     const ageVal = policy?.max_age_seconds != null ?
         String(Math.round(policy.max_age_seconds / 86400)) :
         ''
+    const effectiveContent = isContentCachedForPolicy(policy)
+    const billing = billingStatus.value
+    const isEntitled = Boolean(billing?.entitled)
+    const isBillingLoaded = billing !== null
+    const supported = localFirstSupported.value
+    const unentitled = isBillingLoaded && !isEntitled
+    const contentDisabled = unentitled || !supported
+    const fieldsId = `feed-cache-fields-${selectedFeed.id}`
+    const planHintId = `feed-cache-plan-hint-${selectedFeed.id}`
 
     return html`
         <${DetailsSummary.TAG}
@@ -141,6 +162,21 @@ export const CacheSettings:FunctionComponent<{
             <details>
                 <summary>Cache Settings</summary>
                 <div class="details-content">
+                    <${CheckBox.TAG}
+                        name=${`feed-cache-content-${selectedFeed.id}`}
+                        checked=${effectiveContent || undefined}
+                        disabled=${contentDisabled || undefined}
+                        aria-controls=${fieldsId}
+                        aria-describedby=${unentitled ? planHintId : undefined}
+                        onChange=${handleContentToggle}
+                    >
+                        Cache this feed
+                    <//>
+                    ${unentitled ? html`
+                        <p id=${planHintId} class="cache-plan-hint">
+                            Caching to this device requires a paid plan.
+                        </p>
+                    ` : null}
                     <div class="feed-cache-form">
                         <label class="cache-field-label">
                             Cache mode
