@@ -93,12 +93,15 @@ export async function upsertFeedCachePolicy (
         cache_mode:CacheMode|null
         max_size_bytes:number|null
         max_age_seconds:number|null
+        content_enabled?:number|null
     }
 ):Promise<void> {
+    await ensureFeedCachePolicyColumns(db)
     if (
         updates.cache_mode == null &&
         updates.max_size_bytes == null &&
-        updates.max_age_seconds == null
+        updates.max_age_seconds == null &&
+        updates.content_enabled == null
     ) {
         await execDb(db, {
             sql: 'DELETE FROM feed_cache_policy WHERE feed_id = ?',
@@ -109,18 +112,20 @@ export async function upsertFeedCachePolicy (
     await execDb(db, {
         sql: 'INSERT INTO feed_cache_policy' +
             ' (feed_id, cache_mode, max_size_bytes, max_age_seconds,' +
-            '  updated_at)' +
-            ' VALUES (?, ?, ?, ?, datetime(\'now\'))' +
+            '  content_enabled, updated_at)' +
+            ' VALUES (?, ?, ?, ?, ?, datetime(\'now\'))' +
             ' ON CONFLICT(feed_id) DO UPDATE SET' +
             '  cache_mode = excluded.cache_mode,' +
             '  max_size_bytes = excluded.max_size_bytes,' +
             '  max_age_seconds = excluded.max_age_seconds,' +
+            '  content_enabled = excluded.content_enabled,' +
             '  updated_at = excluded.updated_at',
         bind: [
             feedId,
             updates.cache_mode,
             updates.max_size_bytes,
-            updates.max_age_seconds
+            updates.max_age_seconds,
+            updates.content_enabled
         ]
     })
 }
