@@ -513,7 +513,8 @@ test(
                     feed_id: 1,
                     cache_mode: 'text',
                     max_size_bytes: null,
-                    max_age_seconds: null
+                    max_age_seconds: null,
+                    content_enabled: null
                 }
             }
 

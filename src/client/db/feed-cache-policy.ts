@@ -126,7 +126,7 @@ export async function upsertFeedCachePolicy (
             updates.cache_mode,
             updates.max_size_bytes,
             updates.max_age_seconds,
-            updates.content_enabled
+            updates.content_enabled ?? null
         ]
     })
 }
