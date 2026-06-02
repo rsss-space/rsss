@@ -202,6 +202,24 @@ export async function upsertItem (
         ? (item.full_content as string|null) ?? null
         : null
 
+    const bodySetClause = keepContent ?
+        `description = excluded.description,
+                content = excluded.content,
+                full_content = excluded.full_content,
+                full_content_fetched_at = excluded.full_content_fetched_at,
+                full_content_status = excluded.full_content_status` :
+        `description = COALESCE(description, excluded.description),
+                content = COALESCE(content, excluded.content),
+                full_content = COALESCE(full_content, excluded.full_content),
+                full_content_fetched_at = COALESCE(
+                    full_content_fetched_at,
+                    excluded.full_content_fetched_at
+                ),
+                full_content_status = COALESCE(
+                    full_content_status,
+                    excluded.full_content_status
+                )`
+
     await execDb(db, {
         sql: `INSERT INTO items
             (id, feed_id, guid, title, link, description, content,
@@ -216,8 +234,7 @@ export async function upsertItem (
                 guid = excluded.guid,
                 title = excluded.title,
                 link = excluded.link,
-                description = excluded.description,
-                content = excluded.content,
+                ${bodySetClause},
                 author = excluded.author,
                 pub_date = excluded.pub_date,
                 thumbnail_url = excluded.thumbnail_url,
@@ -227,10 +244,7 @@ export async function upsertItem (
                 image_height = excluded.image_height,
                 is_read = excluded.is_read,
                 is_starred = excluded.is_starred,
-                updated_at = excluded.updated_at,
-                full_content = excluded.full_content,
-                full_content_fetched_at = excluded.full_content_fetched_at,
-                full_content_status = excluded.full_content_status`,
+                updated_at = excluded.updated_at`,
         bind: [
             item.id as number,
             item.feed_id as number,
