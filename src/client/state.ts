@@ -2748,7 +2748,10 @@ State.cacheUncachedItems = async function (
             if (item.missingBody && isContentCachedForFeed(item.feed_id)) {
                 await State.fetchFullArticle(state, item.id)
             }
-            if (item.missingImageUrls.length > 0) {
+            if (
+                item.missingImageUrls.length > 0 &&
+                isContentCachedForFeed(item.feed_id)
+            ) {
                 const policy = feedPolicies.value[item.feed_id] ?? null
                 const fresh = state.items.value.find(
                     (it) => it.id === item.id

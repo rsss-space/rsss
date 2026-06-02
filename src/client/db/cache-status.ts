@@ -74,6 +74,8 @@ export async function computeCacheStatus (
     for (const row of rows) {
         const policy = policiesByFeed[row.feed_id] ?? null
         const effective = resolveEffectivePolicy(policy)
+        const wantContent = isContentCachedForPolicy(policy)
+        if (!wantContent) continue
         if (effective.cacheMode !== 'text_images') continue
         const urls = [
             ...extractImageUrls(row.content),
@@ -107,15 +109,18 @@ export async function computeCacheStatus (
     for (const row of rows) {
         const policy = policiesByFeed[row.feed_id] ?? null
         const effective = resolveEffectivePolicy(policy)
-        const wantBody = isContentCachedForPolicy(policy)
+        const wantContent = isContentCachedForPolicy(policy)
 
         const hasBody = Boolean(
             row.content || row.description || row.full_content
         )
-        const missingBody = wantBody && !hasBody
+        const missingBody = wantContent && !hasBody
 
         let missingImageUrls:string[] = []
-        if (effective.cacheMode === 'text_images') {
+        if (
+            wantContent &&
+            effective.cacheMode === 'text_images'
+        ) {
             const urls = urlsByItemId.get(row.id) ?? []
             missingImageUrls = urls.filter(u => !cachedSet.has(u))
         }

@@ -676,3 +676,127 @@ test(
         }
     }
 )
+
+test(
+    [
+        'AC4.4 force-off feed with images:',
+        'image URLs not collected for force-off feed'
+    ].join(' '),
+    async (t) => {
+        _resetFeedPolicies()
+        storeContent.value = false
+        defaultCacheMode.value = 'text_images'
+
+        const db = await openLocalDb('did:test:cs-force-off-images')
+        try {
+            seedFeed(db)
+            // Seed image-bearing, body-less item on feed 1
+            // (force-off will inherit storeContent=false)
+            insertItem(db, {
+                id: 80,
+                feedId: 1,
+                content: '<img src="https://cdn.example/x.jpg" />',
+                description: null
+            })
+            // Seed similar item on feed 2 (for positive control)
+            insertItem(db, {
+                id: 81,
+                feedId: 2,
+                content: '<img src="https://cdn.example/y.jpg" />',
+                description: null
+            })
+
+            // Set feed 1 to force-off (content_enabled=0)
+            // cache_mode resolves to default text_images
+            batch(() => {
+                _resetFeedPolicies()
+                feedPolicies.value = {
+                    1: {
+                        feed_id: 1,
+                        cache_mode: null,
+                        max_size_bytes: null,
+                        max_age_seconds: null,
+                        content_enabled: 0
+                    }
+                }
+            })
+
+            const snap = await computeCacheStatus(db, { feedId: null })
+
+            // Force-off feed should not contribute to uncachedCount
+            // even though it has uncached images
+            t.equal(
+                snap.totalCount,
+                2,
+                'totalCount is 2'
+            )
+            t.equal(
+                snap.uncachedCount,
+                0,
+                'force-off feed item not counted as uncached'
+            )
+
+            const item80 = snap.itemsToCache.find(
+                (i) => i.id === 80
+            )
+            t.equal(
+                item80,
+                undefined,
+                'force-off feed item not in itemsToCache'
+            )
+
+            // Now set global storeContent=true to test positive
+            // control (force-ON feed SHOULD have missingImageUrls)
+            // Keep feed 1 force-off so only feed 2 is uncached
+            batch(() => {
+                storeContent.value = true
+                feedPolicies.value = {
+                    1: {
+                        feed_id: 1,
+                        cache_mode: null,
+                        max_size_bytes: null,
+                        max_age_seconds: null,
+                        content_enabled: 0
+                    },
+                    2: {
+                        feed_id: 2,
+                        cache_mode: null,
+                        max_size_bytes: null,
+                        max_age_seconds: null,
+                        content_enabled: 1
+                    }
+                }
+            })
+
+            const snap2 = await computeCacheStatus(
+                db,
+                { feedId: null }
+            )
+
+            // Force-on feed SHOULD have missingImageUrls
+            t.equal(
+                snap2.uncachedCount,
+                1,
+                'force-on feed item is uncached'
+            )
+
+            const item81 = snap2.itemsToCache.find(
+                (i) => i.id === 81
+            )
+            t.equal(
+                item81?.missingImageUrls.length,
+                1,
+                'force-on feed item has missingImageUrls'
+            )
+            t.deepEqual(
+                item81?.missingImageUrls,
+                ['https://cdn.example/y.jpg'],
+                'correct image URL recorded'
+            )
+        } finally {
+            _resetFeedPolicies()
+            storeContent.value = false
+            db.close()
+        }
+    }
+)
