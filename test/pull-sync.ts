@@ -887,3 +887,130 @@ test('pullSync resumes paged bootstrap after interrupted page', async (t) => {
         db.close()
     }
 })
+
+test(
+    'AC4.1 metadata-only: force-off feed stores no content on sync',
+    async (t) => {
+        storeContent.value = false
+        const db = await openLocalDb('did:test:ac41-metadata-only')
+        try {
+            const syncData = {
+                feeds: [FEED],
+                items: [{
+                    ...ITEM,
+                    content: '<p>full content</p>',
+                    description: 'short desc'
+                }],
+                syncedAt: '2026-01-02 00:00:00',
+                latestUpdatedAt: '2026-01-01 00:00:00',
+                isFullSync: true
+            }
+            await pullSync(db, makeFetch(syncData))
+
+            const item = queryOne<{
+                content:string|null
+                description:string|null
+                full_content:string|null
+            }>(
+                db,
+                'SELECT content, description, full_content FROM items' +
+                ' WHERE id = 10'
+            )
+            t.equal(item?.content, null, 'content is null')
+            t.equal(item?.description, null, 'description is null')
+            t.equal(item?.full_content, null, 'full_content is null')
+        } finally {
+            storeContent.value = true
+            db.close()
+        }
+    }
+)
+
+test(
+    'AC2.3 / AC5.3 force-on: override-on feed caches ' +
+    'while inherit feeds do not',
+    async (t) => {
+        storeContent.value = false
+        const db = await openLocalDb('did:test:ac23-force-on')
+        try {
+            // Seed two feeds
+            db.exec(`
+                INSERT INTO feeds
+                    (id, url, title, created_at, updated_at)
+                VALUES
+                    (1, 'https://example.com/feed-1', 'Feed 1',
+                     '2026-01-01 00:00:00', '2026-01-01 00:00:00'),
+                    (2, 'https://example.com/feed-2', 'Feed 2',
+                     '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+            `)
+
+            // Set feed 1 content_enabled=1 (force-on)
+            db.exec({
+                sql: `INSERT INTO feed_cache_policy
+                    (feed_id, cache_mode, max_size_bytes,
+                     max_age_seconds, content_enabled, updated_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+                bind: [1, null, null, null, 1]
+            })
+
+            const syncData = {
+                feeds: [],
+                items: [
+                    {
+                        ...ITEM,
+                        id: 10,
+                        feed_id: 1,
+                        content: '<p>force-on content</p>',
+                        description: 'force-on desc'
+                    },
+                    {
+                        ...ITEM,
+                        id: 20,
+                        feed_id: 2,
+                        content: '<p>inherit content</p>',
+                        description: 'inherit desc'
+                    }
+                ],
+                syncedAt: '2026-01-02 00:00:00',
+                latestUpdatedAt: '2026-01-01 00:00:00',
+                isFullSync: false
+            }
+            await pullSync(db, makeFetch(syncData))
+
+            const item1 = queryOne<{
+                content:string|null
+                description:string|null
+            }>(
+                db,
+                'SELECT content, description FROM items WHERE id = 10'
+            )
+            const item2 = queryOne<{
+                content:string|null
+                description:string|null
+            }>(
+                db,
+                'SELECT content, description FROM items WHERE id = 20'
+            )
+
+            t.equal(
+                item1?.content,
+                '<p>force-on content</p>',
+                'feed 1 content cached'
+            )
+            t.equal(
+                item1?.description,
+                'force-on desc',
+                'feed 1 description cached'
+            )
+            t.equal(item2?.content, null, 'feed 2 content is null')
+            t.equal(
+                item2?.description,
+                null,
+                'feed 2 description is null'
+            )
+        } finally {
+            storeContent.value = true
+            db.close()
+        }
+    }
+)
