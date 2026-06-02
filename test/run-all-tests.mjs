@@ -213,6 +213,14 @@ const commands = [
         '| tapout'
     ].join(' '),
     [
+        'esbuild ./test/feed-reader-cache-disclosure.ts --bundle',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '--alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts',
+        '--loader:.css=text',
+        '--loader:.wasm=dataurl',
+        '| tapout'
+    ].join(' '),
+    [
         'esbuild ./test/payment-method-modal.ts --bundle',
         '--loader:.css=text',
         '--alias:@stripe/stripe-js=./test/stripe-js-stub.ts',

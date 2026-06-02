@@ -165,8 +165,7 @@ export const CacheSettings:FunctionComponent<{
             null :
             (checked ? 1 : 0)
         if (checked && !isLocalFirstActive.value) {
-            // eslint-disable-next-line no-void
-            void enableWithBootstrap()
+            enableWithBootstrap()
             return
         }
         saveFeedPolicy({ content_enabled: override })
@@ -213,8 +212,7 @@ export const CacheSettings:FunctionComponent<{
         if (billingStatus.value === null) return  // still loading
         pendingContentDid.current = null
         if (billingStatus.value.entitled) {
-            // eslint-disable-next-line no-void
-            void enableWithBootstrap()
+            enableWithBootstrap()
         }
     }, [billingStatus.value])
 

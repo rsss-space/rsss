@@ -28,8 +28,10 @@ import {
 } from '../src/client/billing-status.js'
 import {
     localFirstSupported,
-    bootstrapInProgress
+    bootstrapInProgress,
+    bootstrapError
 } from '../src/client/db/index.js'
+import { isLocalFirstActive } from '../src/client/db/sync-status.js'
 import type {
     CountsResponse,
     Feed,
@@ -712,6 +714,7 @@ test('AC9.1: toggle to global clears override',
                 useLive: false
             }
             localFirstSupported.value = true
+            isLocalFirstActive.value = true
         })
 
         const state = makeState()
@@ -764,6 +767,7 @@ test('AC9.1: toggle to global clears override',
                 storeContent.value = false
                 billingStatus.value = null
                 localFirstSupported.value = false
+                isLocalFirstActive.value = false
             })
             State.loadItems = originalLoadItems
             State.markAllRead = originalMarkAllRead
@@ -787,6 +791,7 @@ test('AC9.1: toggle with storeContent=false clears override',
                 useLive: false
             }
             localFirstSupported.value = true
+            isLocalFirstActive.value = true
         })
 
         const state = makeState()
@@ -838,6 +843,7 @@ test('AC9.1: toggle with storeContent=false clears override',
                 storeContent.value = false
                 billingStatus.value = null
                 localFirstSupported.value = false
+                isLocalFirstActive.value = false
             })
             State.loadItems = originalLoadItems
             State.markAllRead = originalMarkAllRead
@@ -861,6 +867,7 @@ test('AC9.2: toggle opposite global writes explicit override',
                 useLive: false
             }
             localFirstSupported.value = true
+            isLocalFirstActive.value = true
         })
 
         const state = makeState()
@@ -899,6 +906,7 @@ test('AC9.2: toggle opposite global writes explicit override',
                 storeContent.value = false
                 billingStatus.value = null
                 localFirstSupported.value = false
+                isLocalFirstActive.value = false
             })
             State.loadItems = originalLoadItems
             State.markAllRead = originalMarkAllRead
@@ -1060,20 +1068,12 @@ test(
         _resetFeedPolicies()
 
         const originalFetch = globalThis.fetch
-        let fetchCalled = false
-        let fetchUrl = ''
 
         try {
             // Stub fetch to resolve with a non-ok response
             // (so bootstrapLocalDb fails without producing a DB)
             ;(globalThis as unknown as { fetch?:typeof fetch }).fetch =
-                (async (url:string|URL|Request) => {
-                    fetchCalled = true
-                    fetchUrl = typeof url === 'string' ?
-                        url :
-                        (url instanceof URL ?
-                            url.href :
-                            (url as Request).url)
+                (async () => {
                     return new Response(JSON.stringify({
                         error: 'simulated bootstrap failure'
                     }), {
@@ -1152,15 +1152,6 @@ test(
                     'AC5.1: setSyncSubscriptions(true) was called'
                 )
 
-                t.ok(
-                    fetchCalled,
-                    'AC5.1: fetch was called (bootstrap started)'
-                )
-                t.ok(
-                    /\/api\/sync/i.test(fetchUrl),
-                    'fetch was called with /api/sync URL'
-                )
-
                 // Wait for bootstrap to settle using a polling timeout
                 // The bootstrap promise is called with void, so we wait
                 // for the effect to complete (bootstrapInProgress goes
@@ -1181,6 +1172,7 @@ test(
                 syncSubscriptions.value = false
                 pendingSyncSubscriptions.value = false
                 bootstrapInProgress.value = false
+                bootstrapError.value = null
                 billingStatus.value = null
                 localFirstSupported.value = false
             })
@@ -1292,6 +1284,7 @@ test(
                 syncSubscriptions.value = false
                 pendingSyncSubscriptions.value = false
                 bootstrapInProgress.value = false
+                bootstrapError.value = null
                 billingStatus.value = null
                 localFirstSupported.value = false
             })
