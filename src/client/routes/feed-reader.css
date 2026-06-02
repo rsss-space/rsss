@@ -76,7 +76,7 @@
 
         & .cache-plan-hint {
             margin: 0 0 0.75rem;
-            font-size: 0.875rem;
+            font-size: 1rem;
             color: var(--color-text-secondary);
         }
 

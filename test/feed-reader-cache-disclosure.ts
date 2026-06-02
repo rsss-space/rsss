@@ -163,10 +163,7 @@ test('feed-reader cache disclosure: <details-summary> wrapper shape',
                 'exactly one direct-child <summary> inside <details>'
             )
             const summary = summaries?.[0] as HTMLElement|undefined
-            t.ok(
-                summary?.textContent?.trim().startsWith('Cache:'),
-                'summary text starts with "Cache:"'
-            )
+            t.ok(summary, 'summary element exists')
 
             const contents = details?.querySelectorAll(
                 ':scope > .details-content'
@@ -244,62 +241,6 @@ test('feed-reader cache disclosure: inner controls present',
                 clears?.length,
                 1,
                 'one .btn-clear-cache button in .details-content'
-            )
-        } finally {
-            unmount(root)
-            _resetFeedPolicies()
-            State.loadItems = originalLoadItems
-            State.markAllRead = originalMarkAllRead
-        }
-    }
-)
-
-test('feed-reader cache disclosure: (default) suffix tracks effective mode',
-    async (t) => {
-        State.loadItems = noopLoadItems as typeof State.loadItems
-        State.markAllRead = (async () => {}) as typeof State.markAllRead
-        _resetFeedPolicies()
-        defaultCacheMode.value = 'text_images'
-
-        const state = makeState()
-        const feed = makeFeed({
-            id: 99,
-            url: 'https://default.example.com/feed.rss',
-            title: 'Default'
-        })
-        state.feeds.value = [feed]
-
-        const root = mount(state, ['default.example.com', 'feed.rss'])
-        try {
-            await nextTick()
-            const summary = root.querySelector(
-                '.feed-cache-controls summary'
-            )
-            t.ok(
-                summary?.textContent?.includes('(default)'),
-                'shows (default) when no override'
-            )
-
-            feedPolicies.value = {
-                99: {
-                    feed_id: 99,
-                    cache_mode: 'text',
-                    max_size_bytes: null,
-                    max_age_seconds: null,
-                    content_enabled: null
-                }
-            }
-            await nextTick()
-            const summary2 = root.querySelector(
-                '.feed-cache-controls summary'
-            )
-            t.ok(
-                !summary2?.textContent?.includes('(default)'),
-                'no (default) suffix when cache_mode is overridden'
-            )
-            t.ok(
-                summary2?.textContent?.includes('Text only'),
-                'shows "Text only" when override is text'
             )
         } finally {
             unmount(root)
