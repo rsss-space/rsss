@@ -34,6 +34,7 @@ export interface FeedCachePolicyRow {
     cache_mode:CacheMode|null
     max_size_bytes:number|null
     max_age_seconds:number|null
+    content_enabled:number|null
 }
 
 export interface EffectivePolicy {
@@ -75,10 +76,11 @@ export async function getFeedCachePolicy (
     db:Sqlite3Db,
     feedId:number
 ):Promise<FeedCachePolicyRow|null> {
+    await ensureFeedCachePolicyColumns(db)
     const row = await queryOneDb<FeedCachePolicyRow>(
         db,
-        'SELECT feed_id, cache_mode, max_size_bytes, max_age_seconds' +
-        ' FROM feed_cache_policy WHERE feed_id = ?',
+        'SELECT feed_id, cache_mode, max_size_bytes, max_age_seconds,' +
+        ' content_enabled FROM feed_cache_policy WHERE feed_id = ?',
         [feedId]
     )
     return row ?? null
