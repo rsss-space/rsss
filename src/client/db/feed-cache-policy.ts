@@ -5,7 +5,8 @@ import {
     type CacheMode,
     defaultCacheMode,
     defaultMaxSizeBytes,
-    defaultMaxAgeSeconds
+    defaultMaxAgeSeconds,
+    storeContent
 } from '../local-first-settings.js'
 
 const feedCachePolicyColumnsReady = new WeakSet<Sqlite3Db>()
@@ -141,4 +142,19 @@ export async function loadFeedPolicies (
     }
     if (opts?.shouldApply && !opts.shouldApply()) return
     feedPolicies.value = map
+}
+
+export function isContentCachedForPolicy (
+    row:FeedCachePolicyRow|null|undefined
+):boolean {
+    const o = row?.content_enabled ?? null
+    return o == null ?
+        storeContent.value :
+        o === 1
+}
+
+export function isContentCachedForFeed (feedId:number):boolean {
+    return isContentCachedForPolicy(
+        feedPolicies.value[feedId] ?? null
+    )
 }
