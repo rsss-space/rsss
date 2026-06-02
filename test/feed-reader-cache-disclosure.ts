@@ -19,13 +19,16 @@ import {
     defaultCacheMode,
     defaultMaxSizeBytes,
     defaultMaxAgeSeconds,
-    storeContent
+    storeContent,
+    syncSubscriptions,
+    pendingSyncSubscriptions
 } from '../src/client/local-first-settings.js'
 import {
     billingStatus
 } from '../src/client/billing-status.js'
 import {
-    localFirstSupported
+    localFirstSupported,
+    bootstrapInProgress
 } from '../src/client/db/index.js'
 import type {
     CountsResponse,
@@ -36,6 +39,33 @@ import type {
 const noopLoadItems = async () => {}
 const originalLoadItems = State.loadItems
 const originalMarkAllRead = State.markAllRead
+
+function waitFor (
+    condition:() => boolean,
+    desc:string,
+    timeoutMs = 5000
+):Promise<void> {
+    const startTime = Date.now()
+    return new Promise((resolve, reject) => {
+        const check = () => {
+            if (condition()) {
+                resolve()
+                return
+            }
+            if (Date.now() - startTime > timeoutMs) {
+                reject(
+                    new Error(
+                        `waitFor timeout: ${desc} ` +
+                        `(${timeoutMs}ms exceeded)`
+                    )
+                )
+                return
+            }
+            setTimeout(check, 10)
+        }
+        check()
+    })
+}
 
 function makeFeed (overrides:Partial<Feed> = {}):Feed {
     return {
@@ -1023,7 +1053,7 @@ test('AC3.3: changing cache_mode preserves content_enabled override',
 
 test(
     'AC5.1 + AC5.5/AC8.2: enable-while-off optimistic, setSyncSubscriptions,' +
-    ' no global flip, bootstrap pending',
+    ' no global flip, bootstrap resolves',
     async (t) => {
         State.loadItems = noopLoadItems as typeof State.loadItems
         State.markAllRead = (async () => {}) as typeof State.markAllRead
@@ -1034,7 +1064,8 @@ test(
         let fetchUrl = ''
 
         try {
-            // Stub fetch to never resolve (simulates pending bootstrap)
+            // Stub fetch to resolve with a non-ok response
+            // (so bootstrapLocalDb fails without producing a DB)
             ;(globalThis as unknown as { fetch?:typeof fetch }).fetch =
                 (async (url:string|URL|Request) => {
                     fetchCalled = true
@@ -1043,9 +1074,26 @@ test(
                         (url instanceof URL ?
                             url.href :
                             (url as Request).url)
-                    // Never resolve - just hang
-                    return new Promise(() => {})
+                    return new Response(JSON.stringify({
+                        error: 'simulated bootstrap failure'
+                    }), {
+                        status: 500,
+                        headers: { 'content-type': 'application/json' }
+                    })
                 }) as typeof fetch
+
+            const state = makeState()
+            const feed = makeFeed({
+                id: 200,
+                url: 'https://enable-off.example.com/feed.rss',
+                title: 'Enable Off'
+            })
+            state.feeds.value = [feed]
+            // CRITICAL #2: set state.user so enableWithBootstrap proceeds
+            state.user.value = {
+                did: 'did:example:test-ac5-1',
+                handle: 'test-ac5-1'
+            }
 
             batch(() => {
                 defaultCacheMode.value = 'text_images'
@@ -1059,14 +1107,6 @@ test(
                 }
                 localFirstSupported.value = true
             })
-
-            const state = makeState()
-            const feed = makeFeed({
-                id: 200,
-                url: 'https://enable-off.example.com/feed.rss',
-                title: 'Enable Off'
-            })
-            state.feeds.value = [feed]
 
             const root = mount(state, [
                 'enable-off.example.com',
@@ -1082,11 +1122,18 @@ test(
                 t.ok(checkbox, 'checkbox exists')
 
                 if (checkbox) {
+                    // Capture the bootstrap promise by hooking into
+                    // the component's async flow
                     checkbox.checked = true
+                    // Dispatch the change event - this triggers
+                    // handleContentToggle which calls void
+                    // enableWithBootstrap()
                     checkbox.dispatchEvent(new Event('change'))
                 }
 
-                // Synchronously check the effects
+                // Synchronously assert optimistic state
+                // (these are set before the first await in
+                // enableWithBootstrap)
                 t.equal(
                     storeContent.value,
                     false,
@@ -1099,9 +1146,12 @@ test(
                     'optimistic in-memory write: content_enabled = 1'
                 )
 
-                // setSyncSubscriptions must have been called
-                // (can't directly check it was called, but we check the
-                // effect)
+                t.equal(
+                    syncSubscriptions.value,
+                    true,
+                    'AC5.1: setSyncSubscriptions(true) was called'
+                )
+
                 t.ok(
                     fetchCalled,
                     'AC5.1: fetch was called (bootstrap started)'
@@ -1110,6 +1160,17 @@ test(
                     /\/api\/sync/i.test(fetchUrl),
                     'fetch was called with /api/sync URL'
                 )
+
+                // Wait for bootstrap to settle using a polling timeout
+                // The bootstrap promise is called with void, so we wait
+                // for the effect to complete (bootstrapInProgress goes
+                // false or other signals indicate completion)
+                await waitFor(
+                    () =>
+                        bootstrapInProgress.value === false,
+                    'bootstrap in progress resolved',
+                    10000
+                )
             } finally {
                 unmount(root)
             }
@@ -1117,6 +1178,9 @@ test(
             _resetFeedPolicies()
             batch(() => {
                 storeContent.value = false
+                syncSubscriptions.value = false
+                pendingSyncSubscriptions.value = false
+                bootstrapInProgress.value = false
                 billingStatus.value = null
                 localFirstSupported.value = false
             })
@@ -1143,11 +1207,28 @@ test(
         try {
             // Stub fetch to return non-ok response
             ;(globalThis as unknown as { fetch?:typeof fetch }).fetch =
-                (async (_url:string|URL|Request) => ({
-                    ok: false,
-                    status: 500,
-                    json: async () => ({ error: 'server error' })
-                } as Response)) as typeof fetch
+                (async (_url:string|URL|Request) => new Response(
+                    JSON.stringify({ error: 'server error' }),
+                    {
+                        status: 500,
+                        headers: {
+                            'content-type': 'application/json'
+                        }
+                    }
+                )) as typeof fetch
+
+            const state = makeState()
+            const feed = makeFeed({
+                id: 201,
+                url: 'https://fail.example.com/feed.rss',
+                title: 'Fail'
+            })
+            state.feeds.value = [feed]
+            // CRITICAL #2: set state.user so enableWithBootstrap proceeds
+            state.user.value = {
+                did: 'did:example:test-ac5-4',
+                handle: 'test-ac5-4'
+            }
 
             batch(() => {
                 defaultCacheMode.value = 'text_images'
@@ -1161,14 +1242,6 @@ test(
                 }
                 localFirstSupported.value = true
             })
-
-            const state = makeState()
-            const feed = makeFeed({
-                id: 201,
-                url: 'https://fail.example.com/feed.rss',
-                title: 'Fail'
-            })
-            state.feeds.value = [feed]
 
             const root = mount(state, ['fail.example.com', 'feed.rss'])
             try {
@@ -1187,19 +1260,16 @@ test(
 
                 await nextTick()
 
-                // Await bootstrap to settle (it will fail)
-                // Use polling for bootstrapInProgress to settle
-                await new Promise<void>((resolve) => {
-                    const check = () => {
-                        if (feedPolicies.value[feed.id]
-                            ?.content_enabled === null) {
-                            resolve()
-                        } else {
-                            setTimeout(check, 10)
-                        }
-                    }
-                    check()
-                })
+                // MINOR #2: Replace unbounded setTimeout poll with
+                // bounded waitFor. Wait for bootstrap to settle and
+                // revert to happen.
+                await waitFor(
+                    () =>
+                        feedPolicies.value[feed.id]
+                            ?.content_enabled === null,
+                    'content_enabled reverted to null after failure',
+                    5000
+                )
 
                 // AC5.4: verify revert happened
                 t.equal(
@@ -1219,6 +1289,9 @@ test(
             _resetFeedPolicies()
             batch(() => {
                 storeContent.value = false
+                syncSubscriptions.value = false
+                pendingSyncSubscriptions.value = false
+                bootstrapInProgress.value = false
                 billingStatus.value = null
                 localFirstSupported.value = false
             })
