@@ -365,6 +365,7 @@ export const SettingsRoute:FunctionComponent<{
             cache_mode: current?.cache_mode ?? null,
             max_size_bytes: current?.max_size_bytes ?? null,
             max_age_seconds: current?.max_age_seconds ?? null,
+            content_enabled: current?.content_enabled ?? null,
             ...patch
         }
         feedPolicies.value = {

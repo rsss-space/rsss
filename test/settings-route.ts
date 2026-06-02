@@ -527,7 +527,8 @@ test('Per-feed row shows override label without (default) when policy set',
                 feed_id: 2,
                 cache_mode: 'text_images',
                 max_size_bytes: null,
-                max_age_seconds: null
+                max_age_seconds: null,
+                content_enabled: null
             }
         }
         defaultCacheMode.value = 'text'
@@ -788,7 +789,8 @@ test(
                 feed_id: 5,
                 cache_mode: 'text',
                 max_size_bytes: null,
-                max_age_seconds: null
+                max_age_seconds: null,
+                content_enabled: null
             }
         }
 

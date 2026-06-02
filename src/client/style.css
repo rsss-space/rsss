@@ -337,7 +337,7 @@ button {
 
 .items-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
     background: var(--color-surface);
@@ -368,6 +368,11 @@ footer {
 .items-filters {
     display: flex;
     gap: 1rem;
+
+    &.unread {
+        flex-direction: column;
+        gap: 0;
+    }
 }
 
 .filter-checkbox {

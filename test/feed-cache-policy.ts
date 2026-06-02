@@ -5,6 +5,15 @@ import {
     openLocalDb,
     setTestMode
 } from '../src/client/db/sqlite-init.js'
+import {
+    getFeedCachePolicy,
+    upsertFeedCachePolicy,
+    isContentCachedForPolicy,
+    isContentCachedForFeed,
+    feedPolicies,
+    _resetFeedPolicies
+} from '../src/client/db/feed-cache-policy.js'
+import { storeContent } from '../src/client/local-first-settings.js'
 
 setTestMode(true, wasmUrl as string)
 
@@ -138,3 +147,343 @@ test('feed_cache_policy accepts NULL for optional columns', async (t) => {
         db.close()
     }
 })
+
+test('AC7.1: content_enabled rounds trip across upsert and read',
+    async (t) => {
+        const db = await openLocalDb('did:test:fcp-rt-1')
+        try {
+            db.exec(`
+                INSERT INTO feeds (url, title, created_at, updated_at)
+                VALUES (
+                    'https://example.com/feed',
+                    'Test Feed',
+                    '2024-01-01T00:00:00Z',
+                    '2024-01-01T00:00:00Z'
+                )
+            `)
+
+            // Test round-trip for content_enabled = 1
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 1
+            })
+            let row = await getFeedCachePolicy(db, 1)
+            t.equal(row?.content_enabled, 1, 'content_enabled 1 round-trips')
+
+            // Test round-trip for content_enabled = 0
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 0
+            })
+            row = await getFeedCachePolicy(db, 1)
+            t.equal(row?.content_enabled, 0, 'content_enabled 0 round-trips')
+
+            // Test that all-null deletes the row (inherit)
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: null
+            })
+            row = await getFeedCachePolicy(db, 1)
+            t.equal(row, null, 'all-null row is deleted (inherit)')
+        } finally {
+            db.close()
+        }
+    })
+
+test('AC7.2: content_enabled 0 row survives with null cache settings',
+    async (t) => {
+        const db = await openLocalDb('did:test:fcp-zero-survives')
+        try {
+            db.exec(`
+                INSERT INTO feeds (url, title, created_at, updated_at)
+                VALUES (
+                    'https://example.com/feed',
+                    'Test Feed',
+                    '2024-01-01T00:00:00Z',
+                    '2024-01-01T00:00:00Z'
+                )
+            `)
+
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 0
+            })
+            const row = await getFeedCachePolicy(db, 1)
+            t.ok(row !== null, 'row is not deleted')
+            t.equal(row?.content_enabled, 0, 'content_enabled is 0')
+        } finally {
+            db.close()
+        }
+    })
+
+test('AC7.3: all-null row deletes; non-null cache_mode survives',
+    async (t) => {
+        const db = await openLocalDb('did:test:fcp-all-null-delete')
+        try {
+            db.exec(`
+                INSERT INTO feeds (url, title, created_at, updated_at)
+                VALUES (
+                    'https://example.com/feed',
+                    'Test Feed',
+                    '2024-01-01T00:00:00Z',
+                    '2024-01-01T00:00:00Z'
+                )
+            `)
+
+            // Insert a row with all-null fields
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: null
+            })
+            let row = await getFeedCachePolicy(db, 1)
+            t.equal(row, null, 'all-null row is deleted')
+
+            // Insert with cache_mode set but others null
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: 'text',
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: null
+            })
+            row = await getFeedCachePolicy(db, 1)
+            t.ok(row !== null, 'row with cache_mode survives')
+            t.equal(row?.cache_mode, 'text', 'cache_mode is text')
+
+            // Update content_enabled to null (rest remain set)
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: 'text',
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: null
+            })
+            row = await getFeedCachePolicy(db, 1)
+            t.ok(row !== null, 'row survives with cache_mode set')
+            t.equal(row?.content_enabled, null, 'content_enabled is null')
+        } finally {
+            db.close()
+        }
+    })
+
+test('AC9.1/AC9.2: storage (0/1 persist, all-null deletes)',
+    async (t) => {
+        const db = await openLocalDb('did:test:fcp-ac9')
+        try {
+            db.exec(`
+                INSERT INTO feeds (url, title, created_at, updated_at)
+                VALUES (
+                    'https://example.com/feed',
+                    'Test Feed',
+                    '2024-01-01T00:00:00Z',
+                    '2024-01-01T00:00:00Z'
+                )
+            `)
+
+            // Write 0
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 0
+            })
+            let row = await getFeedCachePolicy(db, 1)
+            t.ok(row !== null, 'row 0 persists')
+            t.equal(row?.content_enabled, 0, 'content_enabled is 0')
+
+            // Write 1
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 1
+            })
+            row = await getFeedCachePolicy(db, 1)
+            t.ok(row !== null, 'row 1 persists')
+            t.equal(row?.content_enabled, 1, 'content_enabled is 1')
+
+            // Write all-null
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: null
+            })
+            row = await getFeedCachePolicy(db, 1)
+            t.equal(row, null, 'all-null removes row')
+        } finally {
+            db.close()
+        }
+    })
+
+test('AC2.1-AC2.5: resolver truth table (override ?? global)',
+    async (t) => {
+        const originalStoreContent = storeContent.value
+        try {
+            // AC2.1: override null + global on -> effective on
+            storeContent.value = true
+            const nullWithGlobalOn = {
+                feed_id: 1,
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: null
+            }
+            t.equal(
+                isContentCachedForPolicy(nullWithGlobalOn),
+                true,
+                'AC2.1: null override + global on -> effective on'
+            )
+
+            // AC2.2: override null + global off -> effective off
+            storeContent.value = false
+            t.equal(
+                isContentCachedForPolicy(nullWithGlobalOn),
+                false,
+                'AC2.2: null override + global off -> effective off'
+            )
+
+            // AC2.3: override 1 + global off -> effective on
+            const overrideOn = {
+                feed_id: 1,
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 1
+            }
+            storeContent.value = false
+            t.equal(
+                isContentCachedForPolicy(overrideOn),
+                true,
+                'AC2.3: override 1 + global off -> effective on'
+            )
+
+            // AC2.4: override 0 + global on -> effective off
+            const overrideOff = {
+                feed_id: 1,
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 0
+            }
+            storeContent.value = true
+            t.equal(
+                isContentCachedForPolicy(overrideOff),
+                false,
+                'AC2.4: override 0 + global on -> effective off'
+            )
+
+            // AC2.5: override 1 + global on -> effective on
+            storeContent.value = true
+            t.equal(
+                isContentCachedForPolicy(overrideOn),
+                true,
+                'AC2.5: override 1 + global on -> effective on'
+            )
+        } finally {
+            storeContent.value = originalStoreContent
+        }
+    })
+
+test('AC7.4: upsert performs no fetch', async (t) => {
+    const db = await openLocalDb('did:test:fcp-no-fetch')
+    const originalFetch = globalThis.fetch
+    let fetchCalled = false
+    try {
+        db.exec(`
+            INSERT INTO feeds (url, title, created_at, updated_at)
+            VALUES (
+                'https://example.com/feed',
+                'Test Feed',
+                '2024-01-01T00:00:00Z',
+                '2024-01-01T00:00:00Z'
+            )
+        `)
+
+        globalThis.fetch = (() => {
+            fetchCalled = true
+            throw new Error('fetch should not be called')
+        }) as typeof fetch
+
+        await upsertFeedCachePolicy(db, 1, {
+            cache_mode: null,
+            max_size_bytes: null,
+            max_age_seconds: null,
+            content_enabled: 1
+        })
+
+        t.equal(fetchCalled, false, 'no fetch called during upsert')
+    } finally {
+        globalThis.fetch = originalFetch
+        db.close()
+    }
+})
+
+test('isContentCachedForFeed uses feedPolicies signal',
+    async (t) => {
+        const originalStoreContent = storeContent.value
+        const db = await openLocalDb('did:test:fcp-signal')
+        try {
+            db.exec(`
+                INSERT INTO feeds (url, title, created_at, updated_at)
+                VALUES (
+                    'https://example.com/feed',
+                    'Test Feed',
+                    '2024-01-01T00:00:00Z',
+                    '2024-01-01T00:00:00Z'
+                )
+            `)
+
+            _resetFeedPolicies()
+            storeContent.value = true
+
+            // Feed not in signal yet -> inherits global
+            t.equal(
+                isContentCachedForFeed(1),
+                true,
+                'missing feed uses global when true'
+            )
+
+            // Load feed with override 0
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: null,
+                max_age_seconds: null,
+                content_enabled: 0
+            })
+            const row = await getFeedCachePolicy(db, 1)
+            feedPolicies.value = { 1: row }
+
+            // Now check using signal
+            t.equal(
+                isContentCachedForFeed(1),
+                false,
+                'feed with override 0 returns false'
+            )
+
+            // Update to 1
+            feedPolicies.value = {
+                1: {
+                    ...row!,
+                    content_enabled: 1
+                }
+            }
+            t.equal(
+                isContentCachedForFeed(1),
+                true,
+                'feed with override 1 returns true'
+            )
+        } finally {
+            storeContent.value = originalStoreContent
+            _resetFeedPolicies()
+            db.close()
+        }
+    })

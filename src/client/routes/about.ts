@@ -1,6 +1,6 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
-import { EM_DASH, NBSP } from '../constants.js'
+import { NBSP } from '../constants.js'
 import { type AppState } from '../state.js'
 import './about.css'
 
@@ -40,8 +40,7 @@ export const AboutRoute:FunctionComponent<{
                     This depends on${NBSP}
                     <a href="https://developers.cloudflare.com/durable-objects/">
                         Cloudflare Durable Objects
-                    </a> ${EM_DASH + ' '}
-                    each user gets their own Durable Object
+                    </a>. Each user gets their own Durable Object
                     with a SQLite database. This stores your
                     feeds, read/starred states, and
                     handles periodic feed fetching.

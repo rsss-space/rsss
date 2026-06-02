@@ -79,7 +79,10 @@ import {
     type ItemToCache
 } from './cache-status-state.js'
 import { cacheItemImages } from './db/image-cache.js'
-import { feedPolicies } from './db/feed-cache-policy.js'
+import {
+    feedPolicies,
+    isContentCachedForFeed
+} from './db/feed-cache-policy.js'
 import { consumeInitialFeed, peekInitialFeed } from './initial-feed.js'
 import {
     scheduleIdle,
@@ -2682,7 +2685,7 @@ State.fetchFullArticle = async function (
                 await pullSyncUpsertItem(
                     db,
                     updated as unknown as Record<string, unknown>,
-                    storeContent.value
+                    isContentCachedForFeed(updated.feed_id)
                 )
             } catch (err) {
                 debug('fetchFullArticle local upsert error:', err)
@@ -2742,10 +2745,13 @@ State.cacheUncachedItems = async function (
         cacheActionProgress.value = { current: i + 1, total }
 
         try {
-            if (item.missingBody && storeContent.value) {
+            if (item.missingBody && isContentCachedForFeed(item.feed_id)) {
                 await State.fetchFullArticle(state, item.id)
             }
-            if (item.missingImageUrls.length > 0) {
+            if (
+                item.missingImageUrls.length > 0 &&
+                isContentCachedForFeed(item.feed_id)
+            ) {
                 const policy = feedPolicies.value[item.feed_id] ?? null
                 const fresh = state.items.value.find(
                     (it) => it.id === item.id

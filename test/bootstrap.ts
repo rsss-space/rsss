@@ -4,8 +4,12 @@ import sqlite3Module from '@sqlite.org/sqlite-wasm'
 import wasmUrl from '@sqlite.org/sqlite-wasm/sqlite3.wasm'
 import { SCHEMA_SQL, DEAD_LETTER_OUTBOX_SQL } from
     '../src/shared/schema.js'
-import { OUTBOX_SQL, SYNC_META_SQL } from
-    '../src/client/db/local-schema.js'
+import {
+    OUTBOX_SQL,
+    SYNC_META_SQL,
+    FEED_CACHE_POLICY_SQL,
+    CACHED_IMAGES_SQL
+} from '../src/client/db/local-schema.js'
 import {
     classifyLocalDbError,
     getOpfsFilename,
@@ -96,6 +100,8 @@ function applySchema (db:PersistentDb):void {
     db.exec(OUTBOX_SQL)
     db.exec(DEAD_LETTER_OUTBOX_SQL)
     db.exec(SYNC_META_SQL)
+    db.exec(FEED_CACHE_POLICY_SQL)
+    db.exec(CACHED_IMAGES_SQL)
 }
 
 class PersistentSQLiteClient {

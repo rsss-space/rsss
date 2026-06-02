@@ -74,6 +74,12 @@
             user-select: none;
         }
 
+        & .cache-plan-hint {
+            margin: 0 0 0.75rem;
+            font-size: 1rem;
+            color: var(--color-text-secondary);
+        }
+
         & .feed-cache-form {
             display: flex;
             flex-direction: column;
