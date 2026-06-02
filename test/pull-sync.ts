@@ -1127,6 +1127,7 @@ test(
     async (t) => {
         storeContent.value = false
         const db = await openLocalDb('did:test:ac44-no-new-images')
+        const originalFetch = globalThis.fetch
         try {
             // Seed two feeds
             db.exec(`
@@ -1184,8 +1185,9 @@ test(
                 isFullSync: false
             }
 
-            // Mock fetch to handle both sync endpoint and image URLs
-            const imageFetch:typeof fetch = async (
+            // Stub globalThis.fetch for image URLs;
+            // pullSync uses makeFetch for /api/sync
+            globalThis.fetch = async (
                 url:RequestInfo|URL
             ) => {
                 const urlStr = url.toString()
@@ -1200,9 +1202,22 @@ test(
                 })
             }
 
-            await pullSync(db, imageFetch)
+            await pullSync(db, makeFetch(syncData))
 
-            // Count cached_images for force-off feed
+            // Positive control: force-on feed must cache images
+            const feedTwoCount = queryOne<{ count:number }>(
+                db,
+                'SELECT COUNT(*) AS count FROM cached_images' +
+                ' WHERE feed_id = 2'
+            )
+
+            t.equal(
+                feedTwoCount?.count,
+                2,
+                'force-on feed 2 caches 2 unique images'
+            )
+
+            // Verify force-off feed caches no images
             const feedOneCount = queryOne<{ count:number }>(
                 db,
                 'SELECT COUNT(*) AS count FROM cached_images' +
@@ -1215,6 +1230,7 @@ test(
                 'force-off feed 1 caches no images'
             )
         } finally {
+            globalThis.fetch = originalFetch
             storeContent.value = true
             db.close()
         }
