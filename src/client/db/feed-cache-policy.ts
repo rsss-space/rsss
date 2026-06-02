@@ -1,12 +1,33 @@
 import { signal } from '@preact/signals'
 import type { Sqlite3Db } from './sqlite-init.js'
-import { execDb, queryOneDb } from './local-db.js'
+import { execDb, queryDb, queryOneDb } from './local-db.js'
 import {
     type CacheMode,
     defaultCacheMode,
     defaultMaxSizeBytes,
     defaultMaxAgeSeconds
 } from '../local-first-settings.js'
+
+const feedCachePolicyColumnsReady = new WeakSet<Sqlite3Db>()
+
+export async function ensureFeedCachePolicyColumns (
+    db:Sqlite3Db
+):Promise<void> {
+    if (feedCachePolicyColumnsReady.has(db)) return
+    const cols = await queryDb<{ name:string }>(
+        db,
+        'PRAGMA table_info(feed_cache_policy)'
+    )
+    const has = (name:string) => cols.some((col) => col.name === name)
+    if (!has('content_enabled')) {
+        await execDb(
+            db,
+            'ALTER TABLE feed_cache_policy ADD COLUMN content_enabled' +
+            ' INTEGER'
+        )
+    }
+    feedCachePolicyColumnsReady.add(db)
+}
 
 export interface FeedCachePolicyRow {
     feed_id:number
