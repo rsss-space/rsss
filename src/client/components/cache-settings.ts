@@ -8,7 +8,6 @@ import {
     feedPolicies,
     loadFeedPolicies,
     upsertFeedCachePolicy,
-    resolveEffectivePolicy,
     type FeedCachePolicyRow
 } from '../db/feed-cache-policy.js'
 import {
@@ -18,7 +17,7 @@ import {
     type Feed
 } from '../db/index.js'
 import { loadStorageUsage } from '../db/storage-usage.js'
-import { AMP, NBSP } from '../constants.js'
+import { AMP } from '../constants.js'
 
 export const CacheSettings:FunctionComponent<{
     state:AppState;
@@ -126,10 +125,6 @@ export const CacheSettings:FunctionComponent<{
     }
 
     const policy = feedPolicies.value[selectedFeed.id] ?? null
-    const eff = resolveEffectivePolicy(policy)
-    const modeLabel = (eff.cacheMode === 'text' ?
-        'Text only' :
-        `Text ${AMP} images`)
     const sizeVal = policy?.max_size_bytes != null ?
         String(Math.round(policy.max_size_bytes / 1_000_000)) :
         ''
@@ -144,11 +139,7 @@ export const CacheSettings:FunctionComponent<{
             duration=${prefersReducedMotion ? '0' : undefined}
         >
             <details>
-                <summary>
-                    Cache:${NBSP}${modeLabel}${
-                        eff.isDefault.cacheMode ? ' (default)' : ''
-                    }
-                </summary>
+                <summary>Cache Settings</summary>
                 <div class="details-content">
                     <div class="feed-cache-form">
                         <label class="cache-field-label">
