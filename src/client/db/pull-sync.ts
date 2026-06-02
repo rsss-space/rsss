@@ -1,15 +1,16 @@
 import { describeLocalDbError } from './sqlite-init.js'
-import { storeContent } from '../local-first-settings.js'
 import {
     execDb,
     queryDb,
-    queryOneDb,
     ensureFeedTerminalStateColumns
 } from './local-db.js'
+import { cacheItemImages } from './image-cache.js'
 import {
-    cacheItemImages,
+    getFeedCachePolicy,
+    isContentCachedForPolicy,
+    ensureFeedCachePolicyColumns,
     type FeedCachePolicyRow
-} from './image-cache.js'
+} from './feed-cache-policy.js'
 import {
     setSyncSyncing,
     setSyncDone,
@@ -357,11 +358,25 @@ export async function pullSync (
 
     const lastPullAt = await getLastPullAt(db)
     let cursor = await getPullCursor(db)
-    const keepContent = storeContent.value
     // Invariant: getPendingOutboxRefs is called after pushSync resolves.
     const pendingRefs = await getPendingOutboxRefs(db)
     let skippedRows = false
     let done = false
+
+    await ensureFeedCachePolicyColumns(db)
+
+    const policyByFeed = new Map<number, FeedCachePolicyRow|null>()
+
+    async function policyFor (feedId:number):
+        Promise<FeedCachePolicyRow|null> {
+        if (!policyByFeed.has(feedId)) {
+            policyByFeed.set(
+                feedId,
+                await getFeedCachePolicy(db, feedId)
+            )
+        }
+        return policyByFeed.get(feedId) ?? null
+    }
 
     while (!done) {
         const url = buildSyncUrl(lastPullAt, cursor)
@@ -415,10 +430,14 @@ export async function pullSync (
                     skippedRows = true
                     continue
                 }
-                await upsertItem(db, item, keepContent)
+                const feedId = item.feed_id as number
+                const keep = isContentCachedForPolicy(
+                    await policyFor(feedId)
+                )
+                await upsertItem(db, item, keep)
                 itemCount++
                 opts.onItemUpserted?.(itemCount)
-                if (keepContent) itemsToCache.push(item)
+                if (keep) itemsToCache.push(item)
             }
 
             if (data.hasMore) {
@@ -444,19 +463,10 @@ export async function pullSync (
             throw err
         }
 
-        if (keepContent && itemsToCache.length > 0) {
-            const policyByFeed = new Map<number, FeedCachePolicyRow|null>()
+        if (itemsToCache.length > 0) {
             for (const item of itemsToCache) {
                 const feedId = item.feed_id as number
-                if (!policyByFeed.has(feedId)) {
-                    const p = await queryOneDb<FeedCachePolicyRow>(
-                        db,
-                        'SELECT cache_mode FROM feed_cache_policy' +
-                        ' WHERE feed_id = ?',
-                        [feedId]
-                    )
-                    policyByFeed.set(feedId, p ?? null)
-                }
+                const policy = await policyFor(feedId)
                 try {
                     await cacheItemImages(
                         db,
@@ -466,7 +476,7 @@ export async function pullSync (
                             content?:string|null
                             description?:string|null
                         },
-                        policyByFeed.get(feedId) ?? null
+                        policy
                     )
                 } catch (err) {
                     console.error(
