@@ -28,6 +28,7 @@ export const FEED_CACHE_POLICY_SQL = `
         ),
         max_size_bytes INTEGER,
         max_age_seconds INTEGER,
+        content_enabled INTEGER,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 `
