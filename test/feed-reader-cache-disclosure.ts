@@ -1020,3 +1020,215 @@ test('AC3.3: changing cache_mode preserves content_enabled override',
         }
     }
 )
+
+test(
+    'AC5.1 + AC5.5/AC8.2: enable-while-off optimistic, setSyncSubscriptions,' +
+    ' no global flip, bootstrap pending',
+    async (t) => {
+        State.loadItems = noopLoadItems as typeof State.loadItems
+        State.markAllRead = (async () => {}) as typeof State.markAllRead
+        _resetFeedPolicies()
+
+        const originalFetch = globalThis.fetch
+        let fetchCalled = false
+        let fetchUrl = ''
+
+        try {
+            // Stub fetch to never resolve (simulates pending bootstrap)
+            ;(globalThis as unknown as { fetch?:typeof fetch }).fetch =
+                (async (url:string|URL|Request) => {
+                    fetchCalled = true
+                    fetchUrl = typeof url === 'string' ?
+                        url :
+                        (url instanceof URL ?
+                            url.href :
+                            (url as Request).url)
+                    // Never resolve - just hang
+                    return new Promise(() => {})
+                }) as typeof fetch
+
+            batch(() => {
+                defaultCacheMode.value = 'text_images'
+                storeContent.value = false
+                billingStatus.value = {
+                    entitled: true,
+                    planId: 'local-first',
+                    status: 'active',
+                    refreshedAt: Date.now(),
+                    useLive: false
+                }
+                localFirstSupported.value = true
+            })
+
+            const state = makeState()
+            const feed = makeFeed({
+                id: 200,
+                url: 'https://enable-off.example.com/feed.rss',
+                title: 'Enable Off'
+            })
+            state.feeds.value = [feed]
+
+            const root = mount(state, [
+                'enable-off.example.com',
+                'feed.rss'
+            ])
+            try {
+                await nextTick()
+
+                // Dispatch checkbox change with checked=true
+                const checkbox = root.querySelector(
+                    `check-box[name="feed-cache-content-${feed.id}"]`
+                ) as HTMLInputElement|null
+                t.ok(checkbox, 'checkbox exists')
+
+                if (checkbox) {
+                    checkbox.checked = true
+                    checkbox.dispatchEvent(new Event('change'))
+                }
+
+                // Synchronously check the effects
+                t.equal(
+                    storeContent.value,
+                    false,
+                    'AC5.5/AC8.2: storeContent not flipped to true'
+                )
+
+                t.equal(
+                    feedPolicies.value[feed.id]?.content_enabled,
+                    1,
+                    'optimistic in-memory write: content_enabled = 1'
+                )
+
+                // setSyncSubscriptions must have been called
+                // (can't directly check it was called, but we check the
+                // effect)
+                t.ok(
+                    fetchCalled,
+                    'AC5.1: fetch was called (bootstrap started)'
+                )
+                t.ok(
+                    /\/api\/sync/i.test(fetchUrl),
+                    'fetch was called with /api/sync URL'
+                )
+            } finally {
+                unmount(root)
+            }
+        } finally {
+            _resetFeedPolicies()
+            batch(() => {
+                storeContent.value = false
+                billingStatus.value = null
+                localFirstSupported.value = false
+            })
+            State.loadItems = originalLoadItems
+            State.markAllRead = originalMarkAllRead
+            if (originalFetch === undefined) {
+                delete (globalThis as { fetch?:unknown }).fetch
+            } else {
+                globalThis.fetch = originalFetch
+            }
+        }
+    }
+)
+
+test(
+    'AC5.4: enable-while-off revert on bootstrap failure',
+    async (t) => {
+        State.loadItems = noopLoadItems as typeof State.loadItems
+        State.markAllRead = (async () => {}) as typeof State.markAllRead
+        _resetFeedPolicies()
+
+        const originalFetch = globalThis.fetch
+
+        try {
+            // Stub fetch to return non-ok response
+            ;(globalThis as unknown as { fetch?:typeof fetch }).fetch =
+                (async (_url:string|URL|Request) => ({
+                    ok: false,
+                    status: 500,
+                    json: async () => ({ error: 'server error' })
+                } as Response)) as typeof fetch
+
+            batch(() => {
+                defaultCacheMode.value = 'text_images'
+                storeContent.value = false
+                billingStatus.value = {
+                    entitled: true,
+                    planId: 'local-first',
+                    status: 'active',
+                    refreshedAt: Date.now(),
+                    useLive: false
+                }
+                localFirstSupported.value = true
+            })
+
+            const state = makeState()
+            const feed = makeFeed({
+                id: 201,
+                url: 'https://fail.example.com/feed.rss',
+                title: 'Fail'
+            })
+            state.feeds.value = [feed]
+
+            const root = mount(state, ['fail.example.com', 'feed.rss'])
+            try {
+                await nextTick()
+
+                // Dispatch checkbox change with checked=true
+                const checkbox = root.querySelector(
+                    `check-box[name="feed-cache-content-${feed.id}"]`
+                ) as HTMLInputElement|null
+                t.ok(checkbox, 'checkbox exists')
+
+                if (checkbox) {
+                    checkbox.checked = true
+                    checkbox.dispatchEvent(new Event('change'))
+                }
+
+                await nextTick()
+
+                // Await bootstrap to settle (it will fail)
+                // Use polling for bootstrapInProgress to settle
+                await new Promise<void>((resolve) => {
+                    const check = () => {
+                        if (feedPolicies.value[feed.id]
+                            ?.content_enabled === null) {
+                            resolve()
+                        } else {
+                            setTimeout(check, 10)
+                        }
+                    }
+                    check()
+                })
+
+                // AC5.4: verify revert happened
+                t.equal(
+                    feedPolicies.value[feed.id]?.content_enabled,
+                    null,
+                    'reverted to null (prior value)'
+                )
+                t.equal(
+                    storeContent.value,
+                    false,
+                    'storeContent still false'
+                )
+            } finally {
+                unmount(root)
+            }
+        } finally {
+            _resetFeedPolicies()
+            batch(() => {
+                storeContent.value = false
+                billingStatus.value = null
+                localFirstSupported.value = false
+            })
+            State.loadItems = originalLoadItems
+            State.markAllRead = originalMarkAllRead
+            if (originalFetch === undefined) {
+                delete (globalThis as { fetch?:unknown }).fetch
+            } else {
+                globalThis.fetch = originalFetch
+            }
+        }
+    }
+)
