@@ -2,9 +2,9 @@ import type { Sqlite3Db } from './sqlite-init.js'
 import { queryDb } from './local-db.js'
 import {
     feedPolicies,
-    resolveEffectivePolicy
+    resolveEffectivePolicy,
+    isContentCachedForPolicy
 } from './feed-cache-policy.js'
-import { storeContent } from '../local-first-settings.js'
 
 export interface ItemToCache {
     id:number
@@ -67,7 +67,6 @@ export async function computeCacheStatus (
     }
 
     const policiesByFeed = feedPolicies.value
-    const wantBody = storeContent.value
 
     const allUrls = new Set<string>()
     const urlsByItemId = new Map<number, string[]>()
@@ -108,6 +107,7 @@ export async function computeCacheStatus (
     for (const row of rows) {
         const policy = policiesByFeed[row.feed_id] ?? null
         const effective = resolveEffectivePolicy(policy)
+        const wantBody = isContentCachedForPolicy(policy)
 
         const hasBody = Boolean(
             row.content || row.description || row.full_content
