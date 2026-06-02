@@ -177,58 +177,63 @@ export const CacheSettings:FunctionComponent<{
                             Caching to this device requires a paid plan.
                         </p>
                     ` : null}
-                    <div class="feed-cache-form">
-                        <label class="cache-field-label">
-                            Cache mode
-                            <select
-                                name=${`feed-cache-mode-${selectedFeed.id}`}
-                                onChange=${handleCacheModeChange}
-                            >
-                                <option
-                                    value=""
-                                    selected=${policy?.cache_mode == null}
+                    <fieldset
+                        id=${fieldsId}
+                        disabled=${!effectiveContent}
+                    >
+                        <div class="feed-cache-form">
+                            <label class="cache-field-label">
+                                Cache mode
+                                <select
+                                    name=${`feed-cache-mode-${selectedFeed.id}`}
+                                    onChange=${handleCacheModeChange}
                                 >
-                                    Use default
-                                </option>
-                                <option
-                                    value="text"
-                                    selected=${policy?.cache_mode === 'text'}
-                                >
-                                    Text only
-                                </option>
-                                <option
-                                    value="text_images"
-                                    selected=${
-                                        policy?.cache_mode === 'text_images'
-                                    }
-                                >
-                                    Text ${AMP} images
-                                </option>
-                            </select>
-                        </label>
-                        <label class="cache-field-label">
-                            Max size (MB, blank = default)
-                            <input
-                                type="number"
-                                name=${`feed-max-size-${selectedFeed.id}`}
-                                min="1"
-                                value=${sizeVal}
-                                placeholder="default"
-                                onChange=${handleMaxSizeChange}
-                            />
-                        </label>
-                        <label class="cache-field-label">
-                            Keep for (days, blank = default)
-                            <input
-                                type="number"
-                                name=${`feed-max-age-${selectedFeed.id}`}
-                                min="1"
-                                value=${ageVal}
-                                placeholder="default"
-                                onChange=${handleMaxAgeChange}
-                            />
-                        </label>
-                    </div>
+                                    <option
+                                        value=""
+                                        selected=${policy?.cache_mode == null}
+                                    >
+                                        Use default
+                                    </option>
+                                    <option
+                                        value="text"
+                                        selected=${policy?.cache_mode === 'text'}
+                                    >
+                                        Text only
+                                    </option>
+                                    <option
+                                        value="text_images"
+                                        selected=${
+                                            policy?.cache_mode === 'text_images'
+                                        }
+                                    >
+                                        Text ${AMP} images
+                                    </option>
+                                </select>
+                            </label>
+                            <label class="cache-field-label">
+                                Max size (MB, blank = default)
+                                <input
+                                    type="number"
+                                    name=${`feed-max-size-${selectedFeed.id}`}
+                                    min="1"
+                                    value=${sizeVal}
+                                    placeholder="default"
+                                    onChange=${handleMaxSizeChange}
+                                />
+                            </label>
+                            <label class="cache-field-label">
+                                Keep for (days, blank = default)
+                                <input
+                                    type="number"
+                                    name=${`feed-max-age-${selectedFeed.id}`}
+                                    min="1"
+                                    value=${ageVal}
+                                    placeholder="default"
+                                    onChange=${handleMaxAgeChange}
+                                />
+                            </label>
+                        </div>
+                    </fieldset>
                     <button
                         class="btn-clear-cache"
                         onClick=${handleClearCache}
