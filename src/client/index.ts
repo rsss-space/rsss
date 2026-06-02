@@ -9,7 +9,6 @@ import Router from './routes/index.js'
 import { NotFound } from './not-found.js'
 import { Header } from './components/header.js'
 import { OAuthCallbackLoader } from './components/oauth-loader.js'
-import '@substrate-system/details-summary'
 import './style.css'
 
 const state = State()

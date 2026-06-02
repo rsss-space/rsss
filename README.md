@@ -391,7 +391,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:execute-implementation-plan DOCS/implementation-plans/2026-05-30-028-oversize-article-fallback/ .
+/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-06-01-029-feed-cache-settings.md .
 ```
 
 --------------------------------------------------------------

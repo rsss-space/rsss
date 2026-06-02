@@ -196,15 +196,20 @@ export const FeedReader:FunctionComponent<{
                                 selectedFeed=${selectedFeed}
                             />
                         `}
-                        <div class="items-filters">
+                        <div class="items-filters unread">
                             <${CheckBox.TAG}
                                 name="unread"
+                                id="unread-check"
                                 class="filter-checkbox"
                                 checked=${showUnreadOnly.value}
                                 onChange=${handleToggleUnread}
                             >
                                 Unread only
                             <//>
+
+                            <label for="unread-check">
+                                Show only unread articles.
+                            </label>
                         </div>
                         <button
                             class="btn btn-small"
