@@ -7,11 +7,35 @@ import { UserDO } from '../src/server/durable-objects/index.js'
 // verify the bookkeeping continue to attach their own storage stub
 // and observe writes through it.
 
-interface DoCtx { storage?:unknown }
+interface DoCtx {
+    storage?:unknown
+    getWebSockets?:() => WebSocket[]
+}
 type ReadHelper<T> = (this:{ ctx:DoCtx }, ...args:unknown[]) =>
     Promise<T|undefined>
 type WriteHelper = (this:{ ctx:DoCtx }, ...args:unknown[]) =>
     Promise<void>
+// Relax broadcast for harnesses whose ctx lacks getWebSockets: no-op
+// in that case, otherwise delegate to the REAL implementation so tests
+// that attach a ctx.getWebSockets stub (e.g. do-handlers) still
+// exercise the real code path. Mirrors the read/write wrappers below.
+const origBroadcast = (UserDO.prototype as unknown as {
+    broadcast:(event:string, data:unknown) => void
+}).broadcast
+;(UserDO.prototype as unknown as {
+    broadcast:(event:string, data:unknown) => void
+}).broadcast = function (
+    this:{ ctx:DoCtx },
+    event:string,
+    data:unknown
+):void {
+    if (
+        !this.ctx ||
+        typeof this.ctx.getWebSockets !== 'function'
+    ) return
+    origBroadcast.call(this, event, data)
+}
+
 const proto = UserDO.prototype as unknown as Record<
     string,
     (...args:unknown[]) => Promise<unknown>

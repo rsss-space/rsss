@@ -9,56 +9,10 @@ import {
     _resetRefreshRefCountForTest,
     _registerRefreshSignalForTest,
 } from '../src/client/state.js'
-
-type EventListenerFn = (ev:MessageEvent|Event) => void
-
-class StubEventSource {
-    static instances:StubEventSource[] = []
-
-    url:string
-    readyState = 0
-    listeners:Record<string, EventListenerFn[]> = {}
-
-    constructor (url:string) {
-        this.url = url
-        StubEventSource.instances.push(this)
-    }
-
-    addEventListener (event:string, listener:EventListenerFn):void {
-        (this.listeners[event] ??= []).push(listener)
-    }
-
-    removeEventListener (event:string, listener:EventListenerFn):void {
-        const list = this.listeners[event]
-        if (!list) return
-        this.listeners[event] = list.filter(fn => fn !== listener)
-    }
-
-    close ():void {}
-
-    fire (event:string, data?:unknown):void {
-        const ev = data === undefined ?
-            new Event(event) :
-            new MessageEvent(event, { data: JSON.stringify(data) })
-        const list = this.listeners[event] ?? []
-        for (const fn of list) fn(ev)
-    }
-}
-
-function withStubbedEventSource<T> (
-    fn:() => Promise<T>
-):Promise<T> {
-    const original = (globalThis as { EventSource?:typeof EventSource })
-        .EventSource
-    StubEventSource.instances = []
-    ;(globalThis as { EventSource:unknown })
-        .EventSource = StubEventSource as unknown as typeof EventSource
-    return fn().finally(() => {
-        ;(globalThis as { EventSource?:typeof EventSource })
-            .EventSource = original
-        StubEventSource.instances = []
-    })
-}
+import {
+    StubWebSocket,
+    withStubbedWebSocket
+} from './helpers/stub-live-socket.js'
 
 type FetchInput = Parameters<typeof fetch>[0]
 type FetchInit = Parameters<typeof fetch>[1]
@@ -236,7 +190,7 @@ async t => {
 
     let postCalls = 0
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -250,7 +204,7 @@ async t => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
 
                 t.equal(
                     state.displayedFeedSyncStatus.value,
@@ -372,12 +326,12 @@ test('SSE feed-updated does NOT clear refreshInProgress (FR-011)',
         state.feedSyncStatus.value = 'syncing'
 
         try {
-            await withStubbedEventSource(async () => {
+            await withStubbedWebSocket(async () => {
                 await withStubbedFetch(async () => {
                     return jsonResponse({})
                 }, async () => {
                     State.openEventStream(state)
-                    const source = StubEventSource.instances[0]
+                    const source = StubWebSocket.instances[0]
                     source.fire('feed-updated')
                     await settle()
                 })
@@ -411,12 +365,12 @@ async t => {
     }
 
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async () => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
 
                 // First open is the initial connect; the handler's
                 // hasOpenedBefore flag flips to true after this.
@@ -512,7 +466,7 @@ async t => {
     }
 
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -525,7 +479,7 @@ async t => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
 
                 await State.refreshFeeds(state)
                 source.fire('refresh-complete')
@@ -570,7 +524,7 @@ test('zero-feed refresh recovers via short safety timer without SSE',
 
         let refreshPostCount = 0
         try {
-            await withStubbedEventSource(async () => {
+            await withStubbedWebSocket(async () => {
                 await withStubbedFetch(async (input) => {
                     const url = typeof input === 'string' ?
                         input :
@@ -790,9 +744,9 @@ async t => {
         'pre-SSE: pill is yellow because refreshInProgress is true'
     )
 
-    await withStubbedEventSource(async () => {
+    await withStubbedWebSocket(async () => {
         State.openEventStream(state)
-        const source = StubEventSource.instances[0]
+        const source = StubWebSocket.instances[0]
 
         // Background SSE bump: counts go from {1: 1} to {1: 1, 7: 4}.
         source.fire('feed-updates-available', {
