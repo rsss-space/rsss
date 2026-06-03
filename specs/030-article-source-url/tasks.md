@@ -40,7 +40,7 @@ relative: `src/client/...` for source, `test/...` for tests.
 project initialization is required (existing project, existing branch
 `030-article-source-url`).
 
-- [ ] T001 Run `npm test` to confirm the existing `test/item-row.ts`
+- [X] T001 Run `npm test` to confirm the existing `test/item-row.ts`
   suite passes before any change, establishing a baseline to compare
   against.
 
@@ -62,7 +62,7 @@ spec Acceptance Scenarios 1-3).
 
 ### Tests for User Story 1 (write first, must FAIL before T003) ⚠️
 
-- [ ] T002 [P] [US1] In `test/item-row.ts`, add a "URL present" case:
+- [X] T002 [P] [US1] In `test/item-row.ts`, add a "URL present" case:
   render an `ItemRow` whose `item.link` is a non-empty URL (e.g.
   `https://example.com/a/b`), assert `root.querySelector('.item-url')`
   exists and its `textContent` reflects `item.link`. Keep the assertion
@@ -71,7 +71,7 @@ spec Acceptance Scenarios 1-3).
 
 ### Implementation for User Story 1
 
-- [ ] T003 [US1] In `src/client/components/item-row.ts`, near the other
+- [X] T003 [US1] In `src/client/components/item-row.ts`, near the other
   derived fields (around `const imageUrl = item.og_image_url?.trim()`),
   compute `const sourceUrl = item.link?.trim()`. Inside the
   `.item-meta` block, render `<span class="item-url" title=${sourceUrl}>
@@ -79,7 +79,7 @@ spec Acceptance Scenarios 1-3).
   child of `.item-meta` (before `.item-feed`) so the existing
   `column-reverse` layout renders it beneath the feed title (research
   Decision 5). This makes T002 pass.
-- [ ] T004 [P] [US1] In `src/client/components/item-row.css`, inside the
+- [X] T004 [P] [US1] In `src/client/components/item-row.css`, inside the
   existing `.item-row { ... }` nested block near `.item-meta`, add an
   `& .item-url` rule: `color: var(--color-muted); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`
@@ -104,7 +104,7 @@ appears for it, while linked items still show their URL.
 
 ### Tests for User Story 2 (write first) ⚠️
 
-- [ ] T005 [P] [US2] In `test/item-row.ts`, add a "URL absent" case:
+- [X] T005 [P] [US2] In `test/item-row.ts`, add a "URL absent" case:
   render an `ItemRow` whose `item.link` is `null`, assert
   `root.querySelector('.item-url')` is `null` (FR-004 — no placeholder).
   Optionally add a whitespace-only case (`link: '   '`) asserting the
@@ -112,7 +112,7 @@ appears for it, while linked items still show their URL.
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] In `src/client/components/item-row.ts`, ensure the
+- [X] T006 [US2] In `src/client/components/item-row.ts`, ensure the
   `.item-meta` guard uses the trimmed value (`item.link?.trim()` from
   T003) so that `null`, empty, and whitespace-only links all omit the
   `.item-url` element entirely — mirroring how `imageUrl` already guards
@@ -129,7 +129,7 @@ work independently.
 
 **Purpose**: Final quality pass and manual verification.
 
-- [ ] T007 Run `npm run lint` and fix any violations in the changed
+- [X] T007 Run `npm run lint` and fix any violations in the changed
   files (80-column lines, no space after the annotation colon, ternary
   line breaks, nested CSS selectors).
 - [ ] T008 Manual in-browser verification per `quickstart.md`: `npm
@@ -140,7 +140,7 @@ work independently.
   the list does not scroll horizontally at desktop and mobile widths
   (FR-005/SC-003), and two items sharing a feed title are
   distinguishable by their URLs (US1 scenario 3 / SC-004).
-- [ ] T009 Run `npm test && npm run lint` to confirm the full suite and
+- [X] T009 Run `npm test && npm run lint` to confirm the full suite and
   linter are green before considering the feature complete.
 
 ---
