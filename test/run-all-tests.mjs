@@ -81,6 +81,11 @@ const commands = [
         '--platform=node --format=esm',
         '| node --input-type=module | tap-spec'
     ].join(' '),
+    [
+        'esbuild ./test/live-channel-client.ts --bundle',
+        '--platform=node --format=esm',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
 
     // --- remaining node / npm-run tests ---
     'npm run test:report-error',
