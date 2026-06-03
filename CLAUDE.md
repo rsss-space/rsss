@@ -1,6 +1,6 @@
 # rsss Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-05-31
+Auto-generated from all feature plans. Last updated: 2026-06-02
 
 ## Active Technologies
 - Per-user Durable Object SQLite (server-authoritative); local (002-full-article-fetch)
@@ -33,6 +33,7 @@ Auto-generated from all feature plans. Last updated: 2026-05-31
 - TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`; Vite 7 + (026-fix-reader-star-button)
 - N/A for this feature. The `is_starred` state is already (026-fix-reader-star-button)
 - N/A — UI-only. Reuses the existing client signal (027-disable-cache-settings-link)
+- N/A for this feature. Reuses existing `Item.link` already (030-article-source-url)
 
 - TypeScript (Cloudflare Workers runtime, ES2022 lib) + `hono`, `@cloudflare/workers-types`, `fast-xml-parser` (001-fix-og-image-redirects)
 
@@ -53,9 +54,9 @@ npm test && npm run lint
 TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Recent Changes
+- 030-article-source-url: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
 - 027-disable-cache-settings-link: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
 - 026-fix-reader-star-button: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`; Vite 7 +
-- 025-fix-sentry-cross-request-warning: Bump `@sentry/cloudflare` + `@sentry/browser` to `^10.55.0` (root-cause fix for cross-request `waitUntil` span-completion); gate `tracesSampleRate` on DSN presence in the worker/DO Sentry options so tracing is fully disabled (key omitted) when no DSN is set. No persistent storage change.
 
 
 <!-- MANUAL ADDITIONS START -->
