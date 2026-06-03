@@ -34,6 +34,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-02
 - N/A for this feature. The `is_starred` state is already (026-fix-reader-star-button)
 - N/A — UI-only. Reuses the existing client signal (027-disable-cache-settings-link)
 - N/A for this feature. Reuses existing `Item.link` already (030-article-source-url)
+- N/A — presentation-only. No SQLite (local or DO) schema (031-animate-cache-settings)
 
 - TypeScript (Cloudflare Workers runtime, ES2022 lib) + `hono`, `@cloudflare/workers-types`, `fast-xml-parser` (001-fix-og-image-redirects)
 
@@ -54,9 +55,9 @@ npm test && npm run lint
 TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Recent Changes
+- 031-animate-cache-settings: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`,
 - 030-article-source-url: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
 - 027-disable-cache-settings-link: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
-- 026-fix-reader-star-button: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`; Vite 7 +
 
 
 <!-- MANUAL ADDITIONS START -->
