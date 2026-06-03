@@ -28,6 +28,14 @@
         & time {
             color: var(--color-muted);
         }
+
+        & .item-url {
+            color: var(--color-muted);
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
     }
 
     & .item-controls {

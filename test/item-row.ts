@@ -211,6 +211,49 @@ test('ItemRow renders the excerpt as a full-width link below the row', t => {
     }
 })
 
+test('ItemRow shows the article source URL beneath the feed title', t => {
+    const link = 'https://example.com/a/b'
+    const root = renderRow(item({ link }))
+
+    try {
+        const url = root.querySelector('.item-url')
+        t.ok(url, 'renders an .item-url element when the item has a link')
+        t.ok(
+            url?.textContent?.includes(link),
+            'the .item-url text reflects the item link'
+        )
+    } finally {
+        render(null, root)
+        root.remove()
+    }
+})
+
+test('ItemRow omits the source URL when the item has no link', t => {
+    const nullRoot = renderRow(item({ link: null }))
+    try {
+        t.equal(
+            nullRoot.querySelector('.item-url'),
+            null,
+            'renders no .item-url element for a null link'
+        )
+    } finally {
+        render(null, nullRoot)
+        nullRoot.remove()
+    }
+
+    const blankRoot = renderRow(item({ link: '   ' }))
+    try {
+        t.equal(
+            blankRoot.querySelector('.item-url'),
+            null,
+            'renders no .item-url element for a whitespace-only link'
+        )
+    } finally {
+        render(null, blankRoot)
+        blankRoot.remove()
+    }
+})
+
 test('ItemRow removes a fallback image after the image fails', async t => {
     const root = renderRow(item({
         og_image_url: 'data:image/png;base64,not-valid'

@@ -63,6 +63,7 @@ export const ItemRow:FunctionComponent<{
     const isStarred = !!item.is_starred
     const [hiddenThumbnail, setHiddenThumbnail] = useState(false)
     const imageUrl = item.og_image_url?.trim()
+    const sourceUrl = item.link?.trim()
     const imageWidth = item.image_width
     const imageHeight = item.image_height
     const hasBlurHash = Boolean(
@@ -150,6 +151,11 @@ export const ItemRow:FunctionComponent<{
                         }
                     </h3>
                     <div class="item-meta">
+                        ${sourceUrl && html`
+                            <span class="item-url" title=${sourceUrl}>
+                                ${sourceUrl}
+                            </span>
+                        `}
                         <span class="item-feed">
                             ${item.feed_title}
                         </span>
