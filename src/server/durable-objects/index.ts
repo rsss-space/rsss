@@ -1541,24 +1541,23 @@ export class UserDO extends DurableObject<Env> {
     }
 
     /**
-     * Send an SSE event to all connected subscribers for this user.
+     * Send a live-channel event to every connected WebSocket for this
+     * user. Enumerates ctx.getWebSockets() so it works across DO
+     * hibernation/eviction (no in-memory subscriber list to lose).
      */
     private broadcast (event:string, data:unknown):void {
-        if (!this.subscribers) return
-        if (this.subscribers.size === 0) return
+        const sockets = this.ctx.getWebSockets()
+        if (sockets.length === 0) return
 
-        const payload = `event: ${event}\n` +
-            `data: ${JSON.stringify(data)}\n\n`
-        const bytes = this.encoder.encode(payload)
-
-        for (const controller of this.subscribers) {
+        const payload = JSON.stringify({ event, data })
+        for (const ws of sockets) {
             try {
-                controller.enqueue(bytes)
+                ws.send(payload)
             } catch {
-                this.subscribers.delete(controller)
+                // Socket is closing; webSocketClose will not be needed
+                // because the next broadcast re-reads getWebSockets().
             }
         }
-        this.maybeStopKeepalive()
     }
 
     private ensureKeepalive ():void {
