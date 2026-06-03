@@ -1858,6 +1858,10 @@ dataRouter.use('/items/:id/fetch-full', didRateLimit)
 dataRouter.use('/sync', requireEntitlement)
 dataRouter.use('/sync/*', requireEntitlement)
 
+export function isWebSocketUpgrade (headers:Headers):boolean {
+    return headers.get('Upgrade')?.toLowerCase() === 'websocket'
+}
+
 function buildDoProxyHeaders (headers:Headers):Headers {
     const forwarded = new Headers()
 
@@ -1883,6 +1887,17 @@ function buildDoProxyHeaders (headers:Headers):Headers {
 dataRouter.all('*', async (c) => {
     const session = c.get('session')!
     const stub = getUserDO(c.env, session.did)
+
+    // WebSocket upgrades cannot go through buildDoProxyHeaders (it
+    // strips Upgrade/Connection) and must return the DO's 101 response
+    // verbatim so the attached `webSocket` survives. Forward the raw
+    // request (preserving Sec-WebSocket-* and Cookie) with the /api
+    // mount prefix stripped from the path.
+    if (isWebSocketUpgrade(c.req.raw.headers)) {
+        const wsUrl = new URL(c.req.url)
+        wsUrl.pathname = wsUrl.pathname.replace(/^\/api/, '') || '/'
+        return stub.fetch(new Request(wsUrl.toString(), c.req.raw))
+    }
 
     // Build the request URL for the DO. The dataRouter is mounted at
     // /api via app.route, but Hono does not strip the mount prefix
