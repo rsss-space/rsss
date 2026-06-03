@@ -1,4 +1,5 @@
 import {
+    type ReadonlySignal,
     type Signal,
     signal,
     computed,
@@ -6,64 +7,634 @@ import {
     effect
 } from '@preact/signals'
 import Route from 'route-event'
-import ky from 'ky'
+import ky, { HTTPError } from 'ky'
 import Debug from '@substrate-system/debug'
-import { getAdapter, getLocalDb } from './db/index.js'
-import { pullSync } from './db/pull-sync.js'
-import { pushSync, getOutboxCount } from './db/push-sync.js'
+import {
+    getAdapter,
+    getTabCoordinationState,
+    getLocalDb,
+    getRemoteItemByRoute,
+    localTabLockRevision
+} from './db/index.js'
+import { setCurrentlyOpenItemId } from './open-item-registry.js'
+import type {
+    CountsResponse,
+    Feed,
+    FeedStatusResponse,
+    Item,
+    ItemsResponse
+} from './db/types.js'
+import {
+    PullSyncAuthError,
+    SyncBillingError,
+    upsertItem as pullSyncUpsertItem
+} from './db/pull-sync.js'
+import {
+    fetchFullArticle as remoteFetchFullArticle,
+    FetchFullThrottledError
+} from './db/remote-adapter.js'
+import {
+    storeContent,
+    defaultCacheMode,
+    loadLocalFirstSettings
+} from './local-first-settings.js'
+import {
+    getOutboxCount,
+    PushSyncAuthError,
+    PushSyncBillingError,
+    upsertFeedFromServer
+} from './db/push-sync.js'
+import { runSync } from './db/sync.js'
 import {
     isLocalFirstActive,
     updateOnlineStatus,
     setSyncOffline
 } from './db/sync-status.js'
+import {
+    findItemByRoute,
+    isItemRoute,
+    routeToItemRoute
+} from './routing.js'
+import {
+    type BillingStatus,
+    billingStatus,
+    setBillingStatus,
+    setBillingError,
+    setCheckoutInProgress,
+    resetBilling
+} from './billing-status.js'
+import {
+    setPaymentMethodsState,
+    setPaymentMethodsLoading,
+    setPaymentMethodsError,
+    resetPaymentMethods,
+    type PaymentMethodSummary
+} from './payment-methods.js'
+import {
+    recomputeCacheStatus,
+    cacheStatus,
+    cacheActionInProgress,
+    cacheActionProgress,
+    cacheActionError,
+    type ItemToCache
+} from './cache-status-state.js'
+import { cacheItemImages } from './db/image-cache.js'
+import {
+    feedPolicies,
+    isContentCachedForFeed
+} from './db/feed-cache-policy.js'
+import { consumeInitialFeed, peekInitialFeed } from './initial-feed.js'
+import {
+    scheduleIdle,
+    cancelIdle,
+    type IdleHandle
+} from './util/schedule-idle.js'
+import {
+    readPaintCache,
+    setStoredDid,
+    type PaintCacheV1,
+    writePaintCache,
+    snapshotFromState,
+    clearStoredDid,
+    clearPaintCache
+} from './paint-cache.js'
+import {
+    displayedRefreshInProgress,
+    init as initDisplayedRefresh,
+    _resetForTest as resetDisplayedRefresh,
+} from './displayed-refresh-in-progress.js'
 const debug = Debug('rsss:state')
 
-const USER_STORAGE_KEY = 'rsss_user'
+/**
+ * Set to `true` exactly once, by `hydratePaintCache`, when a
+ * snapshot was found and applied during the initial bootstrap.
+ * Read by UI to decide whether to show the first-time-bootstrap
+ * card during the OPFS first-pull.
+ */
+export const paintCacheHydratedOnBootstrap:Signal<boolean> =
+    signal(false)
+
+const CHECKOUT_EMAIL_KEY = 'rsss_checkout_email'
 export const DEFAULT_PAGE_SIZE = 20
+const SYNC_AUTH_EXPIRED = 'Your session expired. Please log in again.'
+const SSE_REFRESH_DEBOUNCE_MS = 250
+const REFRESH_FEEDS_SAFETY_TIMEOUT_MS = 60_000
+// When the POST response reports `queued: 0`, the server has nothing to
+// fetch. Its `refresh-complete` broadcast races (and sometimes loses) the
+// POST ack in dev-mode SSE proxying, so we replace the long safety timer
+// with a short one. The pill still flashes 'updating' for at least one
+// paint (FR-012e), and back-to-back zero-feed refreshes cannot get stuck.
+const REFRESH_FEEDS_ZERO_FEED_SAFETY_MS = 1_000
+export const RESOLVE_WINDOW_MS = 30_000
+export const CLIENT_GRACE_MS = 5_000
+
+/**
+ * Coordination state for add-feed acquires that release on either
+ * SSE `feed-updates-available` (carrying the added feedId) OR a
+ * hard 35-second timeout, whichever fires first. Keyed by feedId.
+ *
+ * Module-private; tests use `_resetPendingAddFeedAcquiresForTest`.
+ */
+type AddFeedAcquireRecord = {
+    /**
+     * Resolves the pending Promise returned by
+     * `waitForAddFeedRelease`. Idempotent (subsequent calls are
+     * no-ops).
+     */
+    settle:() => void
+    /** Timer handle for the hard-timeout fallback. */
+    timer:ReturnType<typeof setTimeout>
+}
+const _pendingAddFeedAcquires =
+    new Map<number, AddFeedAcquireRecord>()
+
+/**
+ * Test-only: clear all pending add-feed acquires and their
+ * timers without firing the settle callbacks.
+ */
+export function _resetPendingAddFeedAcquiresForTest ():void {
+    for (const record of _pendingAddFeedAcquires.values()) {
+        clearTimeout(record.timer)
+    }
+    _pendingAddFeedAcquires.clear()
+}
+
+/**
+ * Test-only override for the hard-timeout duration used by
+ * `waitForAddFeedRelease`. Allows tests to exercise the timeout
+ * path without waiting a real 35 seconds. Pass `undefined` to
+ * restore the production value
+ * (RESOLVE_WINDOW_MS + CLIENT_GRACE_MS).
+ */
+let _addFeedHardTimeoutMs:number =
+    RESOLVE_WINDOW_MS + CLIENT_GRACE_MS
+export function _setAddFeedHardTimeoutForTest (
+    ms:number|undefined,
+):void {
+    _addFeedHardTimeoutMs = ms ?? (RESOLVE_WINDOW_MS + CLIENT_GRACE_MS)
+}
+
+/**
+ * Returns a Promise that resolves when one of:
+ * - SSE `feed-updates-available` fires for the given feedId
+ *   (drained by the augmented handler in Task 2).
+ * - The hard-timeout (35 s in production) elapses.
+ *
+ * Side-effect: registers a record in `_pendingAddFeedAcquires`.
+ * The record's `settle` callback is invoked exactly once. Both
+ * the SSE drain path and the timeout fire-path call `settle`.
+ */
+function waitForAddFeedRelease (feedId:number):Promise<void> {
+    return new Promise<void>((resolve) => {
+        let settled = false
+        const settle = ():void => {
+            if (settled) return
+            settled = true
+            clearTimeout(record.timer)
+            _pendingAddFeedAcquires.delete(feedId)
+            resolve()
+        }
+        const timer = setTimeout(settle, _addFeedHardTimeoutMs)
+        const record:AddFeedAcquireRecord = { settle, timer }
+        _pendingAddFeedAcquires.set(feedId, record)
+    })
+}
+
+/**
+ * Drain any pending add-feed acquires whose feedId appears in
+ * `feedIds`. Called from the SSE `feed-updates-available`
+ * handler. Each drained acquire settles its waiting Promise,
+ * which releases the `trackRefresh` wrapper in `State.addFeed`.
+ */
+function drainAddFeedAcquires (feedIds:Iterable<number>):void {
+    for (const feedId of feedIds) {
+        const record = _pendingAddFeedAcquires.get(feedId)
+        if (record !== undefined) {
+            record.settle()
+        }
+    }
+}
+
+let refreshFeedsSafetyTimeout:ReturnType<typeof setTimeout>|null = null
+
+function clearRefreshFeedsSafetyTimeout ():void {
+    if (refreshFeedsSafetyTimeout !== null) {
+        clearTimeout(refreshFeedsSafetyTimeout)
+        refreshFeedsSafetyTimeout = null
+    }
+}
+
+const resolveConvergenceTimers = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+>()
+
+function clearResolveConvergenceTimer (feedId:number):void {
+    const existing = resolveConvergenceTimers.get(feedId)
+    if (existing !== undefined) {
+        clearTimeout(existing)
+        resolveConvergenceTimers.delete(feedId)
+    }
+}
+
+function isFeedStillResolving (state:AppState, feedId:number):boolean {
+    const row = state.feeds.value.find((f) => f.id === feedId)
+    if (!row) return false
+    return row.last_fetched === null && !row.last_error
+}
+
+// Module-private refcount for refreshInProgress.
+// Keyed per-AppState so test instances do not pollute each other.
+const _refreshRefCounts = new WeakMap<AppState, number>()
+
+// Module-private writable handle to the refresh signal.
+// The public AppState interface exposes a ReadonlySignal view to
+// prevent external direct writes; the helpers below mutate the
+// signal via this map, keeping the refcount the only valid path.
+const _refreshSignals = new WeakMap<AppState, Signal<boolean>>()
+
+/**
+ * Register the writable refresh signal for the given AppState so the
+ * refcount helpers can mutate it. Called by the AppState factory.
+ * Module-private.
+ */
+function registerRefreshSignal (
+    state:AppState,
+    sig:Signal<boolean>,
+):void {
+    _refreshSignals.set(state, sig)
+}
+
+/**
+ * Increment the refcount for the given AppState. If the counter
+ * transitions from 0 -> 1, set `state.refreshInProgress.value = true`
+ * inside a `batch()`.
+ *
+ * Module-private (not exported). External callers ship in Phase 2
+ * via `trackRefresh`.
+ */
+function acquireRefresh (state:AppState):void {
+    const sig = _refreshSignals.get(state)
+    if (sig === undefined) return
+    const current = _refreshRefCounts.get(state) ?? 0
+    const next = current + 1
+    _refreshRefCounts.set(state, next)
+    if (current === 0) {
+        batch(() => {
+            sig.value = true
+        })
+    }
+}
+
+/**
+ * Decrement the refcount for the given AppState. Bounded at zero:
+ * extra releases are no-ops, never make the counter negative, and
+ * never re-toggle the signal back to `true` on a subsequent acquire.
+ * If the counter transitions from 1 -> 0, set
+ * `state.refreshInProgress.value = false` inside a `batch()`.
+ *
+ * Module-private (not exported). External callers ship in Phase 2.
+ */
+function releaseRefresh (state:AppState):void {
+    const sig = _refreshSignals.get(state)
+    if (sig === undefined) return
+    const current = _refreshRefCounts.get(state) ?? 0
+    if (current <= 0) return
+    const next = current - 1
+    _refreshRefCounts.set(state, next)
+    if (next === 0) {
+        batch(() => {
+            sig.value = false
+        })
+    }
+}
+
+/**
+ * Test-only: reset both the refcount and the mirrored signal for the
+ * given AppState. Used so test cases that exercise acquire/release
+ * directly do not leak state across tests.
+ */
+export function _resetRefreshRefCountForTest (state:AppState):void {
+    _refreshRefCounts.delete(state)
+    const sig = _refreshSignals.get(state)
+    if (sig !== undefined) {
+        sig.value = false
+    }
+}
+
+/**
+ * Test-only: register a writable refresh signal for an ad-hoc AppState.
+ */
+export function _registerRefreshSignalForTest (
+    state:AppState,
+    sig:Signal<boolean>,
+):void {
+    _refreshSignals.set(state, sig)
+}
+
+/**
+ * Test-only: wrapper for acquireRefresh.
+ */
+export function _acquireRefreshForTest (state:AppState):void {
+    acquireRefresh(state)
+}
+
+/**
+ * Test-only: wrapper for releaseRefresh.
+ */
+export function _releaseRefreshForTest (state:AppState):void {
+    releaseRefresh(state)
+}
+
+/**
+ * Stable name for an in-flight background refresh operation.
+ * Used for debugging and for tying SSE / timer events to the
+ * specific acquire that should release.
+ */
+export type RefreshOpName =
+    | 'add-feed'
+    | 'resolve-convergence'
+    | 'sse-feed-updated'
+    | 'online-recovery'
+
+/**
+ * Wrap an async background-sync operation with refresh-indicator
+ * lifecycle.
+ *
+ * - Acquires the refcount synchronously before `fn` runs.
+ * - Releases on settle (resolve OR reject) via try/finally.
+ * - On rejection, sets `state.feedSyncStatus.value = 'error'` in the
+ *   same `batch()` as the release, so the UI transitions from
+ *   yellow ("updating…") directly to red ("error") without an
+ *   intermediate "synced"/"inactive" frame.
+ * - On resolve, `feedSyncStatus` is not touched by the helper —
+ *   the caller (or downstream SSE handler) decides the post-success
+ *   status.
+ *
+ * The `name` is for debugging only; it is logged at acquire and on
+ * rejection but does not affect behavior.
+ *
+ * Concurrent `trackRefresh` calls each independently acquire and
+ * release; the underlying refcount keeps the signal `true` until
+ * every acquire has been released.
+ */
+export async function trackRefresh<T> (
+    state:AppState,
+    name:RefreshOpName,
+    fn:() => Promise<T>,
+):Promise<T> {
+    acquireRefresh(state)
+    debug('trackRefresh acquire', name)
+    try {
+        const result = await fn()
+        releaseRefresh(state)
+        return result
+    } catch (err) {
+        batch(() => {
+            releaseRefresh(state)
+            state.feedSyncStatus.value = 'error'
+        })
+        debug(
+            'trackRefresh rejected',
+            name,
+            err instanceof Error ? err.message : err,
+        )
+        throw err
+    }
+}
+
+// Test-injection seams for runResolveConvergence. Production uses
+// the real imports from './db/sync.js' and './db/index.js'.
+// Tests can override via `_setRunResolveConvergenceDepsForTest`.
+type RunSyncFn = typeof runSync
+type GetLocalDbFn = typeof getLocalDb
+let _runSyncImpl:RunSyncFn = runSync
+let _getLocalDbImpl:GetLocalDbFn = getLocalDb
+export function _setRunResolveConvergenceDepsForTest (
+    deps:{
+        runSync?:RunSyncFn,
+        getLocalDb?:GetLocalDbFn,
+    },
+):void {
+    if (deps.runSync !== undefined) _runSyncImpl = deps.runSync
+    if (deps.getLocalDb !== undefined) _getLocalDbImpl = deps.getLocalDb
+}
+export function _resetRunResolveConvergenceDepsForTest ():void {
+    _runSyncImpl = runSync
+    _getLocalDbImpl = getLocalDb
+}
+
+// Test-injection seam for isLocalFirstActive selector in
+// _onlineRecoverySync. Tests can override via
+// `_setIsLocalFirstActiveForTest`.
+type IsLocalFirstActiveFn = () => ReadonlySignal<boolean>
+let _isLocalFirstActiveSelectorImpl:IsLocalFirstActiveFn =
+    () => isLocalFirstActive
+export function _setIsLocalFirstActiveForTest (
+    selector:IsLocalFirstActiveFn|undefined,
+):void {
+    _isLocalFirstActiveSelectorImpl = selector ?? (() => isLocalFirstActive)
+}
+export function _resetIsLocalFirstActiveForTest ():void {
+    _isLocalFirstActiveSelectorImpl = () => isLocalFirstActive
+}
+
+// Test-injection seam for getAdapter in State.addFeed.
+type GetAdapterFn = typeof getAdapter
+let _getAdapterImpl:GetAdapterFn = getAdapter
+export function _setAddFeedAdapterForTest (
+    impl:GetAdapterFn|undefined,
+):void {
+    _getAdapterImpl = impl ?? getAdapter
+}
+
+export const _resolveConvergenceForTest = {
+    schedule (state:AppState, url:string):void {
+        scheduleResolveConvergence(state, url)
+    },
+    scheduleConvergenceForResolvingFeeds (state:AppState):void {
+        scheduleConvergenceForResolvingFeeds(state)
+    },
+    pendingTimerCount ():number {
+        return resolveConvergenceTimers.size
+    },
+    clearAll ():void {
+        for (const [feedId] of resolveConvergenceTimers) {
+            clearResolveConvergenceTimer(feedId)
+        }
+    }
+}
+
+/**
+ * Run the resolve-convergence sync operation for a given feed.
+ * Wrapped in trackRefresh to acquire/release the indicator.
+ * Test-only export for direct invocation in unit tests.
+ */
+async function runResolveConvergence (
+    state:AppState,
+    feedId:number,
+):Promise<void> {
+    if (!isFeedStillResolving(state, feedId)) return
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+    return trackRefresh(state, 'resolve-convergence', async () => {
+        await _runSyncImpl(db)
+        await State.refreshAfterSync(state)
+    }).catch((err) => {
+        // trackRefresh has already set feedSyncStatus = 'error'
+        // and released. We log here for parity with the prior
+        // `.catch(debug(...))` behavior.
+        debug(
+            'resolve-convergence runSync failed',
+            err instanceof Error ? err.message : err,
+        )
+    })
+}
+
+// Test-only export for direct invocation:
+export const _runResolveConvergenceForTest = runResolveConvergence
+
+/**
+ * Defense in depth (FR-006): if the just-added feed is still in the
+ * resolving state after RESOLVE_WINDOW_MS + CLIENT_GRACE_MS, fire a
+ * one-shot pull so the client converges on the server-side terminal
+ * state even when SSE never delivers a `feed-updated` for the row.
+ */
+function scheduleResolveConvergence (
+    state:AppState,
+    url:string
+):void {
+    const row = state.feeds.value.find((f) => f.url === url)
+    if (!row) return
+    const feedId = row.id
+    if (!isFeedStillResolving(state, feedId)) return
+
+    clearResolveConvergenceTimer(feedId)
+    const timer = setTimeout(async () => {
+        resolveConvergenceTimers.delete(feedId)
+        await runResolveConvergence(state, feedId)
+    }, RESOLVE_WINDOW_MS + CLIENT_GRACE_MS)
+    resolveConvergenceTimers.set(feedId, timer)
+}
+
+let eventSource:EventSource|null = null
+
+// Debounce handle for the SSE `feed-updated` -> refreshAfterSync timer.
+// Lifted to module scope (alongside `eventSource`) so closeEventStream
+// can cancel a pending refresh; otherwise a debounced refresh fires
+// after the stream is closed (e.g. on logout/navigation), re-reading
+// state against a torn-down stream.
+let pendingSseRefresh:ReturnType<typeof setTimeout>|null = null
+
+function hasArticleBody (item:Item):boolean {
+    return Boolean(item.content || item.description)
+}
+
+function isBrowserOnline ():boolean {
+    return (
+        typeof navigator === 'undefined' ||
+        navigator.onLine !== false
+    )
+}
+
+/**
+ * Detect whether the page was loaded from an OAuth-callback URL.
+ * Used at boot to set `state.oauthInFlight` synchronously so the App
+ * shell can short-circuit to the loader before any other render.
+ */
+function isOAuthCallbackUrl ():boolean {
+    if (window.location.pathname === '/oauth/callback') return true
+    const params = new URLSearchParams(window.location.search)
+    return (
+        params.has('code') &&
+        params.has('state') &&
+        params.has('iss')
+    )
+}
+
+async function fillMissingRouteBody (
+    did:string|undefined,
+    itemRoute:string,
+    item:Item|null
+):Promise<Item|null> {
+    if (!item || hasArticleBody(item)) return item
+    if (!did || !getLocalDb(did) || !isBrowserOnline()) return item
+
+    try {
+        const serverItem = await getRemoteItemByRoute(itemRoute)
+        if (!serverItem || !hasArticleBody(serverItem)) return item
+        return {
+            ...item,
+            content: serverItem.content,
+            description: serverItem.description
+        }
+    } catch (err) {
+        debug('Error loading missing route item content:', err)
+        return item
+    }
+}
+
+/**
+ * Stash the email the user entered on /signup so the
+ * /payment-success page can pass it back to the server when
+ * confirming or signalling failure.
+ */
+function saveCheckoutEmail (email:string):void {
+    try {
+        localStorage.setItem(CHECKOUT_EMAIL_KEY, email)
+    } catch {
+        // Ignore quota / private-mode errors.
+    }
+}
+
+function readCheckoutEmail ():string|null {
+    try {
+        return localStorage.getItem(CHECKOUT_EMAIL_KEY)
+    } catch {
+        return null
+    }
+}
+
+function clearCheckoutEmail ():void {
+    try {
+        localStorage.removeItem(CHECKOUT_EMAIL_KEY)
+    } catch {
+        // Ignore.
+    }
+}
 
 export interface User {
     did:string
     handle:string
+    avatar?:string
 }
 
-export interface Feed {
-    id:number
-    url:string
-    title:string|null
-    description:string|null
-    site_url:string|null
-    last_fetched:string|null
-    created_at:string
+export type { BillingStatus }
+export type {
+    CountsResponse,
+    Feed,
+    Item,
+    ItemsResponse
 }
+export {
+    findItemByRoute,
+    isItemRoute,
+    itemToRoute,
+    routeToItemRoute,
+    stripProtocol
+} from './routing.js'
 
-export interface Item {
-    id:number
-    feed_id:number
-    guid:string
-    title:string|null
-    link:string|null
-    description:string|null
-    content:string|null
-    author:string|null
-    pub_date:string|null
-    is_read:number
-    is_starred:number
-    created_at:string
-    feed_title?:string
-}
+export type FilterKey = 'all' | 'starred'
 
-export interface ItemsResponse {
-    items:Item[]
-    total:number
-    limit:number
+export type ViewItemsCacheEntry = {
+    items:Item[],
+    total:number,
+    limit:number,
     offset:number
 }
 
-export interface CountsResponse {
-    unread:number
-    starred:number
-    total:number
-}
+export type ViewItemsCache = Map<FilterKey, ViewItemsCacheEntry>
 
 export type AppState = {
     _setRoute:(route:string) => void,
@@ -73,8 +644,42 @@ export type AppState = {
     user:Signal<User|null>,
     authLoading:Signal<boolean>,
     authError:Signal<string|null>,
+    // True from app boot until `handleOAuthCallback` resolves (or the
+    // already-authed short-circuit completes), iff the page was loaded
+    // from an OAuth-callback URL. Used by the App shell to render the
+    // neutral `<OAuthCallbackLoader/>` instead of `LoginPage` during
+    // the handshake window.
+    oauthInFlight:Signal<boolean>,
     feeds:Signal<Feed[]>,
     feedsLoading:Signal<boolean>,
+    feedsError:Signal<string|null>,
+    // Manual "Refresh Feeds" lifecycle. Held true from click until the
+    // visible result lands (SSE refresh-complete + refreshAfterSync),
+    // POST failure, 401, or 60s safety timeout. Distinct from
+    // feedsLoading so per-feed loadFeeds calls cannot flicker the
+    // refresh button mid-window.
+    /**
+     * Read-only view of the refresh-in-progress signal. Writes flow only
+     * through `trackRefresh(state, name, fn)` (see Phase 2) and the
+     * module-private `acquireRefresh`/`releaseRefresh` helpers backed by
+     * a refcount. Do not assign to `.value` directly.
+     */
+    refreshInProgress:ReadonlySignal<boolean>,
+    feedSyncStatus:Signal<
+        'inactive'|'updates'|'syncing'|'error'|'synced'
+    >,
+    feedSyncError:Signal<string|null>,
+    feedUpdateCounts:Signal<Record<string, number>>,
+    feedUpdateStatus:ReadonlySignal<'synced'|'updates'>,
+    feedsWithUpdates:ReadonlySignal<string[]>,
+    // Display-only view over `feedSyncStatus`. Returns 'syncing' for
+    // the debounced refresh window (see displayed-refresh-in-progress.ts
+    // for the 300 ms show-delay and 500 ms min-visible floor) so
+    // secondary writers (loadFeedStatus, SSE listeners, background polling)
+    // cannot flicker the pill out of yellow during a manual refresh.
+    displayedFeedSyncStatus:ReadonlySignal<
+        'inactive'|'updates'|'syncing'|'error'|'synced'
+    >,
     items:Signal<Item[]>,
     itemsLoading:Signal<boolean>,
     itemsTotal:Signal<number>,
@@ -84,11 +689,74 @@ export type AppState = {
     showStarredOnly:Signal<boolean>,
     pageSize:Signal<number>,
     selectedFeedId:Signal<number|null>,
-    isAuthenticated:Signal<boolean>
+    viewItemsCache:ViewItemsCache,
+    isAuthenticated:Signal<boolean>,
+    cleanup:() => void
 }
 
+function clearFeedUpdateCounts (
+    current:Record<string, number>,
+    feedIds:string[]
+):Record<string, number> {
+    const next = { ...current }
+    for (const feedId of feedIds) {
+        delete next[feedId]
+    }
+    return next
+}
+
+/**
+ * Run the online-recovery sync operation: runSync and
+ * refreshAfterSync wrapped in trackRefresh for observable indicator.
+ * Test-only export for direct invocation in unit tests.
+ */
+async function _onlineRecoverySync (
+    state:AppState,
+):Promise<void> {
+    if (!_isLocalFirstActiveSelectorImpl().value) return
+    const did = state.user.value?.did
+    const db = _getLocalDbImpl(did)
+    if (!db) return
+    await trackRefresh(state, 'online-recovery', async () => {
+        await _runSyncImpl(db)
+        await State.refreshAfterSync(state)
+    }).catch((err) => {
+        // trackRefresh has set feedSyncStatus = 'error'
+        // and released. Defer to existing
+        // auth/error handlers for additional side effects
+        // (sign-out, lapsed-billing, etc.).
+        if (State.handleSyncAuthError(state, err)) {
+            return
+        }
+        State.handleSyncCycleError(err)
+    })
+}
+
+// Test-only export for direct invocation:
+export const _onlineRecoverySyncForTest = _onlineRecoverySync
+
 export function State ():AppState {
+    // Hydrate localStorage-backed settings before any reactive code runs,
+    // so header gates that read syncSubscriptions / storeContent reflect
+    // the user's persisted choices on every route, not just /settings.
+    loadLocalFirstSettings()
+
+    // Seed signals synchronously from the SSR bootstrap payload so the
+    // first paint has the feeds list, items, and counts populated. The
+    // payload is only `peek`ed here — `loadItems()` still consumes it
+    // (and its single-shot semantics are preserved).
+    const seed = peekInitialFeed()
+    const seededFeeds:Feed[] = seed?.feeds ?? []
+    const seededCounts:CountsResponse = seed?.counts ?? {
+        unread: 0, starred: 0, total: 0, perFeed: {}
+    }
+    const seededItems:Item[] = (seed?.items as Item[]|undefined) ?? []
+
     const onRoute = Route()
+
+    // Hoist refreshInProgress signal so we can register it with the
+    // refcount helpers after state construction.
+    const refreshInProgressSignal = signal<boolean>(false)
 
     const state = {
         _setRoute: onRoute.setRoute.bind(onRoute),
@@ -98,23 +766,51 @@ export function State ():AppState {
         user: signal<User|null>(null),
         authLoading: signal(true),
         authError: signal<string|null>(null),
+        oauthInFlight: signal<boolean>(isOAuthCallbackUrl()),
         isAuthenticated: computed(
             () => state.user.value !== null
         ),
-        feeds: signal<Feed[]>([]),
+        feeds: signal<Feed[]>(seededFeeds),
         feedsLoading: signal<boolean>(false),
-        items: signal<Item[]>([]),
+        feedsError: signal<string|null>(null),
+        refreshInProgress: refreshInProgressSignal,
+        feedSyncStatus: signal<
+            'inactive'|'updates'|'syncing'|'error'|'synced'
+        >('inactive'),
+        feedSyncError: signal<string|null>(null),
+        feedUpdateCounts: signal<Record<string, number>>({}),
+        // Compatibility views for existing /updates code. New writers
+        // update feedSyncStatus/feedUpdateCounts as the single source.
+        feedUpdateStatus: computed<'synced'|'updates'>(() => (
+            state.feedSyncStatus.value === 'updates' ?
+                'updates' :
+                'synced'
+        )),
+        feedsWithUpdates: computed<string[]>(() => (
+            Object.keys(state.feedUpdateCounts.value)
+        )),
+        displayedFeedSyncStatus: computed<
+            'inactive'|'updates'|'syncing'|'error'|'synced'
+        >(() => (
+            displayedRefreshInProgress.value ?
+                'syncing' :
+                state.feedSyncStatus.value
+        )),
+        items: signal<Item[]>(seededItems),
         itemsLoading: signal(false),
-        itemsTotal: signal(0),
+        itemsTotal: signal(seededItems.length),
         itemsOffset: signal(0),
-        counts: signal<CountsResponse>(
-            { unread: 0, starred: 0, total: 0 }
-        ),
+        counts: signal<CountsResponse>(seededCounts),
         showUnreadOnly: signal(false),
         showStarredOnly: signal(false),
         pageSize: signal(DEFAULT_PAGE_SIZE),
         selectedFeedId: signal<number|null>(null),
+        viewItemsCache: new Map() as ViewItemsCache,
+        cleanup: () => {},
     }
+
+    // Register the writable signal so refcount helpers can mutate it
+    registerRefreshSignal(state, refreshInProgressSignal)
 
     onRoute((path:string, data) => {
         state.route.value = path.split('?').shift()
@@ -201,69 +897,640 @@ export function State ():AppState {
             })
     })
 
+    effect(() => {
+        setCurrentlyOpenItemId(state.routeItem.value?.id ?? null)
+    })
+
     /**
      * Load data after authentication; run pullSync when
-     * local-first adapter is active.
+     * local-first adapter is active. Billing status is loaded
+     * in parallel so the UI can show free-vs-paid state quickly.
      */
-    effect(() => {
-        if (!state.isAuthenticated.value) return
-        const did = state.user.value?.did
+    let authLoadGeneration = 0
+    let lockRecoveryGeneration = 0
+    let localTabWasBlocked = false
 
+    const startLocalSync = (
+        did:string,
+        isCurrent:() => boolean
+    ) => {
         getAdapter(did).then(() => {
+            if (!isCurrent()) return
             const db = getLocalDb(did)
             if (db) {
                 isLocalFirstActive.value = true
-                pullSync(db).catch(
-                    err => debug('pullSync error:', err)
-                ).then(() => {
-                    pushSync(db).catch(
-                        err => debug('pushSync error:', err)
-                    )
-                    State.loadFeeds(state)
-                    State.loadItems(state)
-                    State.loadCounts(state)
+                runSync(db).catch((err) => {
+                    if (State.handleSyncAuthError(state, err)) {
+                        return
+                    }
+                    State.handleSyncCycleError(err)
+                }).then(() => {
+                    if (!isCurrent()) return
+                    State.refreshAfterSync(state)
                 })
             } else {
                 isLocalFirstActive.value = false
-                State.loadFeeds(state)
-                State.loadItems(state)
-                State.loadCounts(state)
+                State.refreshAfterSync(state)
             }
+        })
+    }
+
+    effect(() => {
+        const user = state.user.value
+        const generation = ++authLoadGeneration
+
+        if (!user) return
+
+        queueMicrotask(() => {
+            if (generation !== authLoadGeneration) return
+            State.loadBillingStatus()
+
+            startLocalSync(
+                user.did,
+                () => generation === authLoadGeneration
+            )
         })
     })
 
-    window.addEventListener('online', () => {
+    effect(() => {
+        const lockRevision = localTabLockRevision.value
+        const user = state.user.value
+        const tabState = getTabCoordinationState()
+
+        if (lockRevision === 0 && tabState === 'idle') return
+        if (tabState === 'blocked') {
+            localTabWasBlocked = true
+            return
+        }
+        if (!user || !localTabWasBlocked || tabState !== 'waiting') return
+
+        localTabWasBlocked = false
+        const generation = ++lockRecoveryGeneration
+        queueMicrotask(() => {
+            if (generation !== lockRecoveryGeneration) return
+            startLocalSync(
+                user.did,
+                () => generation === lockRecoveryGeneration
+            )
+        })
+    })
+
+    const handleOnline = () => {
         updateOnlineStatus()
-        const did = state.user.value?.did
-        const db = getLocalDb(did)
-        if (db) {
-            pullSync(db).catch(
-                err => debug('pullSync online error:', err)
-            ).then(() => {
-                pushSync(db).catch(
-                    err => debug('pushSync online error:', err)
-                )
+        // Reconcile the indicator before kicking off the local-first
+        // sync cycle. The pill never reports a stale "up to date" after
+        // a transient outage, even on online-only accounts where the
+        // sync cycle below short-circuits (FR-007).
+        if (state.user.value) {
+            State.loadFeedStatus(state).catch((err) => {
+                debug('online loadFeedStatus error:', err)
             })
         }
-    })
+        _onlineRecoverySync(state).catch(() => {})
+    }
 
-    window.addEventListener('offline', () => {
+    const handleOffline = () => {
         const did = state.user.value?.did
         const db = getLocalDb(did)
-        const pending = db ? getOutboxCount(db) : 0
-        setSyncOffline(pending)
+        if (!db) {
+            setSyncOffline(0)
+            return
+        }
+        getOutboxCount(db)
+            .then((pending) => setSyncOffline(pending))
+            .catch((err) => {
+                debug('offline pending count error:', err)
+                setSyncOffline(0)
+            })
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    // Recompute the local-cache-health snapshot when relevant inputs
+    // change: paid status, store-content / default cache mode toggles,
+    // or per-feed policy edits. Defer the recompute to idle time so the
+    // signal-write task (and any paint waiting on it) is not blocked by
+    // the SQLite query and main-thread iteration in computeCacheStatus.
+    // The apply-time recomputeToken guard inside recomputeCacheStatus
+    // still discards stale results.
+    let pendingCacheStatusHandle:IdleHandle|null = null
+    effect(() => {
+        // Read each signal so the effect subscribes to changes.
+        const _deps = [
+            state.user.value,
+            state.selectedFeedId.value,
+            billingStatus.value,
+            isLocalFirstActive.value,
+            storeContent.value,
+            defaultCacheMode.value,
+            feedPolicies.value
+        ]
+        if (_deps.length === 0) return
+        if (pendingCacheStatusHandle !== null) {
+            cancelIdle(pendingCacheStatusHandle)
+        }
+        pendingCacheStatusHandle = scheduleIdle(() => {
+            pendingCacheStatusHandle = null
+            recomputeCacheStatus(state).catch(() => {})
+        }, { timeout: 200 })
     })
 
-    State.checkAuth(state)
+    state.cleanup = () => {
+        window.removeEventListener('online', handleOnline)
+        window.removeEventListener('offline', handleOffline)
+        State.closeEventStream()
+    }
+
+    ;(async () => {
+        await State.checkAuth(state)
+        if (!state.oauthInFlight.value) return
+        if (state.isAuthenticated.value) {
+            batch(() => {
+                state.oauthInFlight.value = false
+                state._setRoute('/')
+            })
+            return
+        }
+        State.handleOAuthCallback(state)
+    })()
+
+    initDisplayedRefresh(state.refreshInProgress)
 
     return state
 }
 
 /**
+ * Synchronously apply a paint-cache snapshot to the state signals.
+ * Returns true if hydration happened, false otherwise.
+ *
+ * Cache wins over the SSR seed: the cache is the user's last-rendered
+ * view (selectedFeedId, scroll-relevant ordering); the immediate
+ * `loadInitialView()` call after auth will overwrite authoritatively
+ * within ~100ms.
+ */
+export function hydratePaintCache (
+    state:AppState,
+    did:string|null
+):boolean {
+    if (did === null) return false
+    const snap:PaintCacheV1|null = readPaintCache(did)
+    if (snap === null) return false
+    batch(() => {
+        state.feeds.value = snap.feeds
+        state.items.value = snap.items
+        state.counts.value = snap.counts
+        state.selectedFeedId.value = snap.selectedFeedId
+        paintCacheHydratedOnBootstrap.value = true
+    })
+    return true
+}
+
+let _pendingPaintCacheWrite:IdleHandle|null = null
+
+const PAINT_CACHE_WRITE_DEBOUNCE_MS = 1000
+
+/**
+ * Schedule a debounced paint-cache write. Coalesces multiple loads
+ * within the same idle window into a single write. The write only
+ * happens when a logged-in DID is available — otherwise it is a
+ * no-op (there is no per-tab cache for unauthenticated users).
+ */
+export function schedulePaintCacheWrite (state:AppState):void {
+    const did = state.user.value?.did
+    if (!did) return
+    cancelIdle(_pendingPaintCacheWrite)
+    _pendingPaintCacheWrite = scheduleIdle(() => {
+        _pendingPaintCacheWrite = null
+        const snap = snapshotFromState(
+            state.feeds.peek(),
+            state.items.peek(),
+            state.counts.peek(),
+            state.selectedFeedId.peek()
+        )
+        writePaintCache(did, snap)
+    }, { timeout: PAINT_CACHE_WRITE_DEBOUNCE_MS })
+}
+
+/**
+ * Test-only helper to cancel the pending paint-cache write idle
+ * callback. Call this in test teardown (finally block) to prevent
+ * the idle callback from firing after the test environment is torn
+ * down. This is needed because schedulePaintCacheWrite queues a
+ * debounced idle callback that may fire after tests complete.
+ */
+export function _resetPaintCacheWriteHandleForTest ():void {
+    cancelIdle(_pendingPaintCacheWrite)
+    _pendingPaintCacheWrite = null
+}
+
+export function _resetDisplayedRefreshForTest ():void {
+    resetDisplayedRefresh()
+}
+
+State.handleSyncAuthError = function (
+    state:AppState,
+    err:unknown
+):boolean {
+    if (
+        !(err instanceof PullSyncAuthError) &&
+        !(err instanceof PushSyncAuthError)
+    ) {
+        return false
+    }
+
+    batch(() => {
+        state.user.value = null
+        state.authError.value = SYNC_AUTH_EXPIRED
+    })
+    state._setRoute('/login')
+    return true
+}
+
+/**
+ * Defense in depth (FR-006): schedule a convergence safety net for any
+ * feeds still in resolving state. Called after the initial feed load so
+ * the freshly-loaded `state.feeds.value` is the iteration source. If a
+ * page reload happens while a feed is resolving, the client needs to
+ * schedule its own ~35s convergence timer to ensure the UI eventually
+ * reaches terminal state.
+ */
+function scheduleConvergenceForResolvingFeeds (state:AppState):void {
+    if (!state.feeds?.value) return
+    for (const feed of state.feeds.value) {
+        if (feed.last_fetched === null && !feed.last_error) {
+            scheduleResolveConvergence(state, feed.url)
+        }
+    }
+}
+
+/**
+ * Handles errors from sync cycles (used in both the local-first sync
+ * startup and the online recovery effect). If the error is a billing
+ * error (SyncBillingError or PushSyncBillingError), invokes
+ * loadBillingStatus to re-check entitlement and trigger the downgrade
+ * flow if the subscription has lapsed. Other errors are logged.
+ * Auth errors should be handled before this is called in the calling code.
+ */
+State.handleSyncCycleError = function (err:unknown):void {
+    if (
+        err instanceof SyncBillingError ||
+        err instanceof PushSyncBillingError
+    ) {
+        State.loadBillingStatus()
+        return
+    }
+    debug('sync cycle error:', err)
+}
+
+/**
+ * First post-auth load. Pulls feeds, indicator, items, counts, and
+ * the route item if applicable.
+ */
+State.loadInitialView = async function (
+    state:AppState
+):Promise<void> {
+    state.viewItemsCache.clear()
+    const route = state.route.value
+
+    // Load feeds and schedule convergence in parallel with other loads.
+    // Chain scheduling on the feeds promise to avoid serialization.
+    const feedsLoaded = State.loadFeeds(state).then(() => {
+        // Schedule convergence for any feeds that are still resolving after
+        // the initial load (FR-006, AC1.3: reload preserves terminal state).
+        scheduleConvergenceForResolvingFeeds(state)
+    })
+
+    await Promise.all([
+        feedsLoaded,
+        State.loadFeedStatus(state),
+        State.loadItems(state),
+        State.loadCounts(state)
+    ])
+
+    if (!isItemRoute(route)) return
+
+    const item = await State.loadItemByRoute(state, route)
+    if (state.route.value !== route) return
+
+    batch(() => {
+        state.routeItem.value = item
+        state.routeItemLoading.value = false
+    })
+}
+
+/**
+ * Reconcile state after a feed-refresh round-trip. Pulls items,
+ * per-feed unread counts, and the indicator -- but NOT the feeds
+ * list. The list of subscribed feeds only changes via add/delete
+ * (which already triggers loadFeeds inline) or via per-feed
+ * feed-updated SSE (which calls loadFeeds individually).
+ */
+State.reconcileAfterRefresh = async function (
+    state:AppState
+):Promise<void> {
+    state.viewItemsCache.clear()
+    const route = state.route.value
+
+    await Promise.all([
+        State.loadFeedStatus(state),
+        State.loadItems(state),
+        State.loadCounts(state)
+    ])
+
+    if (!isItemRoute(route)) return
+
+    const item = await State.loadItemByRoute(state, route)
+    if (state.route.value !== route) return
+
+    batch(() => {
+        state.routeItem.value = item
+        state.routeItemLoading.value = false
+    })
+}
+
+// Back-compat shim: external callers (online/offline handlers and the
+// bootstrap path) continue to call refreshAfterSync. Online/offline handlers
+// and the bootstrap path legitimately want the feeds list re-fetched.
+State.refreshAfterSync = State.loadInitialView
+
+export function currentFilterKey (state:AppState):FilterKey|null {
+    if (state.selectedFeedId.value !== null) return null
+    return state.showStarredOnly.value ? 'starred' : 'all'
+}
+
+// The items array is replaced wholesale, but Preact's keyed
+// reconciliation reuses existing row nodes — required for FR-005.
+export function applyItemsResult (
+    state:AppState,
+    requestKey:FilterKey|null,
+    result:ItemsResponse|null
+):void {
+    if (currentFilterKey(state) !== requestKey) return
+    if (result === null) {
+        state.itemsLoading.value = false
+        return
+    }
+    batch(() => {
+        state.items.value = result.items as Item[]
+        state.itemsTotal.value = result.total
+        state.itemsLoading.value = false
+    })
+    schedulePaintCacheWrite(state)
+    if (requestKey !== null) {
+        state.viewItemsCache.set(requestKey, {
+            items: result.items as Item[],
+            total: result.total,
+            limit: result.limit,
+            offset: result.offset
+        })
+    }
+}
+
+function buildItemOptions (state:AppState):{
+    feedId?:number;
+    isRead?:boolean;
+    isStarred?:boolean;
+    limit?:number;
+    offset?:number;
+} {
+    const options:{
+        feedId?:number;
+        isRead?:boolean;
+        isStarred?:boolean;
+        limit?:number;
+        offset?:number;
+    } = {
+        limit: state.pageSize.value,
+        offset: state.itemsOffset.value
+    }
+
+    if (state.selectedFeedId.value !== null) {
+        options.feedId = state.selectedFeedId.value
+    }
+    if (state.showUnreadOnly.value) {
+        options.isRead = false
+    }
+    if (state.showStarredOnly.value) {
+        options.isStarred = true
+    }
+
+    return options
+}
+
+/**
+ * Subscribe to server-sent events from the user's Durable Object.
+ * The DO broadcasts `feed-updated` after each feed fetch completes
+ * (initial add, manual refresh, alarm-driven refresh). On those
+ * events we re-read state from the server.
+ */
+State.openEventStream = function (state:AppState):void {
+    if (eventSource) return
+
+    const source = new EventSource('/api/events', {
+        withCredentials: true
+    })
+    eventSource = source
+
+    const scheduleRefresh = () => {
+        if (pendingSseRefresh !== null) return
+        pendingSseRefresh = setTimeout(() => {
+            pendingSseRefresh = null
+            trackRefresh(state, 'sse-feed-updated', async () => {
+                await State.refreshAfterSync(state)
+            }).catch((err) => {
+                // trackRefresh already set feedSyncStatus = 'error'
+                // and released. Log for parity with prior implicit
+                // unhandled-rejection behavior.
+                debug(
+                    'sse-feed-updated refreshAfterSync failed',
+                    err instanceof Error ? err.message : err,
+                )
+            })
+        }, SSE_REFRESH_DEBOUNCE_MS)
+    }
+
+    source.addEventListener('feed-updated', () => {
+        debug('SSE feed-updated')
+        scheduleRefresh()
+    })
+
+    source.addEventListener('refresh-complete', () => {
+        debug('SSE refresh-complete')
+        clearRefreshFeedsSafetyTimeout()
+        // Await the authoritative reconcile so the items list, pill,
+        // and button transition land inside the same paint when we
+        // batch-clear refreshInProgress below (FR-005, SC-002).
+        // reconcileAfterRefresh intentionally does NOT call loadFeeds:
+        // the subscribed-feeds list is only mutated via add/delete or
+        // per-feed SSE, never as a side effect of "Refresh Feeds".
+        State.reconcileAfterRefresh(state).catch((err) => {
+            debug('refresh-complete reconcile error:', err)
+        }).finally(() => {
+            batch(() => {
+                releaseRefresh(state)
+                state.feedsLoading.value = false
+            })
+        })
+    })
+
+    // The server sends canonical per-feed pending counts; the
+    // client overwrites (does not increment) so it is a passive
+    // renderer of state. A `0` value means the feed is caught up
+    // and its entry is removed from the map. Entries for feeds the
+    // client does not know about (e.g. unsubscribed in another
+    // tab) are ignored. Legacy `feedIds` payloads from older
+    // server bundles fall back to a status reconcile for one
+    // deploy window (see T025).
+    source.addEventListener('feed-updates-available', (ev) => {
+        debug('SSE feed-updates-available', ev.data)
+        try {
+            const parsed = JSON.parse(ev.data) as {
+                feedUpdateCounts?:Record<string, number>
+                feedIds?:string[]
+            }
+            if (
+                parsed.feedUpdateCounts &&
+                typeof parsed.feedUpdateCounts === 'object'
+            ) {
+                const known = new Set(
+                    state.feeds.value.map(f => String(f.id))
+                )
+                const filteredEntries = Object.entries(
+                    parsed.feedUpdateCounts
+                ).filter(([feedId]) => known.has(feedId))
+                if (filteredEntries.length === 0) return
+                batch(() => {
+                    const next = { ...state.feedUpdateCounts.value }
+                    for (const [feedId, count] of filteredEntries) {
+                        if (count === 0) {
+                            delete next[feedId]
+                        } else {
+                            next[feedId] = count
+                        }
+                    }
+                    state.feedUpdateCounts.value = next
+                    const total = Object.values(next).reduce(
+                        (sum, n) => sum + n,
+                        0
+                    )
+                    state.feedSyncStatus.value = total > 0 ?
+                        'updates' :
+                        'synced'
+                })
+                // Drain any add-feed acquires waiting for these feed ids. Note
+                // that the SSE event signals server-side resolve completion, so
+                // items are ready for the next refreshAfterSync to surface.
+                drainAddFeedAcquires(
+                    filteredEntries.map(([feedId]) => Number(feedId)),
+                )
+                return
+            }
+            // Legacy `feedIds` shape: defer to the authoritative
+            // status endpoint to recover the canonical counts.
+            if (Array.isArray(parsed.feedIds)) {
+                State.loadFeedStatus(state).catch((err) => {
+                    debug('legacy feedIds reconcile error:', err)
+                })
+            }
+        } catch (err) {
+            debug('feed-updates-available parse error:', err)
+        }
+    })
+
+    source.addEventListener('feed-updates-cleared', (ev) => {
+        debug('SSE feed-updates-cleared', ev.data)
+        try {
+            const { feedIds } = JSON.parse(ev.data) as {
+                feedIds:string[]
+            }
+            batch(() => {
+                const counts = clearFeedUpdateCounts(
+                    state.feedUpdateCounts.value,
+                    feedIds
+                )
+                state.feedUpdateCounts.value = counts
+                if (Object.keys(counts).length === 0) {
+                    state.feedSyncStatus.value = 'synced'
+                }
+            })
+        } catch (err) {
+            debug('feed-updates-cleared parse error:', err)
+        }
+    })
+
+    // EventSource auto-reconnects after errors; on each successful
+    // reopen *after the first one* we refetch authoritative status
+    // so missed `feed-updates-available` events during the outage
+    // cannot leave the indicator stale (FR-007). The first `open`
+    // is skipped because the post-auth boot already loaded status.
+    let hasOpenedBefore = false
+    let needsReconcile = false
+    source.addEventListener('open', () => {
+        debug('SSE open')
+        if (hasOpenedBefore) {
+            // If a manual refresh was in flight when SSE dropped, the
+            // server's `refresh-complete` event may have been lost.
+            // Run the full authoritative reconcile and clear the busy
+            // state so the button cannot get stuck waiting for an
+            // event that will never arrive.
+            if (state.refreshInProgress.value) {
+                clearRefreshFeedsSafetyTimeout()
+                needsReconcile = false
+                State.reconcileAfterRefresh(state).catch((err) => {
+                    debug('reconnect reconcileAfterRefresh error:', err)
+                }).finally(() => {
+                    batch(() => {
+                        releaseRefresh(state)
+                        state.feedsLoading.value = false
+                    })
+                })
+            } else if (needsReconcile) {
+                needsReconcile = false
+                State.loadFeedStatus(state).catch((err) => {
+                    debug('reconnect loadFeedStatus error:', err)
+                })
+            }
+        }
+        hasOpenedBefore = true
+    })
+
+    source.addEventListener('error', (ev) => {
+        debug('SSE error (auto-reconnect)', ev)
+        needsReconcile = true
+    })
+}
+
+State.closeEventStream = function ():void {
+    if (pendingSseRefresh !== null) {
+        clearTimeout(pendingSseRefresh)
+        pendingSseRefresh = null
+    }
+    if (!eventSource) return
+    eventSource.close()
+    eventSource = null
+}
+
+/**
  * API client
  */
+function csrfToken ():string|undefined {
+    return document.cookie.split(';')
+        .map(part => part.trim())
+        .find(part => part.startsWith('csrf_token='))
+        ?.slice('csrf_token='.length)
+}
+
 const api = ky.create({
     prefixUrl: '/api',
+    hooks: {
+        beforeRequest: [
+            request => {
+                const token = csrfToken()
+                if (token) request.headers.set('X-CSRF-Token', token)
+            }
+        ]
+    }
 })
 
 /**
@@ -273,31 +1540,34 @@ const api = ky.create({
 State.handleOAuthCallback = async function (
     state:AppState
 ):Promise<void> {
-    const params = new URLSearchParams(
-        window.location.search
-    )
-
-    const code = params.get('code')
-    const nonce = params.get('state')
-    const iss = params.get('iss')
-    const error = params.get('error')
-    const errorDescription = params.get('error_description')
-
-    if (error) {
-        state.authError.value = errorDescription || error
-        state._setRoute('/login')
-        return
-    }
-
-    if (!code || !nonce || !iss) {
-        state.authError.value = 'Missing OAuth parameters'
-        state._setRoute('/login')
-        return
-    }
-
-    state.authLoading.value = true
+    batch(() => {
+        state.authError.value = null
+        state.authLoading.value = true
+    })
 
     try {
+        const params = new URLSearchParams(
+            window.location.search
+        )
+
+        const code = params.get('code')
+        const nonce = params.get('state')
+        const iss = params.get('iss')
+        const error = params.get('error')
+        const errorDescription = params.get('error_description')
+
+        if (error) {
+            state.authError.value = errorDescription || error
+            state._setRoute('/login')
+            return
+        }
+
+        if (!code || !nonce || !iss) {
+            state.authError.value = 'Missing OAuth parameters'
+            state._setRoute('/login')
+            return
+        }
+
         const res = await api.post('auth/callback', {
             json: { code, state: nonce, iss }
         })
@@ -324,27 +1594,39 @@ State.handleOAuthCallback = async function (
             'Authentication failed'
         state._setRoute('/login')
     } finally {
-        state.authLoading.value = false
+        batch(() => {
+            state.authLoading.value = false
+            state.oauthInFlight.value = false
+        })
     }
 }
 
 State.showAll = function (state:AppState) {
-    batch(() => {
-        state.showStarredOnly.value = false
-        state.itemsOffset.value = 0
-    })
-
+    applyViewSwitch(state, 'all')
     State.loadItems(state)
 }
 
 State.showStarred = function (state:AppState) {
-    batch(() => {
-        state.showStarredOnly.value = true
-        state.itemsOffset.value = 0
-        State.loadItems(state)
-    })
-
+    applyViewSwitch(state, 'starred')
     State.loadItems(state)
+}
+
+function applyViewSwitch (
+    state:AppState,
+    destKey:FilterKey
+):void {
+    const cached = state.viewItemsCache.get(destKey)
+    batch(() => {
+        state.showStarredOnly.value = (destKey === 'starred')
+        state.itemsOffset.value = cached?.offset ?? 0
+        if (cached) {
+            state.items.value = cached.items
+            state.itemsTotal.value = cached.total
+            state.itemsLoading.value = false
+        } else if (state.items.value.length === 0) {
+            state.itemsLoading.value = true
+        }
+    })
 }
 
 /**
@@ -363,28 +1645,29 @@ State.checkAuth = async function (
             const data = await response.json<{
                 authenticated:boolean;
                 did:string;
-                handle:string
+                handle:string;
+                avatar?:string
             }>()
             if (data.authenticated) {
-                const user = {
+                const user:User = {
                     did: data.did,
-                    handle: data.handle
+                    handle: data.handle,
+                    avatar: data.avatar
                 }
                 state.user.value = user
-                localStorage.setItem(
-                    USER_STORAGE_KEY,
-                    JSON.stringify(user)
-                )
+                setStoredDid(data.did)
+                State.openEventStream(state)
             } else {
                 state.user.value = null
-                localStorage.removeItem(USER_STORAGE_KEY)
+                State.closeEventStream()
             }
         } else {
             state.user.value = null
-            localStorage.removeItem(USER_STORAGE_KEY)
+            State.closeEventStream()
         }
     } catch {
         state.user.value = null
+        State.closeEventStream()
     } finally {
         state.authLoading.value = false
     }
@@ -452,27 +1735,477 @@ State.devLogin = async function (
 }
 
 /**
+ * Load current billing/entitlement status from the server.
+ * Called after auth lands and after returning from checkout.
+ */
+State.loadBillingStatus = async function (
+    opts?:{ shouldApply?:() => boolean }
+):Promise<BillingStatus|null> {
+    try {
+        const res = await api.get('billing/status', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            if (opts?.shouldApply && !opts.shouldApply()) return null
+            setBillingError(`status_${res.status}`)
+            return null
+        }
+        const data = await res.json<BillingStatus>()
+        if (opts?.shouldApply && !opts.shouldApply()) return null
+        batch(() => {
+            setBillingStatus(data)
+            setBillingError(null)
+        })
+        return data
+    } catch (err) {
+        debug('loadBillingStatus error:', err)
+        if (opts?.shouldApply && !opts.shouldApply()) return null
+        setBillingError(err instanceof Error ?
+            err.message :
+            'Failed to load billing status')
+        return null
+    }
+}
+
+State.loadPaymentMethods = async function (
+    opts?:{ shouldApply?:() => boolean }
+):Promise<void> {
+    setPaymentMethodsLoading(true)
+    try {
+        const res = await api.get('billing/payment-methods', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{ error?:string }>().catch(
+                () => ({} as { error?:string })
+            )
+            const code = body.error || `status_${res.status}`
+            if (opts?.shouldApply && !opts.shouldApply()) return
+            batch(() => {
+                setPaymentMethodsError(code)
+                setPaymentMethodsLoading(false)
+            })
+            return
+        }
+        const data = await res.json<{
+            methods:PaymentMethodSummary[];
+            defaultId:string|null;
+        }>()
+        if (opts?.shouldApply && !opts.shouldApply()) return
+        batch(() => {
+            setPaymentMethodsState(data.methods, data.defaultId)
+            setPaymentMethodsError(null)
+            setPaymentMethodsLoading(false)
+        })
+    } catch (err) {
+        debug('loadPaymentMethods error:', err)
+        if (opts?.shouldApply && !opts.shouldApply()) return
+        batch(() => {
+            setPaymentMethodsError(err instanceof Error ?
+                err.message :
+                'failed_to_load')
+            setPaymentMethodsLoading(false)
+        })
+    }
+}
+
+State.createSetupIntent = async function (
+):Promise<string> {
+    const res = await api.post(
+        'billing/payment-methods/setup-intent',
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{ error?:string }>().catch(
+            () => ({} as { error?:string })
+        )
+        throw new Error(
+            body.error || `setup_intent_${res.status}`
+        )
+    }
+    const data = await res.json<{ clientSecret:string }>()
+    return data.clientSecret
+}
+
+State.removePaymentMethod = async function (
+    id:string
+):Promise<void> {
+    const res = await api.delete(
+        `billing/payment-methods/${encodeURIComponent(id)}`,
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }>().catch(() => ({} as {
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }))
+        if (res.status === 404) {
+            // Refresh canonical truth so the now-gone row disappears.
+            await State.loadPaymentMethods()
+            throw new Error(body.error || 'payment_method_not_found')
+        }
+        throw new Error(
+            body.error || `remove_${res.status}`
+        )
+    }
+    const data = await res.json<{
+        methods:PaymentMethodSummary[];
+        defaultId:string|null;
+    }>()
+    setPaymentMethodsState(data.methods, data.defaultId)
+}
+
+State.setDefaultPaymentMethod = async function (
+    id:string
+):Promise<void> {
+    const res = await api.post(
+        `billing/payment-methods/${encodeURIComponent(id)}/default`,
+        { throwHttpErrors: false }
+    )
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }>().catch(() => ({} as {
+            error?:string;
+            methods?:PaymentMethodSummary[];
+            defaultId?:string|null;
+        }))
+        if (res.status === 404) {
+            await State.loadPaymentMethods()
+            throw new Error(body.error || 'payment_method_not_found')
+        }
+        if (res.status === 502 &&
+            Array.isArray(body.methods) &&
+            body.defaultId !== undefined) {
+            // Partial-failure: server included canonical list.
+            setPaymentMethodsState(
+                body.methods,
+                body.defaultId ?? null
+            )
+            throw new Error(body.error || 'partial_failure')
+        }
+        throw new Error(
+            body.error || `set_default_${res.status}`
+        )
+    }
+    const data = await res.json<{
+        methods:PaymentMethodSummary[];
+        defaultId:string|null;
+    }>()
+    setPaymentMethodsState(data.methods, data.defaultId)
+}
+
+/**
+ * Start checkout. In live mode this navigates the browser to
+ * the Autumn-hosted checkout page; in dev mode the server
+ * skips checkout and marks the user entitled in one round-trip.
+ *
+ * `email` is collected on the /signup form so the server can
+ * notify the user about success or failure even when Stripe
+ * never sees a confirmed payment.
+ */
+State.startCheckout = async function (
+    state:AppState,
+    planId:string,
+    email?:string
+):Promise<void> {
+    batch(() => {
+        setCheckoutInProgress(true)
+        setBillingError(null)
+    })
+
+    if (email) saveCheckoutEmail(email)
+
+    try {
+        const res = await api.post('billing/checkout', {
+            json: email ? { planId, email } : { planId },
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            throw new Error(
+                body.error || `checkout_${res.status}`
+            )
+        }
+        const data = await res.json<{
+            paymentUrl:string|null
+            status:string
+            planId:string
+        }>()
+
+        if (data.paymentUrl) {
+            window.location.assign(data.paymentUrl)
+            return
+        }
+
+        // Dev-mode: server already entitled the user.
+        setCheckoutInProgress(false)
+        await State.loadBillingStatus()
+        state._setRoute('/')
+    } catch (err) {
+        batch(() => {
+            setCheckoutInProgress(false)
+            setBillingError(err instanceof Error ?
+                err.message :
+                'Checkout failed')
+        })
+    }
+}
+
+/**
+ * Finalize checkout after returning from Autumn. Retries on 402
+ * because Autumn's view of the subscription can lag the redirect
+ * by a couple of seconds.
+ */
+State.finalizeCheckout = async function (
+    state:AppState,
+    planId?:string
+):Promise<{ ok:boolean; error?:string }> {
+    const maxAttempts = 6
+    let lastError = 'payment_incomplete'
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        if (attempt > 0) {
+            const delayMs = Math.min(
+                500 * 2 ** (attempt - 1),
+                4000
+            )
+            await new Promise(resolve => setTimeout(resolve, delayMs))
+        }
+
+        try {
+            const res = await api.post(
+                'billing/checkout/return',
+                {
+                    json: planId ? { planId } : {},
+                    throwHttpErrors: false
+                }
+            )
+
+            if (res.ok) {
+                clearCheckoutEmail()
+                await State.loadBillingStatus()
+                return { ok: true }
+            }
+
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            lastError = body.error || `status_${res.status}`
+
+            if (res.status !== 402) {
+                return { ok: false, error: lastError }
+            }
+            // 402: keep retrying
+        } catch (err) {
+            lastError = err instanceof Error ?
+                err.message :
+                'Network error'
+        }
+    }
+
+    return { ok: false, error: lastError }
+}
+
+/**
+ * Notify the server that the user's checkout attempt did not
+ * confirm an active subscription. The server uses this to send
+ * a "payment didn't go through" email idempotently.
+ */
+State.signalCheckoutFailed = async function (
+    planId?:string
+):Promise<void> {
+    try {
+        const stashed = readCheckoutEmail()
+        const json:Record<string, string> = {}
+        if (planId) json.planId = planId
+        if (stashed) json.email = stashed
+
+        await api.post('billing/checkout/failed', {
+            json,
+            throwHttpErrors: false
+        })
+    } catch (err) {
+        debug('signalCheckoutFailed error:', err)
+    }
+}
+
+/**
+ * Schedule deletion of the current user's account. Resolves with
+ * the scheduled deletion timestamp (in ms). Updates billingStatus
+ * so the settings UI reflects the pending state.
+ */
+State.scheduleAccountDeletion = async function (
+):Promise<{ scheduledFor:number }> {
+    const res = await api.post('account/delete', {
+        throwHttpErrors: false
+    })
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string
+        }>().catch(() => ({} as { error?:string }))
+        throw new Error(
+            body.error || `account_delete_${res.status}`
+        )
+    }
+    const data = await res.json<{ scheduledFor:number }>()
+
+    // Refresh billing status so settings reflects the pending
+    // deletion without an extra round-trip.
+    await State.loadBillingStatus()
+    return data
+}
+
+/**
+ * Cancel a pending account deletion.
+ */
+State.cancelAccountDeletion = async function (
+):Promise<void> {
+    const res = await api.delete('account/delete', {
+        throwHttpErrors: false
+    })
+    if (!res.ok) {
+        const body = await res.json<{
+            error?:string
+        }>().catch(() => ({} as { error?:string }))
+        throw new Error(
+            body.error || `cancel_delete_${res.status}`
+        )
+    }
+    await State.loadBillingStatus()
+}
+
+/**
+ * Open the Autumn-hosted customer portal in the same tab.
+ */
+State.openCustomerPortal = async function (
+):Promise<void> {
+    try {
+        const res = await api.post('billing/portal', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            throw new Error(
+                body.error || `portal_${res.status}`
+            )
+        }
+        const data = await res.json<{ url:string }>()
+        window.location.assign(data.url)
+    } catch (err) {
+        setBillingError(err instanceof Error ?
+            err.message :
+            'Failed to open portal')
+    }
+}
+
+/**
+ * Schedule cancellation of the user's subscription. The server
+ * stores the resulting canceledAt + currentPeriodEnd on the
+ * cached billing entry; this function reloads billing so the
+ * panel re-renders.
+ */
+State.cancelSubscription = async function ():Promise<void> {
+    setBillingError(null)
+    try {
+        const res = await api.post('billing/cancel', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            throw new Error(
+                body.error || `cancel_${res.status}`
+            )
+        }
+        await State.loadBillingStatus()
+    } catch (err) {
+        setBillingError(err instanceof Error ?
+            err.message :
+            'Failed to cancel subscription')
+        throw err
+    }
+}
+
+/**
+ * Reverse a scheduled cancellation.
+ */
+State.resumeSubscription = async function ():Promise<void> {
+    setBillingError(null)
+    try {
+        const res = await api.post('billing/resume', {
+            throwHttpErrors: false
+        })
+        if (!res.ok) {
+            const body = await res.json<{
+                error?:string
+            }>().catch(() => ({} as { error?:string }))
+            throw new Error(
+                body.error || `resume_${res.status}`
+            )
+        }
+        await State.loadBillingStatus()
+    } catch (err) {
+        setBillingError(err instanceof Error ?
+            err.message :
+            'Failed to resume subscription')
+        throw err
+    }
+}
+
+/**
  * Logout
  */
 State.logout = async function (
     state:AppState
 ):Promise<void> {
+    const did = state.user.value?.did
+    let serverLogoutOk = false
     try {
-        await api.post('auth/logout')
-    } catch {
-        // Ignore logout errors
+        const res = await api.post('auth/logout', {
+            throwHttpErrors: false
+        })
+        serverLogoutOk = res.ok
+        if (!res.ok) {
+            debug('logout request failed:', res.status)
+        }
+    } catch (err) {
+        debug('logout request error:', err)
     }
-    localStorage.removeItem(USER_STORAGE_KEY)
     batch(() => {
         state.user.value = null
         state.feeds.value = []
         state.items.value = []
+        state.authError.value = serverLogoutOk ?
+            null :
+            'Logout may not have completed. Please clear cookies' +
+                ' if you continue to see your account.'
+        resetBilling()
+        resetPaymentMethods()
     })
+    if (did) clearPaintCache(did)
+    clearStoredDid()
+    State.closeEventStream()
     state._setRoute('/login')
 }
 
 /**
- * Load feeds from remote DB
+ * Load feeds from remote DB. Indicator state
+ * (`feedUpdateCounts`/`feedSyncStatus`) is owned by
+ * `loadFeedStatus()`; this function only loads the feeds list so
+ * `localAdapter` and `remoteAdapter` consumers stay in sync.
  */
 State.loadFeeds = async function (
     state:AppState
@@ -483,14 +2216,75 @@ State.loadFeeds = async function (
         const adapter = await getAdapter(
             state.user.value?.did
         )
-        const feeds = await adapter.getFeeds()
+        const data = await adapter.getFeeds()
         batch(() => {
-            state.feeds.value = feeds
+            state.feeds.value = data.feeds
+            state.feedsError.value = null
             state.feedsLoading.value = false
         })
+        schedulePaintCacheWrite(state)
     } catch (err) {
         debug('Error loading feeds:', err)
-        state.feedsLoading.value = false
+        batch(() => {
+            state.feedsError.value = err instanceof Error ?
+                err.message :
+                'Failed to load feeds'
+            state.feedsLoading.value = false
+        })
+    }
+}
+
+/**
+ * Authoritative server-vs-client divergence call. Drives the
+ * header "n updates / up to date" indicator. Single source of
+ * truth for `feedUpdateCounts` and `feedSyncStatus`; both
+ * `localAdapter` and `remoteAdapter` clients route through
+ * here so the indicator is identical across modes.
+ *
+ * Failure path MUST set `feedSyncStatus = 'error'` (never lets
+ * the pill silently default to green; FR-012 / SC-006). 401 is
+ * treated as a session expiry and reuses the existing
+ * `handleSyncAuthError` flow.
+ */
+State.loadFeedStatus = async function (
+    state:AppState
+):Promise<void> {
+    try {
+        const res = await api.get('feed-status')
+        const data = await res.json<FeedStatusResponse>()
+        const counts = data.feedUpdateCounts ?? {}
+        const total = typeof data.totalPending === 'number' ?
+            data.totalPending :
+            Object.values(counts).reduce(
+                (sum, count) => sum + count,
+                0
+            )
+        batch(() => {
+            state.feedUpdateCounts.value = counts
+            state.feedSyncStatus.value = total > 0 ?
+                'updates' :
+                'synced'
+            state.feedSyncError.value = null
+        })
+    } catch (err) {
+        if (err instanceof HTTPError && err.response.status === 401) {
+            batch(() => {
+                state.user.value = null
+                state.authError.value = SYNC_AUTH_EXPIRED
+                state.feedSyncStatus.value = 'error'
+                state.feedSyncError.value = SYNC_AUTH_EXPIRED
+            })
+            state._setRoute('/login')
+            return
+        }
+        const message = err instanceof Error ?
+            err.message :
+            'Failed to load feed status'
+        batch(() => {
+            state.feedSyncStatus.value = 'error'
+            state.feedSyncError.value = message
+        })
+        debug('loadFeedStatus error:', err)
     }
 }
 
@@ -501,27 +2295,49 @@ State.addFeed = async function (
     state:AppState,
     url:string
 ):Promise<void> {
-    try {
-        const adapter = await getAdapter(
-            state.user.value?.did
-        )
-        await adapter.addFeed(url)
-        await State.loadFeeds(state)
-        await State.loadItems(state)
-        await State.loadCounts(state)
-    } catch (err) {
-        if (
-            err instanceof Error &&
-            'response' in err &&
-            (err as { response:Response }).response
-                .status === 409
-        ) {
-            debug('Feed already exists, reloading...')
-            await State.loadFeeds(state)
-            return
+    const adapter = await _getAdapterImpl(
+        state.user.value?.did
+    )
+    await trackRefresh(state, 'add-feed', async () => {
+        try {
+            await adapter.addFeed(url)
+        } catch (err) {
+            if (
+                err instanceof Error &&
+                'response' in err &&
+                (err as { response:Response }).response
+                    .status === 409
+            ) {
+                // Treat as success for the indicator;
+                // re-load and exit without error.
+                debug('Feed already exists, reloading...')
+                await State.loadFeeds(state)
+                return
+            }
+            throw err
         }
-        throw err
-    }
+        // Do NOT reload items: a freshly-added feed has
+        // `last_pulled_at IS NULL`, so its items are
+        // intentionally hidden from the reading list until
+        // the reader clicks "Refresh Feeds". The un-synced
+        // counter and "updates available" pill are driven
+        // by the existing `feed-updates-available` SSE event
+        // emitted after the post-add background fetch.
+        await State.loadFeeds(state)
+        await State.loadCounts(state)
+        scheduleResolveConvergence(state, url)
+        // Discover the newly-added feed id and wait for the
+        // SSE release condition (or hard timeout).
+        const newRow = state.feeds.value.find(
+            (f) => f.url === url,
+        )
+        if (newRow !== undefined) {
+            await waitForAddFeedRelease(newRow.id)
+        }
+        // If newRow is undefined (e.g., loadFeeds didn't
+        // return the new row for some reason), do NOT wait;
+        // fall through and let trackRefresh release.
+    })
 }
 
 /**
@@ -570,15 +2386,77 @@ State.deleteFeed = async function (
 State.refreshFeeds = async function (
     state:AppState
 ):Promise<void> {
-    state.feedsLoading.value = true
+    // FR-008: ignore re-entrant clicks while a refresh is in flight.
+    if (state.refreshInProgress.value) return
+
+    // FR-007: snapshot so we can restore the indicator on failure.
+    const priorCounts = state.feedUpdateCounts.value
+
+    batch(() => {
+        acquireRefresh(state)
+        state.feedSyncError.value = null
+    })
+
+    clearRefreshFeedsSafetyTimeout()
+    refreshFeedsSafetyTimeout = setTimeout(() => {
+        refreshFeedsSafetyTimeout = null
+        batch(() => {
+            releaseRefresh(state)
+            state.feedsLoading.value = false
+        })
+    }, REFRESH_FEEDS_SAFETY_TIMEOUT_MS)
 
     try {
-        await api.post('feeds/refresh')
-        await State.loadFeeds(state)
-        await State.loadItems(state)
-        await State.loadCounts(state)
-    } finally {
-        state.feedsLoading.value = false
+        const response = await api.post('feeds/refresh')
+        // Do NOT clear refreshInProgress here. The SSE
+        // refresh-complete handler awaits refreshAfterSync and
+        // settles the busy state once the visible result lands
+        // (FR-001/FR-005, contracts/refresh-lifecycle.md "Forbidden
+        // transitions").
+        //
+        // When the server reports `queued: 0`, shorten the safety
+        // timer so the lifecycle cannot get stuck if the SSE event
+        // is lost. The pill still flashes 'updating' for at least
+        // one paint (FR-012e); the short timer is the recovery
+        // path observed in dev mode.
+        const body = await response.json<{
+            success?:boolean
+            queued?:number
+        }>().catch(() => ({ queued: undefined }))
+        if (body.queued === 0) {
+            clearRefreshFeedsSafetyTimeout()
+            refreshFeedsSafetyTimeout = setTimeout(() => {
+                refreshFeedsSafetyTimeout = null
+                batch(() => {
+                    releaseRefresh(state)
+                    state.feedsLoading.value = false
+                })
+            }, REFRESH_FEEDS_ZERO_FEED_SAFETY_MS)
+        }
+    } catch (err) {
+        clearRefreshFeedsSafetyTimeout()
+        if (err instanceof HTTPError && err.response.status === 401) {
+            batch(() => {
+                state.user.value = null
+                state.authError.value = SYNC_AUTH_EXPIRED
+                state.feedSyncStatus.value = 'error'
+                state.feedSyncError.value = SYNC_AUTH_EXPIRED
+                state.feedsLoading.value = false
+                releaseRefresh(state)
+            })
+            state._setRoute('/login')
+            return
+        }
+        batch(() => {
+            state.feedSyncStatus.value = 'error'
+            state.feedSyncError.value = err instanceof Error ?
+                err.message :
+                'Failed to refresh feeds'
+            state.feedUpdateCounts.value = priorCounts
+            state.feedsLoading.value = false
+            releaseRefresh(state)
+        })
+        throw err
     }
 }
 
@@ -588,41 +2466,40 @@ State.refreshFeeds = async function (
 State.loadItems = async function (
     state:AppState
 ):Promise<void> {
-    state.itemsLoading.value = true
+    const requestKey = currentFilterKey(state)
+    const cached = requestKey !== null ?
+        state.viewItemsCache.get(requestKey) :
+        undefined
+    if (cached === undefined && state.items.value.length === 0) {
+        state.itemsLoading.value = true
+    }
 
+    const initialFeed = consumeInitialFeed()
+    if (initialFeed && initialFeed.items.length > 0) {
+        const options = buildItemOptions(state)
+        applyItemsResult(state, requestKey, {
+            items: initialFeed.items as Item[],
+            total: initialFeed.items.length,
+            limit: options.limit ?? DEFAULT_PAGE_SIZE,
+            offset: options.offset ?? 0
+        })
+        recomputeCacheStatus(state).catch(() => {})
+        return
+    }
+
+    let data:ItemsResponse|null = null
     try {
-        const options:{
-            feedId?:number
-            isRead?:boolean
-            isStarred?:boolean
-            limit?:number
-            offset?:number
-        } = {
-            limit: state.pageSize.value,
-            offset: state.itemsOffset.value
-        }
-
-        if (state.selectedFeedId.value !== null) {
-            options.feedId = state.selectedFeedId.value
-        }
-        if (state.showUnreadOnly.value) {
-            options.isRead = false
-        }
-        if (state.showStarredOnly.value) {
-            options.isStarred = true
-        }
-
         const adapter = await getAdapter(
             state.user.value?.did
         )
-        const data = await adapter.getItems(options)
-        state.items.value = data.items as Item[]
-        state.itemsTotal.value = data.total
+        data = await adapter.getItems(buildItemOptions(state))
     } catch (err) {
         debug('Error loading items:', err)
-    } finally {
-        state.itemsLoading.value = false
     }
+
+    applyItemsResult(state, requestKey, data)
+
+    recomputeCacheStatus(state).catch(() => {})
 }
 
 /**
@@ -636,11 +2513,10 @@ State.loadItemByRoute = async function (
     if (!itemRoute) return null
 
     try {
-        const adapter = await getAdapter(
-            state.user.value?.did
-        )
+        const did = state.user.value?.did
+        const adapter = await getAdapter(did)
         const item = await adapter.getItemByRoute(itemRoute)
-        return item as Item|null
+        return fillMissingRouteBody(did, itemRoute, item as Item|null)
     } catch (err) {
         debug('Error loading item by route:', err)
         return null
@@ -659,6 +2535,7 @@ State.loadCounts = async function (
         )
         const counts = await adapter.getCounts()
         state.counts.value = counts
+        schedulePaintCacheWrite(state)
     } catch (err) {
         debug('Error loading counts:', err)
     }
@@ -672,6 +2549,7 @@ State.toggleItemRead = async function (
     itemId:number,
     isRead:boolean
 ):Promise<void> {
+    state.viewItemsCache.clear()
     try {
         const adapter = await getAdapter(
             state.user.value?.did
@@ -708,6 +2586,7 @@ State.toggleItemStarred = async function (
     itemId:number,
     isStarred:boolean
 ):Promise<void> {
+    state.viewItemsCache.clear()
     try {
         const adapter = await getAdapter(
             state.user.value?.did
@@ -746,6 +2625,7 @@ State.markAllRead = async function (
     state:AppState,
     feedId?:number
 ):Promise<void> {
+    state.viewItemsCache.clear()
     try {
         const adapter = await getAdapter(
             state.user.value?.did
@@ -759,27 +2639,244 @@ State.markAllRead = async function (
 }
 
 /**
- * Strip protocol from a URL
+ * Per-tab tracking for in-flight on-demand article fetches. Only one
+ * item is open in the reader at a time, so a single nullable signal
+ * is sufficient.
  */
-export const stripProtocol = function (
-    url:string
-):string {
-    return url.replace(/^https?:\/\//, '')
+export const articleFetchingItemId:Signal<number|null> = signal(null)
+export const articleFetchError:Signal<{
+    itemId:number
+    message:string
+}|null> = signal(null)
+
+State.fetchFullArticle = async function (
+    state:AppState,
+    itemId:number,
+    opts:{ force?:boolean } = {}
+):Promise<void> {
+    batch(() => {
+        articleFetchingItemId.value = itemId
+        articleFetchError.value = null
+    })
+
+    let result:{ item:Item }
+    try {
+        result = await remoteFetchFullArticle(itemId, opts)
+    } catch (err) {
+        const message = err instanceof FetchFullThrottledError ?
+            `Try again in ${err.retryAfterSeconds}s` :
+            err instanceof Error ? err.message : String(err)
+        batch(() => {
+            articleFetchingItemId.value = null
+            articleFetchError.value = { itemId, message }
+        })
+        debug('fetchFullArticle error:', err)
+        return
+    }
+
+    const updated = result.item
+
+    // Mirror the row into the local DB if local-first is active.
+    const did = state.user.value?.did
+    if (did) {
+        const db = getLocalDb(did)
+        if (db) {
+            try {
+                await pullSyncUpsertItem(
+                    db,
+                    updated as unknown as Record<string, unknown>,
+                    isContentCachedForFeed(updated.feed_id)
+                )
+            } catch (err) {
+                debug('fetchFullArticle local upsert error:', err)
+            }
+        }
+    }
+
+    batch(() => {
+        state.items.value = state.items.value.map(
+            existing => existing.id === itemId ? {
+                ...existing,
+                ...updated
+            } : existing
+        )
+        if (state.routeItem.value?.id === itemId) {
+            state.routeItem.value = {
+                ...state.routeItem.value,
+                ...updated
+            }
+        }
+        articleFetchingItemId.value = null
+        articleFetchError.value = null
+    })
+
+    recomputeCacheStatus(state).catch(() => {})
 }
 
 /**
- * Convert an item's link to a route path
+ * Top up the local cache for items in the current view that are missing
+ * body content or images according to their effective cache policy.
+ * Idempotent: skips items that are already fully cached.
  */
-export const itemToRoute = function (
-    item:Item
-):string|null {
-    if (!item.link) return null
+State.cacheUncachedItems = async function (
+    state:AppState
+):Promise<void> {
+    if (cacheActionInProgress.value) return
+    const did = state.user.value?.did
+    if (!did) return
+    const db = getLocalDb(did)
+    if (!db) return
+
+    const items:ItemToCache[] =
+        cacheStatus.value?.itemsToCache ?? []
+    if (items.length === 0) return
+
+    const total = items.length
+    let failures = 0
+
+    batch(() => {
+        cacheActionInProgress.value = true
+        cacheActionProgress.value = { current: 0, total }
+        cacheActionError.value = null
+    })
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        cacheActionProgress.value = { current: i + 1, total }
+
+        try {
+            if (item.missingBody && isContentCachedForFeed(item.feed_id)) {
+                await State.fetchFullArticle(state, item.id)
+            }
+            if (
+                item.missingImageUrls.length > 0 &&
+                isContentCachedForFeed(item.feed_id)
+            ) {
+                const policy = feedPolicies.value[item.feed_id] ?? null
+                const fresh = state.items.value.find(
+                    (it) => it.id === item.id
+                ) ?? null
+                const target = fresh ?
+                    {
+                        id: fresh.id,
+                        feed_id: fresh.feed_id,
+                        content: fresh.content ?? null,
+                        description: fresh.description ?? null
+                    } :
+                    {
+                        id: item.id,
+                        feed_id: item.feed_id,
+                        content: item.content,
+                        description: item.description
+                    }
+                await cacheItemImages(db, target, policy)
+            }
+        } catch (err) {
+            failures++
+            debug('cacheUncachedItems item error:', err)
+        }
+    }
+
+    batch(() => {
+        cacheActionInProgress.value = false
+        cacheActionProgress.value = null
+        if (failures > 0) {
+            cacheActionError.value =
+                "Some items couldn't be cached. Try again."
+        }
+    })
+
+    await recomputeCacheStatus(state)
+}
+
+/**
+ * Refresh a single feed and advance the client cursor
+ */
+State.refreshFeed = async function (
+    state:AppState,
+    feedId:string
+):Promise<void> {
+    await api.post(`feeds/${feedId}/refresh`)
+    batch(() => {
+        const counts = clearFeedUpdateCounts(
+            state.feedUpdateCounts.value,
+            [feedId]
+        )
+        state.feedUpdateCounts.value = counts
+        if (Object.keys(counts).length === 0) {
+            state.feedSyncStatus.value = 'synced'
+        }
+    })
+}
+
+/**
+ * Re-attempt the initial fetch of a feed that failed to resolve.
+ *
+ * Distinct from refreshFeed: this is for feeds with last_fetched === null
+ * (initial resolve never succeeded). It does not touch refreshInProgress
+ * or feedUpdateCounts — those track manual refresh of already-resolved
+ * feeds. The SSE feed-updated round-trip clears the failed state by
+ * reloading the row.
+ */
+State.retryResolveFeed = async function (
+    state:AppState,
+    feedId:string
+):Promise<void> {
+    const numericId = parseInt(feedId, 10)
+    const row = state.feeds.value.find((f) => f.id === numericId)
+    if (!row) return
+    const url = row.url
+
+    // Optimistically flip the row to resolving so the UI updates instantly.
+    // If the POST fails or returns no feed body, we'll schedule a
+    // convergence timer to eventually sync the true state.
+    state.feeds.value = state.feeds.value.map((f) => (
+        f.id === numericId ?
+            { ...f, last_fetched: null, last_error: null } :
+            f
+    ))
+
+    let res:Response | null = null
     try {
-        const url = new URL(item.link)
-        return '/post/' + url.host +
-            url.pathname + url.search + url.hash
+        res = await api.post(`feeds/${feedId}/refresh`)
+    } catch (err) {
+        debug(
+            'retryResolveFeed: POST failed, scheduling convergence',
+            err instanceof Error ? err.message : err
+        )
+        scheduleResolveConvergence(state, url)
+        return
+    }
+
+    let body:{ feed?:Record<string, unknown> } | null = null
+    try {
+        body = await res.json<{ feed?:Record<string, unknown> }>()
     } catch {
-        return null
+        body = null
+    }
+    const feed = body?.feed
+    if (feed) {
+        const did = state.user.value?.did
+        const db = did ? getLocalDb(did) : null
+        if (db) {
+            try {
+                await upsertFeedFromServer(db, feed)
+            } catch (err) {
+                debug(
+                    'retryResolveFeed: failed to write back row',
+                    err instanceof Error ? err.message : err
+                )
+                // If DB write fails, schedule convergence as safety net
+                // so the row eventually syncs to the UI
+                scheduleResolveConvergence(state, url)
+                return
+            }
+        }
+        await State.loadFeeds(state)
+    } else {
+        // POST succeeded but response has no feed body - schedule convergence
+        // to pull the server state when the response eventually arrives
+        scheduleResolveConvergence(state, url)
     }
 }
 
@@ -788,46 +2885,4 @@ export const itemToRoute = function (
  */
 State.clearSelectedItem = function (state:AppState):void {
     state._setRoute('/')
-}
-
-/**
- * Check if a route matches an item route pattern
- */
-export const isItemRoute = function (
-    route:string
-):boolean {
-    return route.startsWith('/post/')
-}
-
-/**
- * Convert a /post/* route to the comparable link fragment
- */
-export const routeToItemRoute = function (
-    route:string
-):string|null {
-    if (!isItemRoute(route)) return null
-    return route.replace(/^\/post\//, '')
-}
-
-/**
- * Find an item by its link matching the current route
- */
-export const findItemByRoute = function (
-    state:AppState,
-    route:string
-):Item|null {
-    const itemRoute = routeToItemRoute(route)
-    if (!itemRoute) return null
-
-    for (const item of state.items.value) {
-        const itemRoutePath = itemToRoute(item)
-        if (itemRoutePath === route) {
-            return item
-        }
-
-        if (item.link?.includes(itemRoute)) {
-            return item
-        }
-    }
-    return null
 }

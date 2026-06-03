@@ -19,7 +19,8 @@
 
     & .item-meta {
         display: flex;
-        gap: 0.75rem;
+        flex-direction: column-reverse;
+        gap: 0;
         color: var(--color-text-secondary);
         margin-bottom: 0.5rem;
     }
@@ -56,6 +57,53 @@
         color: var(--color-text, #333);
     }
 
+    & .feed-cache-controls {
+        --details-summary-padding: 0;
+        --details-summary-font-weight: 400;
+        --details-summary-font-size: 1rem;
+        --details-summary-content-color: var(--color-text);
+        --details-summary-transition-speed: 0.2s;
+
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+        border-bottom: none;
+
+        & summary {
+            cursor: pointer;
+            color: var(--color-text-secondary);
+            user-select: none;
+        }
+
+        & .cache-plan-hint {
+            margin: 0 0 0.75rem;
+            font-size: 1rem;
+            color: var(--color-text-secondary);
+        }
+
+        & .feed-cache-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 0.75rem 0;
+        }
+
+        & .cache-field-label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            color: var(--color-text);
+
+            & select,
+            & input[type="number"] {
+                padding: 0.25rem 0.5rem;
+                border: 1px solid var(--color-border, #e0e0e0);
+                background: var(--color-bg, #fff);
+                color: var(--color-text, #333);
+                font-size: 1rem;
+            }
+        }
+    }
+
     & check-box {
         & label {
             gap: 0.8rem;
@@ -85,5 +133,31 @@
                 top: 50%;
             }
         }
+    }
+
+    & .bootstrap-card {
+        margin: 1.5rem auto;
+        padding: 1.5rem;
+        max-width: 32rem;
+        border: 1px solid var(--color-border, #e0e0e0);
+        border-radius: 0.5rem;
+        background: var(--color-surface, #f7f7fa);
+        text-align: center;
+    }
+
+    & .bootstrap-card-title {
+        margin: 0 0 0.5rem;
+        font-size: 1.125rem;
+    }
+
+    & .bootstrap-card-body {
+        margin: 0 0 0.5rem;
+        color: var(--color-text-secondary, #555);
+    }
+
+    & .bootstrap-card-progress {
+        margin: 0;
+        color: var(--color-text-secondary, #555);
+        font-feature-settings: 'tnum' 1;
     }
 }

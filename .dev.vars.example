@@ -1,3 +1,12 @@
 NODE_ENV="development"
+APP_ORIGIN="http://127.0.0.1:5555"
 SESSION_SECRET="your-session-secret-at-least-32-chars"
 AUTUMN_SECRET_KEY="abc123"
+SENTRY_DSN=""
+
+# Stripe test-mode credentials. Get these from your Stripe dashboard
+# (https://dashboard.stripe.com/test/apikeys). Both must be set for the
+# payment-method modal to function; leave unset for dev work that
+# doesn't touch billing.
+STRIPE_SECRET_KEY=""
+STRIPE_PUBLISHABLE_KEY=""

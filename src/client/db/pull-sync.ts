@@ -1,11 +1,37 @@
-import type { Sqlite3Db } from './sqlite-init.js'
-import { storeContent } from '../local-first-settings.js'
+import { describeLocalDbError } from './sqlite-init.js'
+import {
+    execDb,
+    queryDb,
+    ensureFeedTerminalStateColumns
+} from './local-db.js'
+import { cacheItemImages } from './image-cache.js'
+import {
+    getFeedCachePolicy,
+    isContentCachedForPolicy,
+    ensureFeedCachePolicyColumns,
+    type FeedCachePolicyRow
+} from './feed-cache-policy.js'
 import {
     setSyncSyncing,
     setSyncDone,
     setSyncError,
     isLocalFirstActive
 } from './sync-status.js'
+import type { Sqlite3Db } from './sqlite-init.js'
+
+export class SyncBillingError extends Error {
+    constructor () {
+        super('Sync requires an active subscription')
+        this.name = 'SyncBillingError'
+    }
+}
+
+export class PullSyncAuthError extends Error {
+    constructor () {
+        super('pullSync: 401 unauthorized -- re-auth required')
+        this.name = 'PullSyncAuthError'
+    }
+}
 
 export interface SyncResponse {
     feeds:Record<string, unknown>[]
@@ -13,37 +39,136 @@ export interface SyncResponse {
     syncedAt:string
     latestUpdatedAt:string
     isFullSync:boolean
+    hasMore?:boolean
+    nextCursor?:string|null
 }
 
-function getLastPullAt (db:Sqlite3Db):string|null {
-    const rows:{ last_pull_at:string|null }[] = []
-    db.exec({
-        sql: 'SELECT last_pull_at FROM sync_meta WHERE id = 1',
-        rowMode: 'object',
-        resultRows: rows as unknown[]
-    })
+interface PendingOutboxRefs {
+    feedIds:Set<number>
+    itemIds:Set<number>
+    markAllReadFeedIds:Set<number>
+    markAllReadAll:boolean
+}
+
+async function getLastPullAt (db:Sqlite3Db):Promise<string|null> {
+    await ensureSyncCursorColumn(db)
+    const rows = await queryDb<{ last_pull_at:string|null }>(
+        db,
+        'SELECT last_pull_at FROM sync_meta WHERE id = 1'
+    )
     return rows[0]?.last_pull_at ?? null
 }
 
-function setLastPullAt (db:Sqlite3Db, value:string):void {
-    db.exec({
-        sql: 'UPDATE sync_meta SET last_pull_at = ? WHERE id = 1',
+async function setLastPullAt (db:Sqlite3Db, value:string):Promise<void> {
+    await ensureSyncCursorColumn(db)
+    await execDb(db, {
+        sql: `UPDATE sync_meta
+              SET last_pull_at = ?, pull_cursor = NULL
+              WHERE id = 1`,
         bind: [value]
     })
 }
 
-function upsertFeed (db:Sqlite3Db, feed:Record<string, unknown>):void {
-    db.exec({
+async function getPullCursor (db:Sqlite3Db):Promise<string|null> {
+    await ensureSyncCursorColumn(db)
+    const rows = await queryDb<{ pull_cursor:string|null }>(
+        db,
+        'SELECT pull_cursor FROM sync_meta WHERE id = 1'
+    )
+    return rows[0]?.pull_cursor ?? null
+}
+
+async function setPullCursor (
+    db:Sqlite3Db,
+    value:string|null
+):Promise<void> {
+    await ensureSyncCursorColumn(db)
+    await execDb(db, {
+        sql: 'UPDATE sync_meta SET pull_cursor = ? WHERE id = 1',
+        bind: [value]
+    })
+}
+
+const syncCursorColumnReady = new WeakSet<Sqlite3Db>()
+
+async function ensureSyncCursorColumn (db:Sqlite3Db):Promise<void> {
+    if (syncCursorColumnReady.has(db)) return
+
+    const cols = await queryDb<{ name:string }>(
+        db,
+        'PRAGMA table_info(sync_meta)'
+    )
+    if (!cols.some((col) => col.name === 'pull_cursor')) {
+        await execDb(db, 'ALTER TABLE sync_meta ADD COLUMN pull_cursor TEXT')
+    }
+    syncCursorColumnReady.add(db)
+}
+
+const itemFullContentColumnsReady = new WeakSet<Sqlite3Db>()
+
+const itemImageMetadataColumns = [
+    ['og_image_url', 'TEXT'],
+    ['blurhash', 'TEXT'],
+    ['image_width', 'INTEGER'],
+    ['image_height', 'INTEGER']
+]
+
+export async function ensureItemFullContentColumns (
+    db:Sqlite3Db
+):Promise<void> {
+    if (itemFullContentColumnsReady.has(db)) return
+
+    const cols = await queryDb<{ name:string }>(
+        db,
+        'PRAGMA table_info(items)'
+    )
+    const has = (name:string) => cols.some((col) => col.name === name)
+    if (!has('full_content')) {
+        await execDb(db, 'ALTER TABLE items ADD COLUMN full_content TEXT')
+    }
+    if (!has('full_content_fetched_at')) {
+        await execDb(
+            db,
+            'ALTER TABLE items ADD COLUMN full_content_fetched_at TEXT'
+        )
+    }
+    if (!has('full_content_status')) {
+        await execDb(
+            db,
+            'ALTER TABLE items ADD COLUMN full_content_status TEXT'
+        )
+    }
+    for (const [name, type] of itemImageMetadataColumns) {
+        if (!has(name)) {
+            await execDb(
+                db,
+                `ALTER TABLE items ADD COLUMN ${name} ${type}`
+            )
+        }
+    }
+    itemFullContentColumnsReady.add(db)
+}
+
+async function upsertFeed (
+    db:Sqlite3Db,
+    feed:Record<string, unknown>
+):Promise<void> {
+    await ensureFeedTerminalStateColumns(db)
+    await execDb(db, {
         sql: `INSERT INTO feeds
             (id, url, title, description, site_url, last_fetched,
+             last_pulled_at, last_error, last_status,
              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 url = excluded.url,
                 title = excluded.title,
                 description = excluded.description,
                 site_url = excluded.site_url,
                 last_fetched = excluded.last_fetched,
+                last_pulled_at = excluded.last_pulled_at,
+                last_error = excluded.last_error,
+                last_status = excluded.last_status,
                 updated_at = excluded.updated_at`,
         bind: [
             feed.id as number,
@@ -52,38 +177,72 @@ function upsertFeed (db:Sqlite3Db, feed:Record<string, unknown>):void {
             (feed.description as string|null) ?? null,
             (feed.site_url as string|null) ?? null,
             (feed.last_fetched as string|null) ?? null,
+            (feed.last_pulled_at as string|null) ?? null,
+            (feed.last_error as string|null) ?? null,
+            (feed.last_status as number|null) ?? null,
             feed.created_at as string,
             feed.updated_at as string
         ]
     })
 }
 
-function upsertItem (
+export async function upsertItem (
     db:Sqlite3Db,
     item:Record<string, unknown>,
     keepContent:boolean
-):void {
+):Promise<void> {
+    await ensureItemFullContentColumns(db)
+
     const content = keepContent
         ? (item.content as string|null) ?? null
         : null
     const description = keepContent
         ? (item.description as string|null) ?? null
         : null
+    const fullContent = keepContent
+        ? (item.full_content as string|null) ?? null
+        : null
 
-    db.exec({
+    const bodySetClause = keepContent ?
+        `description = excluded.description,
+                content = excluded.content,
+                full_content = excluded.full_content,
+                full_content_fetched_at = excluded.full_content_fetched_at,
+                full_content_status = excluded.full_content_status` :
+        `description = COALESCE(description, excluded.description),
+                content = COALESCE(content, excluded.content),
+                full_content = COALESCE(full_content, excluded.full_content),
+                full_content_fetched_at = COALESCE(
+                    full_content_fetched_at,
+                    excluded.full_content_fetched_at
+                ),
+                full_content_status = COALESCE(
+                    full_content_status,
+                    excluded.full_content_status
+                )`
+
+    await execDb(db, {
         sql: `INSERT INTO items
             (id, feed_id, guid, title, link, description, content,
-             author, pub_date, is_read, is_starred, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             author, pub_date, thumbnail_url, og_image_url, blurhash,
+             image_width, image_height, is_read, is_starred, created_at,
+             updated_at,
+             full_content, full_content_fetched_at, full_content_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 feed_id = excluded.feed_id,
                 guid = excluded.guid,
                 title = excluded.title,
                 link = excluded.link,
-                description = excluded.description,
-                content = excluded.content,
+                ${bodySetClause},
                 author = excluded.author,
                 pub_date = excluded.pub_date,
+                thumbnail_url = excluded.thumbnail_url,
+                og_image_url = excluded.og_image_url,
+                blurhash = excluded.blurhash,
+                image_width = excluded.image_width,
+                image_height = excluded.image_height,
                 is_read = excluded.is_read,
                 is_starred = excluded.is_starred,
                 updated_at = excluded.updated_at`,
@@ -97,17 +256,91 @@ function upsertItem (
             content,
             (item.author as string|null) ?? null,
             (item.pub_date as string|null) ?? null,
+            (item.thumbnail_url as string|null) ?? null,
+            (item.og_image_url as string|null) ?? null,
+            (item.blurhash as string|null) ?? null,
+            (item.image_width as number|null) ?? null,
+            (item.image_height as number|null) ?? null,
             (item.is_read as number) ?? 0,
             (item.is_starred as number) ?? 0,
             item.created_at as string,
-            item.updated_at as string
+            item.updated_at as string,
+            fullContent,
+            (item.full_content_fetched_at as string|null) ?? null,
+            (item.full_content_status as string|null) ?? null
         ]
     })
+}
+
+async function getPendingOutboxRefs (
+    db:Sqlite3Db
+):Promise<PendingOutboxRefs> {
+    const rows = await queryDb<{ op:string; target_id:number|null }>(
+        db,
+        `SELECT op, target_id
+         FROM outbox
+         WHERE op IN (
+            'add_feed',
+            'delete_feed',
+            'update_item',
+            'mark_all_read'
+         )`
+    )
+
+    const refs:PendingOutboxRefs = {
+        feedIds: new Set(),
+        itemIds: new Set(),
+        markAllReadFeedIds: new Set(),
+        markAllReadAll: false
+    }
+
+    for (const row of rows) {
+        if (
+            (row.op === 'add_feed' || row.op === 'delete_feed') &&
+            row.target_id !== null
+        ) {
+            refs.feedIds.add(row.target_id)
+        } else if (row.op === 'update_item' && row.target_id !== null) {
+            refs.itemIds.add(row.target_id)
+        } else if (row.op === 'mark_all_read') {
+            if (row.target_id === null) {
+                refs.markAllReadAll = true
+            } else {
+                refs.markAllReadFeedIds.add(row.target_id)
+            }
+        }
+    }
+
+    return refs
+}
+
+function shouldSkipFeed (
+    feed:Record<string, unknown>,
+    refs:PendingOutboxRefs
+):boolean {
+    return refs.feedIds.has(feed.id as number)
+}
+
+function shouldSkipItem (
+    item:Record<string, unknown>,
+    refs:PendingOutboxRefs
+):boolean {
+    const id = item.id as number
+    const feedId = item.feed_id as number
+    return (
+        refs.itemIds.has(id) ||
+        refs.feedIds.has(feedId) ||
+        refs.markAllReadAll ||
+        refs.markAllReadFeedIds.has(feedId)
+    )
 }
 
 export interface PullSyncOptions {
     onFeedUpserted?:(count:number) => void
     onItemUpserted?:(count:number) => void
+    onFeedPage?:(count:number) => void
+    onItemPage?:(count:number) => void
+    trackStatus?:boolean
 }
 
 /**
@@ -120,60 +353,149 @@ export async function pullSync (
     fetchFn:typeof fetch = fetch,
     opts:PullSyncOptions = {}
 ):Promise<void> {
-    const trackStatus = isLocalFirstActive.value
+    const trackStatus = opts.trackStatus ?? isLocalFirstActive.value
     if (trackStatus) setSyncSyncing()
 
-    const lastPullAt = getLastPullAt(db)
-    const url = lastPullAt
-        ? `/api/sync?since=${encodeURIComponent(lastPullAt)}`
-        : '/api/sync'
+    const lastPullAt = await getLastPullAt(db)
+    let cursor = await getPullCursor(db)
+    // Invariant: getPendingOutboxRefs is called after pushSync resolves.
+    const pendingRefs = await getPendingOutboxRefs(db)
+    let skippedRows = false
+    let done = false
 
-    let res:Response
-    try {
-        res = await fetchFn(url)
-    } catch (err) {
-        if (trackStatus) {
-            setSyncError(
-                err instanceof Error ? err.message : String(err)
+    await ensureFeedCachePolicyColumns(db)
+
+    const policyByFeed = new Map<number, FeedCachePolicyRow|null>()
+
+    async function policyFor (feedId:number):
+        Promise<FeedCachePolicyRow|null> {
+        if (!policyByFeed.has(feedId)) {
+            policyByFeed.set(
+                feedId,
+                await getFeedCachePolicy(db, feedId)
             )
         }
-        throw err
+        return policyByFeed.get(feedId) ?? null
     }
 
-    if (!res.ok) {
-        const msg = `pullSync: server returned ${res.status}`
-        if (trackStatus) setSyncError(msg)
-        throw new Error(msg)
-    }
+    while (!done) {
+        const url = buildSyncUrl(lastPullAt, cursor)
+        let res:Response
+        try {
+            res = await fetchFn(url)
+        } catch (err) {
+            if (trackStatus) {
+                setSyncError(
+                    err instanceof Error ? err.message : String(err)
+                )
+            }
+            throw err
+        }
 
-    const data = (await res.json()) as SyncResponse
-    const keepContent = storeContent.value
+        if (res.status === 401) {
+            throw new PullSyncAuthError()
+        }
 
-    db.exec('BEGIN')
-    try {
-        let feedCount = 0
-        for (const feed of data.feeds) {
-            upsertFeed(db, feed)
-            feedCount++
-            opts.onFeedUpserted?.(feedCount)
+        if (res.status === 402) {
+            // Subscription required -- swallow silently so the
+            // local-only fallback is quiet rather than spammy.
+            if (trackStatus) setSyncDone(0)
+            throw new SyncBillingError()
         }
-        let itemCount = 0
-        for (const item of data.items) {
-            upsertItem(db, item, keepContent)
-            itemCount++
-            opts.onItemUpserted?.(itemCount)
+
+        if (!res.ok) {
+            const msg = `pullSync: server returned ${res.status}`
+            if (trackStatus) setSyncError(msg)
+            throw new Error(msg)
         }
-        setLastPullAt(db, data.latestUpdatedAt)
-        db.exec('COMMIT')
-    } catch (err) {
-        db.exec('ROLLBACK')
-        if (trackStatus) {
-            setSyncError(
-                err instanceof Error ? err.message : String(err)
-            )
+
+        const data = (await res.json()) as SyncResponse
+
+        await execDb(db, 'BEGIN')
+        const itemsToCache:Array<Record<string, unknown>> = []
+        try {
+            let feedCount = 0
+            for (const feed of data.feeds) {
+                if (shouldSkipFeed(feed, pendingRefs)) {
+                    skippedRows = true
+                    continue
+                }
+                await upsertFeed(db, feed)
+                feedCount++
+                opts.onFeedUpserted?.(feedCount)
+            }
+            let itemCount = 0
+            for (const item of data.items) {
+                if (shouldSkipItem(item, pendingRefs)) {
+                    skippedRows = true
+                    continue
+                }
+                const feedId = item.feed_id as number
+                const keep = isContentCachedForPolicy(
+                    await policyFor(feedId)
+                )
+                await upsertItem(db, item, keep)
+                itemCount++
+                opts.onItemUpserted?.(itemCount)
+                if (keep) itemsToCache.push(item)
+            }
+
+            if (data.hasMore) {
+                cursor = data.nextCursor ?? null
+                if (!skippedRows) await setPullCursor(db, cursor)
+            } else {
+                if (skippedRows) {
+                    await setPullCursor(db, null)
+                } else {
+                    await setLastPullAt(db, data.latestUpdatedAt)
+                }
+                cursor = null
+                done = true
+            }
+            await execDb(db, 'COMMIT')
+            opts.onFeedPage?.(feedCount)
+            opts.onItemPage?.(itemCount)
+        } catch (err) {
+            await execDb(db, 'ROLLBACK')
+            if (trackStatus) {
+                setSyncError(describeLocalDbError(err))
+            }
+            throw err
         }
-        throw err
+
+        if (itemsToCache.length > 0) {
+            for (const item of itemsToCache) {
+                const feedId = item.feed_id as number
+                const policy = await policyFor(feedId)
+                try {
+                    await cacheItemImages(
+                        db,
+                        item as {
+                            id?:number|null
+                            feed_id:number
+                            content?:string|null
+                            description?:string|null
+                        },
+                        policy
+                    )
+                } catch (err) {
+                    console.error(
+                        '[pull-sync] image cache error',
+                        err instanceof Error ? err.message : ''
+                    )
+                }
+            }
+        }
     }
 
     if (trackStatus) setSyncDone(0)
+}
+
+function buildSyncUrl (since:string|null, cursor:string|null):string {
+    const params = new URLSearchParams()
+    if (since) params.set('since', since)
+    if (cursor) params.set('cursor', cursor)
+
+    const qs = params.toString()
+    return qs ? `/api/sync?${qs}` : '/api/sync'
 }

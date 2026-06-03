@@ -1,6 +1,7 @@
 import { type FunctionComponent } from 'preact'
-import { useCallback } from 'preact/hooks'
+import { useCallback, useEffect, useState } from 'preact/hooks'
 import { html } from 'htm/preact'
+import { BlurHash } from '@substrate-system/blur-hash'
 import { decodeEntities, formatDate, stripHtml } from '../util.js'
 import { MailOpened } from './mail-opened.js'
 import '@substrate-system/tool-tip'
@@ -13,8 +14,46 @@ import {
 import './item-row.css'
 import '@substrate-system/icons/css'
 import { define } from '@substrate-system/icons/new-tab'
-import { MailSpark } from './mail-spark.js'
+import { Mail } from './mail.js'
 define()
+BlurHash.define()
+
+function isValidImageSize (value:number|null|undefined):value is number {
+    return typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value > 0
+}
+
+// The <blur-hash> element decodes its placeholder synchronously in
+// connectedCallback at the width/height it is given. The thumbnail is
+// only ever shown at 80px (the canvas is CSS-scaled to fill), so the
+// decode resolution should be bounded small. Decoding at the source
+// image dimensions (often ~1200x800) is ~150x more pixels than are
+// displayed and blocks the main thread for hundreds of ms per row --
+// across a list of items this is multi-second jank on every mount.
+export const BLURHASH_DECODE_MAX = 32
+
+export function blurhashDecodeSize (
+    width:number,
+    height:number
+):{ width:number; height:number } {
+    if (width >= height) {
+        return {
+            width: BLURHASH_DECODE_MAX,
+            height: Math.max(
+                1,
+                Math.round(BLURHASH_DECODE_MAX * height / width)
+            )
+        }
+    }
+    return {
+        width: Math.max(
+            1,
+            Math.round(BLURHASH_DECODE_MAX * width / height)
+        ),
+        height: BLURHASH_DECODE_MAX
+    }
+}
 
 export const ItemRow:FunctionComponent<{
     item:Item
@@ -22,6 +61,31 @@ export const ItemRow:FunctionComponent<{
 }> = function ItemRow ({ item, state }) {
     const isUnread = !item.is_read
     const isStarred = !!item.is_starred
+    const [hiddenThumbnail, setHiddenThumbnail] = useState(false)
+    const imageUrl = item.og_image_url?.trim()
+    const sourceUrl = item.link?.trim()
+    const imageWidth = item.image_width
+    const imageHeight = item.image_height
+    const hasBlurHash = Boolean(
+        item.blurhash &&
+        isValidImageSize(imageWidth) &&
+        isValidImageSize(imageHeight)
+    )
+    const decodeSize = (
+        isValidImageSize(imageWidth) && isValidImageSize(imageHeight)
+    ) ?
+        blurhashDecodeSize(imageWidth, imageHeight) :
+        null
+    const showThumbnail = Boolean(
+        imageUrl && !hiddenThumbnail
+    )
+    const imageAlt = item.title ?
+        decodeEntities(item.title + '') :
+        'Article image'
+
+    useEffect(() => {
+        setHiddenThumbnail(false)
+    }, [imageUrl])
 
     const toggleRead = useCallback((ev:MouseEvent) => {
         ev.preventDefault()
@@ -39,10 +103,46 @@ export const ItemRow:FunctionComponent<{
         )
     }, [])
 
+    const handleThumbnailError = useCallback(() => {
+        setHiddenThumbnail(true)
+    }, [])
+
     const route = itemToRoute(item)
     return html`
         <div class="item-row ${isUnread ? 'unread' : ''}">
-            <a class="item-link" href=${route}>
+            <div class="item-top">
+            <a
+                class="item-link ${showThumbnail ?
+                    'with-thumbnail' :
+                    ''}"
+                href=${route}
+            >
+                ${showThumbnail && html`
+                    ${hasBlurHash ?
+                        html`
+                            <blur-hash
+                                class="item-thumbnail"
+                                placeholder=${item.blurhash}
+                                src=${imageUrl}
+                                width=${decodeSize?.width}
+                                height=${decodeSize?.height}
+                                alt=${imageAlt}
+                                loading="lazy"
+                            ></blur-hash>
+                        ` :
+                        html`
+                            <img
+                                class="item-thumbnail"
+                                src=${imageUrl}
+                                loading="lazy"
+                                decoding="async"
+                                referrerpolicy="no-referrer"
+                                alt=${imageAlt}
+                                onError=${handleThumbnailError}
+                            />
+                        `
+                    }
+                `}
                 <div class="item-main">
                     <h3 class="item-title">
                         ${item.title ?
@@ -51,6 +151,11 @@ export const ItemRow:FunctionComponent<{
                         }
                     </h3>
                     <div class="item-meta">
+                        ${sourceUrl && html`
+                            <span class="item-url" title=${sourceUrl}>
+                                ${sourceUrl}
+                            </span>
+                        `}
                         <span class="item-feed">
                             ${item.feed_title}
                         </span>
@@ -65,13 +170,6 @@ export const ItemRow:FunctionComponent<{
                             </time>
                         `}
                     </div>
-                    ${item.description && html`
-                        <p class="item-excerpt">
-                            ${stripHtml(
-                                item.description
-                            ).slice(0, 200)}
-                        </p>
-                    `}
                 </div>
             </a>
 
@@ -111,7 +209,7 @@ export const ItemRow:FunctionComponent<{
                                     delay="500"
                                     placement="left"
                                 >
-                                    <${MailSpark} />
+                                    <${MailOpened} />
                                 </tool-tip>
                                 <span class="visually-hidden">
                                     Mark as unread
@@ -123,7 +221,7 @@ export const ItemRow:FunctionComponent<{
                                     delay="500"
                                     placement="left-start"
                                 >
-                                    <${MailOpened} />
+                                    <${Mail} />
                                 </tool-tip>
                                 <span class="visually-hidden">
                                     Mark as read
@@ -133,6 +231,17 @@ export const ItemRow:FunctionComponent<{
                     </button>
                 </div>
             </div>
+            </div>
+
+            ${item.description && html`
+                <a class="item-excerpt-link" href=${route}>
+                    <p class="item-excerpt">
+                        ${stripHtml(
+                            item.description
+                        ).slice(0, 200)}
+                    </p>
+                </a>
+            `}
         </div>
     `
 }

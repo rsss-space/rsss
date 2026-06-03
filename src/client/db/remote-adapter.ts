@@ -3,24 +3,64 @@
  * Uses the Cloudflare backend via ky HTTP client
  */
 
-import ky from 'ky'
+import ky, { HTTPError } from 'ky'
 import type {
     DbAdapter,
     Feed,
+    FeedsResponse,
     Item,
     ItemsResponse,
     CountsResponse
 } from './types.js'
 
+export class FetchFullThrottledError extends Error {
+    retryAfterSeconds:number
+
+    constructor (retryAfterSeconds:number) {
+        super('fetch_full_throttled')
+        this.name = 'FetchFullThrottledError'
+        this.retryAfterSeconds = retryAfterSeconds
+    }
+}
+
+function csrfToken ():string|undefined {
+    return document.cookie.split(';')
+        .map(part => part.trim())
+        .find(part => part.startsWith('csrf_token='))
+        ?.slice('csrf_token='.length)
+}
+
 const api = ky.create({
     prefixUrl: '/api',
+    hooks: {
+        beforeRequest: [
+            request => {
+                const token = csrfToken()
+                if (token) request.headers.set('X-CSRF-Token', token)
+            }
+        ]
+    }
 })
 
 export const remoteAdapter:DbAdapter = {
-    async getFeeds ():Promise<Feed[]> {
+    async getFeeds ():Promise<FeedsResponse> {
         const response = await api.get('feeds')
-        const data = await response.json<{ feeds:Feed[] }>()
-        return data.feeds
+        // Indicator state (`feedUpdateCounts`) is owned by
+        // `GET /api/feed-status`; we accept and discard the
+        // legacy `feedUpdateCounts` field for one deploy window
+        // so older server bundles stay compatible.
+        const data = await response.json<{
+            feeds:Feed[]
+            feedUpdateStatus?:string
+            feedsWithUpdates?:string[]
+        }>()
+        return {
+            feeds: data.feeds,
+            feedUpdateStatus: data.feedUpdateStatus === 'updates' ?
+                'updates' :
+                'synced',
+            feedsWithUpdates: data.feedsWithUpdates ?? []
+        }
     },
 
     async addFeed (url:string):Promise<Feed> {
@@ -105,5 +145,26 @@ export const remoteAdapter:DbAdapter = {
             { feed_id: feedId } :
             {}
         await api.post('items/mark-all-read', { json: body })
+    }
+}
+
+export async function fetchFullArticle (
+    itemId:number,
+    opts:{ force?:boolean } = {}
+):Promise<{ item:Item }> {
+    try {
+        const response = await api.post(`items/${itemId}/fetch-full`, {
+            json: { force: opts.force === true }
+        })
+        return response.json<{ item:Item }>()
+    } catch (err) {
+        if (err instanceof HTTPError && err.response.status === 429) {
+            const header = err.response.headers.get('Retry-After')
+            const seconds = header ? Number.parseInt(header, 10) : 5
+            throw new FetchFullThrottledError(
+                Number.isFinite(seconds) && seconds > 0 ? seconds : 5
+            )
+        }
+        throw err
     }
 }

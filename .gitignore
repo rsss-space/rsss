@@ -10,3 +10,6 @@ public
 .claude
 NOTES
 dist-tauri
+.playwright-mcp
+.specify
+test-output.txt

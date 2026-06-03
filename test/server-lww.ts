@@ -1,4 +1,9 @@
 import { test } from '@substrate-system/tapzero'
+import {
+    clampClientUpdatedAt,
+    LWW_EQUAL_TIMESTAMP_RULE,
+    resolveLwwWrite
+} from '../src/shared/lww.js'
 
 /**
  * Simulates the LWW (last-write-wins) check performed by server endpoints.
@@ -8,11 +13,8 @@ function lwwCheck (
     serverUpdatedAt:string|null,
     clientUpdatedAt:string|undefined
 ):'ok'|'conflict' {
-    if (clientUpdatedAt === undefined) return 'ok'
-    if (serverUpdatedAt && serverUpdatedAt > clientUpdatedAt) {
-        return 'conflict'
-    }
-    return 'ok'
+    return resolveLwwWrite(serverUpdatedAt, clientUpdatedAt)
+        === 'conflict' ? 'conflict' : 'ok'
 }
 
 // Simulate PATCH /items/:id
@@ -47,7 +49,12 @@ function simulateDeleteFeed (
 
 // Simulate POST /items/mark-all-read
 function simulateMarkAllRead (
-    items:Array<{ id:number; feed_id:number; updated_at:string; is_read:number }>,
+    items:Array<{
+        id:number
+        feed_id:number
+        updated_at:string
+        is_read:number
+    }>,
     body:{ feed_id?:number; client_updated_at?:string }
 ):{ status:number; body:unknown } {
     if (body.client_updated_at !== undefined) {
@@ -120,6 +127,34 @@ test('LWW PATCH item - same timestamp accepted (not strictly newer)', t => {
         client_updated_at: ts
     })
     t.equal(res.status, 200, 'equal timestamps should not conflict')
+    t.equal(
+        LWW_EQUAL_TIMESTAMP_RULE,
+        'client-wins-equal-timestamp',
+        'equal timestamp tie-break rule is documented'
+    )
+})
+
+test('LWW client timestamp is clamped before conflict checks', t => {
+    const now = new Date('2026-04-27T12:00:00Z')
+    const clamped = clampClientUpdatedAt(
+        '9999-12-31T23:59:59',
+        now
+    )
+
+    t.equal(
+        clamped.clientUpdatedAt,
+        '2026-04-27 12:05:00',
+        'timestamp is capped at now plus five minutes'
+    )
+    t.equal(clamped.wasClamped, true, 'clamp event is reported')
+    t.equal(
+        resolveLwwWrite(
+            '2026-04-27 12:06:00',
+            clamped.clientUpdatedAt
+        ),
+        'conflict',
+        'conflict check uses the clamped value'
+    )
 })
 
 // ========== DELETE /feeds/:id ==========

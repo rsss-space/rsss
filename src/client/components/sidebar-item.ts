@@ -10,33 +10,34 @@ export const SidebarItem:FunctionComponent<{
     starred:boolean  // two options -- starred, or all items
 }> = function (props) {
     const { state, starred } = props
-    const { showStarredOnly, counts, route } = state
+    const { showStarredOnly, showUnreadOnly, counts, route } = state
 
     const isActive = useComputed<boolean>(() => {
-        // Not active if we're on a feed-specific route
         if (route.value.startsWith('/feed/')) return false
-        if (starred && showStarredOnly.value) return true
-        if (!starred && !showStarredOnly.value) return true
-        return false
+        return starred === showStarredOnly.value
     })
 
-    const handleShowAll = useCallback(() => {
-        State.showAll(state)
-        state._setRoute('/')
-    }, [])
+    const onClick = useCallback(() => {
+        if (starred) {
+            State.showStarred(state)
+        } else {
+            State.showAll(state)
+        }
+    }, [starred, state])
 
-    const handleShowStarred = useCallback(() => {
-        State.showStarred(state)
-        state._setRoute('/')
-    }, [])
-
-    return html`<button
+    return html`<a
+        href="/"
+        data-view=${starred ? 'starred' : 'all'}
         class="sidebar-item ${isActive.value ? 'active' : ''}"
-        onClick=${starred ? handleShowStarred : handleShowAll}
+        onClick=${onClick}
     >
         <span>${props.children}</span>
         <span class="badge">
-            ${starred ? counts.value.starred : counts.value.unread}
+            ${starred ?
+                counts.value.starred :
+                (showUnreadOnly.value ?
+                    counts.value.unread :
+                    counts.value.total)}
         </span>
-    </button>`
+    </a>`
 }

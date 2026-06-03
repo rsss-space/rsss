@@ -2,10 +2,13 @@ import { test } from '@substrate-system/tapzero'
 import type {
     DbAdapter,
     Feed,
+    FeedsResponse,
     Item,
     ItemsResponse,
     CountsResponse
 } from '../src/client/db/types.js'
+import { TABLES_SQL } from '../src/shared/schema.js'
+import { linkMatchesItemRoute } from '../src/shared/item-route.js'
 
 /**
  * Tests for the database adapter interface
@@ -27,10 +30,12 @@ function createMockAdapter ():DbAdapter & {
         _feeds: feeds,
         _items: items,
 
-        async getFeeds ():Promise<Feed[]> {
-            return [...feeds].sort((a, b) =>
-                (a.title || '').localeCompare(b.title || '')
-            )
+        async getFeeds ():Promise<FeedsResponse> {
+            return {
+                feeds: [...feeds].sort((a, b) =>
+                    (a.title || '').localeCompare(b.title || '')
+                )
+            }
         },
 
         async addFeed (url:string):Promise<Feed> {
@@ -42,6 +47,8 @@ function createMockAdapter ():DbAdapter & {
                 description: null,
                 site_url: null,
                 last_fetched: null,
+                last_error: null,
+                last_status: null,
                 created_at: now,
                 updated_at: now
             }
@@ -92,16 +99,24 @@ function createMockAdapter ():DbAdapter & {
 
         async getItemByRoute (itemRoute:string): Promise<Item|null> {
             const item = items.find((entry) =>
-                entry.link?.includes(itemRoute)
+                linkMatchesItemRoute(entry.link, itemRoute)
             )
             return item || null
         },
 
         async getCounts (): Promise<CountsResponse> {
+            const perFeed:Record<string, number> = {}
+            for (const item of items) {
+                if (item.is_read === 0) {
+                    const key = String(item.feed_id)
+                    perFeed[key] = (perFeed[key] ?? 0) + 1
+                }
+            }
             return {
                 unread: items.filter(i => i.is_read === 0).length,
                 starred: items.filter(i => i.is_starred === 1).length,
-                total: items.length
+                total: items.length,
+                perFeed
             }
         },
 
@@ -150,6 +165,7 @@ function addMockItem (
         content: null,
         author: null,
         pub_date: now,
+        thumbnail_url: null,
         is_read: 0,
         is_starred: 0,
         created_at: now,
@@ -162,6 +178,30 @@ function addMockItem (
 }
 
 // ============ Feed Operations Tests ============
+
+test('schema - items table includes thumbnail_url after pub_date', t => {
+    const pubDateIndex = TABLES_SQL.indexOf('pub_date TEXT')
+    const thumbnailIndex = TABLES_SQL.indexOf('thumbnail_url TEXT')
+    const isReadIndex = TABLES_SQL.indexOf('is_read INTEGER DEFAULT 0')
+
+    t.ok(thumbnailIndex !== -1, 'items table should include thumbnail_url')
+    t.ok(
+        pubDateIndex < thumbnailIndex && thumbnailIndex < isReadIndex,
+        'thumbnail_url should be between pub_date and is_read'
+    )
+})
+
+test('types - Item includes nullable thumbnail_url', t => {
+    const item = addMockItem(createMockAdapter(), 1, {
+        thumbnail_url: 'https://example.com/thumb.jpg'
+    })
+
+    t.equal(
+        item.thumbnail_url,
+        'https://example.com/thumb.jpg',
+        'item exposes thumbnail_url'
+    )
+})
 
 test('adapter - addFeed creates a new feed', async t => {
     const adapter = createMockAdapter()
@@ -184,7 +224,7 @@ test('adapter - getFeeds returns all feeds sorted by title', async t => {
     adapter._feeds[0].title = 'Zebra Feed'
     adapter._feeds[1].title = 'Alpha Feed'
 
-    const feeds = await adapter.getFeeds()
+    const { feeds } = await adapter.getFeeds()
 
     t.equal(feeds.length, 2, 'should return 2 feeds')
     t.equal(feeds[0].title, 'Alpha Feed', 'feeds should be sorted by title')
@@ -202,7 +242,7 @@ test('adapter - deleteFeed removes feed and associated items', async t => {
 
     await adapter.deleteFeed(feed.id)
 
-    const feeds = await adapter.getFeeds()
+    const { feeds } = await adapter.getFeeds()
     const { items } = await adapter.getItems()
 
     t.equal(feeds.length, 0, 'feed should be deleted')
@@ -408,4 +448,109 @@ test('adapter - getCounts with empty database', async t => {
     t.equal(counts.total, 0, 'total should be 0')
     t.equal(counts.unread, 0, 'unread should be 0')
     t.equal(counts.starred, 0, 'starred should be 0')
+    t.deepEqual(
+        counts.perFeed,
+        {},
+        'perFeed should be {} on an empty database'
+    )
+})
+
+// ============ perFeed Tests ============
+
+test('adapter - getCounts perFeed is keyed by stringified feed_id', async t => {
+    const adapter = createMockAdapter()
+    const f1 = await adapter.addFeed('https://site1.com/feed')
+    const f2 = await adapter.addFeed('https://site2.com/feed')
+
+    addMockItem(adapter, f1.id, { is_read: 0 })
+    addMockItem(adapter, f1.id, { is_read: 0 })
+    addMockItem(adapter, f2.id, { is_read: 0 })
+
+    const counts = await adapter.getCounts()
+
+    t.ok(
+        counts.perFeed && typeof counts.perFeed === 'object',
+        'perFeed is an object'
+    )
+    t.equal(
+        counts.perFeed[String(f1.id)],
+        2,
+        'perFeed[String(f1.id)] is 2'
+    )
+    t.equal(
+        counts.perFeed[String(f2.id)],
+        1,
+        'perFeed[String(f2.id)] is 1'
+    )
+    t.equal(
+        typeof counts.perFeed[String(f1.id)],
+        'number',
+        'perFeed values are numbers'
+    )
+})
+
+test('adapter - getCounts perFeed drops as items are marked read', async t => {
+    const adapter = createMockAdapter()
+    const f1 = await adapter.addFeed('https://site1.com/feed')
+    const f2 = await adapter.addFeed('https://site2.com/feed')
+
+    const i1 = addMockItem(adapter, f1.id, { is_read: 0 })
+    addMockItem(adapter, f1.id, { is_read: 0 })
+    addMockItem(adapter, f2.id, { is_read: 0 })
+
+    const before = await adapter.getCounts()
+    t.equal(before.perFeed[String(f1.id)], 2, 'f1 starts with 2 unread')
+
+    await adapter.updateItem(i1.id, { is_read: true })
+
+    const after = await adapter.getCounts()
+    t.equal(after.perFeed[String(f1.id)], 1, 'f1 drops to 1 after mark-read')
+    t.equal(after.perFeed[String(f2.id)], 1, 'f2 unchanged')
+})
+
+test('adapter - getCounts perFeed sum equals unread', async t => {
+    const adapter = createMockAdapter()
+    const f1 = await adapter.addFeed('https://site1.com/feed')
+    const f2 = await adapter.addFeed('https://site2.com/feed')
+    const f3 = await adapter.addFeed('https://site3.com/feed')
+
+    addMockItem(adapter, f1.id, { is_read: 0 })
+    addMockItem(adapter, f1.id, { is_read: 0 })
+    addMockItem(adapter, f1.id, { is_read: 1 })
+    addMockItem(adapter, f2.id, { is_read: 0 })
+    addMockItem(adapter, f3.id, { is_read: 1 })
+
+    const counts = await adapter.getCounts()
+
+    const sum = Object.values(counts.perFeed).reduce(
+        (a, b) => a + b,
+        0
+    )
+    t.equal(
+        sum,
+        counts.unread,
+        'Object.values(perFeed).reduce sum === unread'
+    )
+})
+
+test('adapter - getCounts omits feeds with zero unread', async t => {
+    const adapter = createMockAdapter()
+    const f1 = await adapter.addFeed('https://site1.com/feed')
+    const f2 = await adapter.addFeed('https://site2.com/feed')
+
+    addMockItem(adapter, f1.id, { is_read: 0 })
+    addMockItem(adapter, f2.id, { is_read: 1 })
+
+    const counts = await adapter.getCounts()
+
+    t.equal(counts.perFeed[String(f1.id)], 1, 'f1 present in perFeed')
+    t.equal(
+        counts.perFeed[String(f2.id)],
+        undefined,
+        'f2 absent from perFeed when zero unread'
+    )
+    t.ok(
+        !(String(f2.id) in counts.perFeed),
+        'feeds with zero unread are absent (not present as 0)'
+    )
 })

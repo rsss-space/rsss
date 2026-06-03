@@ -32,6 +32,10 @@ using SQLite and OPFS locally. There is 1 user per Durable Object.
 7. UPDATE: Update the PRD, `specs/prd.json` to set `passes: true` for the completed story
 8. COMMIT: If tests pass, commit with a descriptive message
    like `FEATURE: [TaskID] - [Description]`.
+   ALWAYS COMMIT AFTER COMPLETING A TASK
+   A task is NOT complete until the commit exists in git history.
+   Modified files without a commit do NOT count as progress for a
+   completed task.
 9. ATOMICITY: Aim to complete exactly one task per iteration.
 
 

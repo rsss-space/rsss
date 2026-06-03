@@ -1,18 +1,34 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
 import { useCallback, useEffect, useMemo } from 'preact/hooks'
-import '@substrate-system/check-box'
 import '@substrate-system/tool-tip'
 import {
     State,
     type AppState,
     stripProtocol,
+    paintCacheHydratedOnBootstrap,
 } from '../state.js'
+import {
+    bootstrapInProgress,
+    bootstrapFeedsCount,
+    bootstrapItemsCount
+} from '../db/bootstrap.js'
 import { ItemRow } from '../components/item-row.js'
 import { Sidebar } from '../components/sidebar.js'
-// import Debug from '@substrate-system/debug'
-// const debug = Debug('rsss:view')
+import { CacheSettings } from '../components/cache-settings.js'
+import {
+    PendingUpdateEmptyState
+} from '../components/pending-update-empty-state.js'
+import Debug from '@substrate-system/debug'
+import { ELLIPSIS } from '../constants.js'
+import { CheckBox } from '@substrate-system/check-box'
+const debug = Debug('rsss:view:feed-reader')
 
+export const BOOTSTRAP_CARD_TITLE = 'Setting up your local cache'
+
+/**
+ * This is the home route.
+ */
 export const FeedReader:FunctionComponent<{
     state:AppState;
     splats:string[];
@@ -28,6 +44,8 @@ export const FeedReader:FunctionComponent<{
         pageSize,
     } = state
 
+    debug('rendering feed reader...', feeds)
+
     // Extract feed URL from splats (everything after /feed/)
     const feedUrl = useMemo(() => splats.join('/'), [splats.join('/')])
 
@@ -36,6 +54,26 @@ export const FeedReader:FunctionComponent<{
         if (!feedUrl) return null
         return feeds.value.find(f => stripProtocol(f.url) === feedUrl) || null
     }, [feedUrl, feeds.value])
+
+    const pendingCount = (() => {
+        const updateCounts = state.feedUpdateCounts.value
+        if (state.selectedFeedId.value !== null) {
+            return updateCounts[String(state.selectedFeedId.value)] ?? 0
+        }
+        return Object.values(updateCounts).reduce((a, b) => a + b, 0)
+    })()
+
+    const handleRefreshPending = useCallback(
+        async ():Promise<void> => {
+            const feedId = state.selectedFeedId.value
+            if (feedId !== null) {
+                await State.refreshFeed(state, String(feedId))
+            } else {
+                await State.refreshFeeds(state)
+            }
+        },
+        []
+    )
 
     // Sync selected feed into state so loadItems
     // filters at the query level
@@ -88,6 +126,51 @@ export const FeedReader:FunctionComponent<{
         State.loadItems(state)
     }, [])
 
+    const renderEmptyState = ():unknown => {
+        // First-ever device bootstrap: show explicit progress card
+        // instead of "Maybe add some feeds" while OPFS pulls the
+        // initial dataset.
+        if (
+            bootstrapInProgress.value &&
+            !paintCacheHydratedOnBootstrap.value
+        ) {
+            return html`
+                <div class="bootstrap-card" role="status" aria-live="polite">
+                    <h3 class="bootstrap-card-title">
+                        ${BOOTSTRAP_CARD_TITLE}
+                    </h3>
+                    <p class="bootstrap-card-body">
+                        This only happens once on this device.
+                    </p>
+                    <p class="bootstrap-card-progress">
+                        ${bootstrapFeedsCount.value} feeds &middot;
+                        ${bootstrapItemsCount.value} items
+                    </p>
+                </div>
+            `
+        }
+
+        if (feeds.value.length === 0) {
+            return html`<div class="empty-state">
+                Maybe add some feeds to start reading.
+            </div>`
+        }
+        if (pendingCount > 0) {
+            return html`<${PendingUpdateEmptyState}
+                count=${pendingCount}
+                onRefresh=${handleRefreshPending}
+            />`
+        }
+        if (selectedFeed) {
+            return html`<div class="empty-state">
+                No items in ${selectedFeed.title || selectedFeed.url}
+            </div>`
+        }
+        return html`<div class="empty-state">
+            No items to show.
+        </div>`
+    }
+
     const hasPrev = itemsOffset.value > 0
     const hasNext = itemsOffset.value + pageSize.value < itemsTotal.value
     const pageStart = itemsTotal.value === 0 ? 0 : itemsOffset.value + 1
@@ -108,16 +191,25 @@ export const FeedReader:FunctionComponent<{
                     <div class="items-header">
                         ${selectedFeed && html`
                             <h2 class="feed-title">${feedTitle}</h2>
+                            <${CacheSettings}
+                                state=${state}
+                                selectedFeed=${selectedFeed}
+                            />
                         `}
-                        <div class="items-filters">
-                            <check-box
+                        <div class="items-filters unread">
+                            <${CheckBox.TAG}
                                 name="unread"
+                                id="unread-check"
                                 class="filter-checkbox"
                                 checked=${showUnreadOnly.value}
                                 onChange=${handleToggleUnread}
                             >
                                 Unread only
-                            </check-box>
+                            <//>
+
+                            <label for="unread-check">
+                                Show only unread articles.
+                            </label>
                         </div>
                         <button
                             class="btn btn-small"
@@ -130,7 +222,9 @@ export const FeedReader:FunctionComponent<{
 
                     <ul class="items-list">
                         ${itemsLoading.value && items.value.length === 0 && html`
-                            <div class="loading-text">Loading items...</div>
+                            <div class="loading-text">
+                                Loading items${ELLIPSIS}
+                            </div>
                         `}
 
                         ${items.value.map(item => html`
@@ -142,15 +236,8 @@ export const FeedReader:FunctionComponent<{
                             </li>
                         `)}
 
-                        ${!itemsLoading.value && items.value.length === 0 && html`
-                            <div class="empty-state">
-                                ${feeds.value.length === 0 ?
-                                    'Maybe add some feeds to start reading.' :
-                                    selectedFeed ?
-                                        `No items in ${selectedFeed.title || selectedFeed.url}` :
-                                        'No items to show.'}
-                            </div>
-                        `}
+                        ${!itemsLoading.value && items.value.length === 0 &&
+                            renderEmptyState()}
                     </ul>
 
                     ${itemsTotal.value > 0 && html`

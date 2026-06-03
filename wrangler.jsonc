@@ -21,16 +21,14 @@
 	},
 
 	/**
-	 * Migrations for Durable Objects
+	 * Durable Object migrations.
+	 * UserDO is SQLite-backed (uses ctx.storage.sql).
+	 * Migrations are NOT inherited into named environments, so they must
+	 * also be declared inside env.staging and env.production below.
 	 */
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["CollieUserDO"]
-		},
-		{
-			"tag": "v2",
-			"deleted_classes": ["CollieUserDO"],
 			"new_sqlite_classes": ["UserDO"]
 		}
 	],
@@ -45,8 +43,39 @@
 			
 			// Optional: preview_id used for `wrangler dev` / local dev
 			"preview_id": "ab4cfea82e4546ca8ec79170aaabde38"
+		},
+		{
+			"binding": "BLURHASH_KV",
+			"id": "f1ffa380aea548aebc5c83fb19ca8de7",
+			"preview_id": "7361bc827bd143aa82a5770bfc3e3a25"
+		},
+		{
+			"binding": "HTML_KV",
+			"id": "8576d34d4e0a46d8bd2567339eeeed8f",
+			"preview_id": "3051be85a6614268b5497717ff74e596"
 		}
 	],
+
+	/**
+	 * Queue infrastructure for async BlurHash generation
+	 */
+	"queues": {
+		"producers": [
+			{
+				"binding": "BLURHASH_QUEUE",
+				"queue": "blurhash-jobs"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "blurhash-jobs",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30,
+				"max_retries": 3,
+				"dead_letter_queue": "blurhash-dlq"
+			}
+		]
+	},
 
 	/**
 	 * Static Assets (Preact frontend)
@@ -59,9 +88,127 @@
 		"run_worker_first": true
 	},
 
-	"vars": {
-		"NODE_ENV": "development",
-		"AUTUMN_SECRET_KEY": ""
+	"env": {
+		"staging": {
+			"name": "rsss-staging",
+			"observability": {
+				"enabled": true
+			},
+			"workers_dev": false,
+			"preview_urls": false,
+			"routes": [
+				{
+					"pattern": "staging.rsss.space",
+					"custom_domain": true
+				}
+			],
+			"vars": {
+				"NODE_ENV": "staging",
+				"APP_ORIGIN": "https://staging.rsss.space"
+			},
+			"durable_objects": {
+				"bindings": [
+					{
+						"name": "USER_DO",
+						"class_name": "UserDO"
+					}
+				]
+			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": ["UserDO"]
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "SESSIONS",
+					"id": "ab4cfea82e4546ca8ec79170aaabde38",
+					"preview_id": "ab4cfea82e4546ca8ec79170aaabde38"
+				},
+				{
+					"binding": "BLURHASH_KV",
+					"id": "7361bc827bd143aa82a5770bfc3e3a25",
+					"preview_id": "7361bc827bd143aa82a5770bfc3e3a25"
+				},
+				{
+					"binding": "HTML_KV",
+					"id": "3051be85a6614268b5497717ff74e596",
+					"preview_id": "3051be85a6614268b5497717ff74e596"
+				}
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "BLURHASH_QUEUE",
+						"queue": "blurhash-jobs-staging"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "blurhash-jobs-staging",
+						"max_batch_size": 10,
+						"max_batch_timeout": 30,
+						"max_retries": 3,
+						"dead_letter_queue": "blurhash-dlq-staging"
+					}
+				]
+			}
+		},
+		"production": {
+			"name": "rsss",
+			"durable_objects": {
+				"bindings": [
+					{
+						"name": "USER_DO",
+						"class_name": "UserDO"
+					}
+				]
+			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": ["UserDO"]
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "SESSIONS",
+					"id": "43728a08638d483d80bfb830d2cd4dc5",
+					"preview_id": "ab4cfea82e4546ca8ec79170aaabde38"
+				},
+				{
+					"binding": "BLURHASH_KV",
+					"id": "f1ffa380aea548aebc5c83fb19ca8de7",
+					"preview_id": "7361bc827bd143aa82a5770bfc3e3a25"
+				},
+				{
+					"binding": "HTML_KV",
+					"id": "8576d34d4e0a46d8bd2567339eeeed8f",
+					"preview_id": "3051be85a6614268b5497717ff74e596"
+				}
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "BLURHASH_QUEUE",
+						"queue": "blurhash-jobs"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "blurhash-jobs",
+						"max_batch_size": 10,
+						"max_batch_timeout": 30,
+						"max_retries": 3,
+						"dead_letter_queue": "blurhash-dlq"
+					}
+				]
+			},
+			"vars": {
+				"NODE_ENV": "production"
+			}
+		}
 	},
 
 	"observability": {

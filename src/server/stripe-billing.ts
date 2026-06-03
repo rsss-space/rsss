@@ -1,0 +1,105 @@
+/**
+ * Stripe SDK boundary for the Cloudflare Worker.
+ *
+ * Pairs with autumn-billing.ts: Autumn owns the canonical customer
+ * record (keyed by Bluesky DID, exposing `stripeId`); this module
+ * uses the `stripeId` to talk to Stripe directly for PaymentMethod
+ * and Customer.invoice_settings operations that Autumn does not
+ * expose.
+ *
+ * When `stripeUseLive(env)` is false (no `STRIPE_SECRET_KEY`), every
+ * route that depends on this module should return 503 — there is
+ * deliberately no dev-mode stub. The Autumn pull-through means we
+ * never store the Stripe customer id locally; the source of truth
+ * for the DID -> cus_* mapping is the Autumn customer record itself.
+ */
+import Stripe from 'stripe'
+import { Autumn } from 'autumn-js'
+import {
+    didToCustomerId,
+    type BillingEnv as AutumnEnv
+} from './autumn-billing.js'
+
+export interface StripeEnv extends AutumnEnv {
+    STRIPE_SECRET_KEY?:string;
+    STRIPE_PUBLISHABLE_KEY?:string;
+}
+
+export function stripeUseLive (env:StripeEnv):boolean {
+    return Boolean(env.STRIPE_SECRET_KEY)
+}
+
+/**
+ * Per-request Stripe SDK handle. Throws when the secret key is not
+ * configured; callers are expected to check `stripeUseLive(env)`
+ * first and return 503 to clients in that case.
+ *
+ * Uses `Stripe.createFetchHttpClient()` so the SDK runs on the
+ * Cloudflare Workers fetch runtime (no Node `http` module).
+ */
+export function getStripe (env:StripeEnv):Stripe {
+    if (!env.STRIPE_SECRET_KEY) {
+        throw new Error(
+            'stripe-billing: STRIPE_SECRET_KEY is not configured'
+        )
+    }
+    return new Stripe(env.STRIPE_SECRET_KEY, {
+        apiVersion: '2025-02-24.acacia',
+        httpClient: Stripe.createFetchHttpClient()
+    })
+}
+
+/**
+ * Resolve the Stripe customer id (`cus_*`) for a Bluesky DID by
+ * asking Autumn on every request. The Autumn customer record's
+ * `stripeId` field (normalized from wire format `stripe_id`) is the
+ * source of truth.
+ *
+ * Throws if Autumn isn't configured, if the Autumn customer record
+ * has no `stripeId`, or if the lookup fails. Callers should catch
+ * and surface a 503 / 502.
+ */
+export async function getStripeCustomerId (
+    env:StripeEnv,
+    did:string
+):Promise<string> {
+    if (!env.AUTUMN_SECRET_KEY) {
+        throw new Error(
+            'stripe-billing: AUTUMN_SECRET_KEY is not configured'
+        )
+    }
+    const autumn = new Autumn({ secretKey: env.AUTUMN_SECRET_KEY })
+    const customer = await autumn.customers.getOrCreate({
+        customerId: didToCustomerId(did)
+    })
+    const stripeId = customer.stripeId
+    if (!stripeId) {
+        throw new Error(
+            'stripe-billing: autumn customer has no stripeId'
+        )
+    }
+    return stripeId
+}
+
+/**
+ * Returns the Stripe publishable key for the client, or null when it
+ * isn't configured. Distinct from `stripeUseLive()` because the secret
+ * key gates server-side functionality while the publishable key gates
+ * client-side Elements rendering.
+ */
+export function getStripePublishableKey (
+    env:StripeEnv
+):string|null {
+    return env.STRIPE_PUBLISHABLE_KEY || null
+}
+
+/**
+ * Detect Stripe's "not found" error shape. `err.code === 'resource_missing'`
+ * is the canonical signal across all of Stripe's mutation APIs (detach,
+ * customer.update, subscription.update, retrieve, etc.).
+ */
+export function isStripeNotFoundError (err:unknown):boolean {
+    if (!err || typeof err !== 'object') return false
+    const e = err as { code?:unknown; statusCode?:unknown }
+    return e.code === 'resource_missing' || e.statusCode === 404
+}

@@ -3,8 +3,15 @@ import { LoginPage } from './login.js'
 import { FeedReader } from './feed-reader.js'
 import { ItemReader } from './item-reader.js'
 import { AboutRoute } from './about.js'
-import { State, type AppState } from '../state.js'
+import { type AppState } from '../state.js'
 import { SettingsRoute } from './settings.js'
+import { SignupPage } from './signup.js'
+import { PaymentSuccessPage } from './payment-success.js'
+import { TermsRoute } from './terms.js'
+import { PrivacyRoute } from './privacy.js'
+import { ConfirmCloseRoute } from './confirm-close.js'
+import { UpdatesRoute } from './updates.js'
+import { FeedsRoute } from './feeds.js'
 // import Debug from '@substrate-system/debug'
 // const debug = Debug('rsss:routes')
 
@@ -26,27 +33,62 @@ export default function _Router (state:AppState):InstanceType<typeof Router> {
         return LoginPage
     })
 
+    router.addRoute('/signup', () => {
+        return SignupPage
+    })
+
+    router.addRoute('/payment-success', () => {
+        return PaymentSuccessPage
+    })
+
     router.addRoute('/about', () => {
         return AboutRoute
+    })
+
+    router.addRoute('/terms', () => {
+        return TermsRoute
+    })
+
+    router.addRoute('/privacy', () => {
+        return PrivacyRoute
     })
 
     router.addRoute('/settings', () => {
         return SettingsRoute
     })
 
+    router.addRoute('/updates', () => {
+        if (!state.authLoading.value && !state.isAuthenticated.value) {
+            return state._setRoute('/login')
+        }
+        return UpdatesRoute
+    })
+
+    router.addRoute('/feeds', () => {
+        if (!state.authLoading.value && !state.isAuthenticated.value) {
+            return state._setRoute('/login')
+        }
+        return FeedsRoute
+    })
+
+    router.addRoute('/confirm-close', () => {
+        if (!state.authLoading.value && !state.isAuthenticated.value) {
+            return state._setRoute('/login')
+        }
+        return ConfirmCloseRoute
+    })
+
     router.addRoute('/oauth/callback', () => {
-        // If already authenticated, skip the callback
-        // and go home -- the OAuth state in KV is likely
-        // expired or already consumed.
+        // The handshake is dispatched at boot from `State()` so the
+        // App shell can short-circuit to `<OAuthCallbackLoader/>`
+        // before any route action runs. The `LoginPage` returned here
+        // is a fallback for the post-handshake failure path; while
+        // `state.oauthInFlight` is true the App shell prevents it
+        // from rendering.
         if (state.isAuthenticated.value) {
             state._setRoute('/')
             return FeedReader
         }
-
-        // Cloudflare's SPA fallback intercepts this path
-        // before the Worker runs, so we handle it
-        // client-side by POSTing to /api/auth/callback.
-        State.handleOAuthCallback(state)
         return LoginPage
     })
 

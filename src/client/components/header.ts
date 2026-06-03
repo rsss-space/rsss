@@ -5,6 +5,9 @@ import { HamburgerTwo } from '@substrate-system/hamburger-two'
 import { type AppState } from '../state.js'
 import { State } from '../state.js'
 import { SyncStatus } from './sync-status.js'
+import { FeedStatus } from './feed-status.js'
+import { CacheStatus } from './cache-status.js'
+import { UserIcon } from './user-icon.js'
 import './header.css'
 
 HamburgerTwo.define()
@@ -79,28 +82,16 @@ export const Header:FunctionComponent<{
                 >
                     About
                 </a>
-            </nav>
 
-            <div class="desktop-nav">
-                <iframe
-                    src="https://github.com/sponsors/nichoth/button"
-                    title="Sponsor nichoth"
-                    height="32"
-                    width="114"
-                    style="border: 0; border-radius: 6px;"
-                ></iframe>
-            </div>
+                <a href="/settings" class="header-links${
+                    route.value === '/settings' ? ' active' : ''}">Settings</a>
+            </nav>
 
             <div class="header header-right desktop-nav">
                 <${SyncStatus} />
+                <${CacheStatus} state=${state} />
+                <${FeedStatus} state=${state} />
                 ${user.value && html`
-                    <span class="user-handle">
-                        <a href="/settings">
-                            <code>
-                                @${user.value?.handle}
-                            </code>
-                        </a>
-                    </span>
                     <button
                         class="btn btn-small"
                         onClick=${handleLogout}
@@ -108,6 +99,7 @@ export const Header:FunctionComponent<{
                         Logout
                     </button>
                 `}
+                <${UserIcon} state=${state} />
             </div>
 
             <${HamburgerTwo.TAG} ref=${hamburgerRef} />
@@ -127,33 +119,29 @@ export const Header:FunctionComponent<{
                 >
                     About
                 </a>
+                <a
+                    href="/feeds"
+                    class="header-link${
+                        route.value === '/feeds' ?
+                            ' active' :
+                            ''
+                    }"
+                >
+                    Feeds
+                </a>
             </nav>
 
-            <div>
-                <iframe
-                    src="https://github.com/sponsors/nichoth/button"
-                    title="Sponsor nichoth"
-                    height="32"
-                    width="114"
-                    style="border: 0; border-radius: 6px;"
-                ></iframe>
+            <div class="mobile-user">
+                <${UserIcon} state=${state} />
+                ${user.value && html`
+                    <button
+                        class="btn btn-small"
+                        onClick=${handleLogout}
+                    >
+                        Logout
+                    </button>
+                `}
             </div>
-
-            ${user.value && html`
-                <span class="user-handle">
-                    <a href="/settings">
-                        <code>
-                            @${user.value?.handle}
-                        </code>
-                    </a>
-                </span>
-                <button
-                    class="btn btn-small"
-                    onClick=${handleLogout}
-                >
-                    Logout
-                </button>
-            `}
         </div>
     `
 }
