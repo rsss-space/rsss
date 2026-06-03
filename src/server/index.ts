@@ -1894,9 +1894,11 @@ dataRouter.all('*', async (c) => {
     // request (preserving Sec-WebSocket-* and Cookie) with the /api
     // mount prefix stripped from the path.
     if (isWebSocketUpgrade(c.req.raw.headers)) {
-        const wsUrl = new URL(c.req.url)
-        wsUrl.pathname = wsUrl.pathname.replace(/^\/api/, '') || '/'
-        return stub.fetch(new Request(wsUrl.toString(), c.req.raw))
+        const url = new URL(c.req.url)
+        const wsPath = url.pathname.replace(/^\/api/, '') || '/'
+        const doUrl = new URL(wsPath, 'http://do')
+        doUrl.search = url.search
+        return stub.fetch(new Request(doUrl.toString(), c.req.raw))
     }
 
     // Build the request URL for the DO. The dataRouter is mounted at

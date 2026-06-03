@@ -37,6 +37,7 @@ const commands = [
     'npm run test:adapter-factory',
     'npm run test:resolve-convergence-signal-refresh',
     'npm run test:bootstrap',
+    'npm run test:api-router',
 
     // --- node-platform tests (esbuild -> node -> tap-spec) ---
     [
