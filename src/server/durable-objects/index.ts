@@ -97,6 +97,12 @@ const FEED_REFRESH_CONCURRENCY = 8
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
 const FEED_REFRESH_INTERVAL_MS = 10 * 60 * 1000
+// Application-level WebSocket keepalive. The client sends LIVE_PING on a
+// timer; the runtime answers LIVE_PONG via setWebSocketAutoResponse
+// WITHOUT waking the hibernated DO, refreshing the idle timer so
+// Cloudflare does not reap the connection.
+const LIVE_PING = JSON.stringify({ type: 'ping' })
+const LIVE_PONG = JSON.stringify({ type: 'pong' })
 const FEED_BACKOFF_MULTIPLIER = 2
 const FEED_BACKOFF_CEILING_MS = 24 * 60 * 60 * 1000
 const ACCOUNT_INACTIVITY_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000
@@ -372,6 +378,13 @@ export class UserDO extends DurableObject<Env> {
         super(ctx, env)
         this.sql = ctx.storage.sql
         this.app = this.createRouter()
+
+        // Keepalive handled entirely by the runtime: matching pings are
+        // answered without dispatching to webSocketMessage, so the DO
+        // can stay hibernated while clients are connected.
+        ctx.setWebSocketAutoResponse(
+            new WebSocketRequestResponsePair(LIVE_PING, LIVE_PONG)
+        )
 
         ctx.blockConcurrencyWhile(async () => {
             await this.initDatabase()
@@ -698,6 +711,21 @@ export class UserDO extends DurableObject<Env> {
             }
 
             return c.json({ version, items, feeds, counts })
+        })
+
+        // Hibernatable WebSocket live channel. Replaces SSE: the DO can
+        // hibernate between broadcasts because getWebSockets() (not an
+        // in-memory Set) tracks live connections. Auth is enforced by
+        // the Worker proxy (requireAuth) before the upgrade reaches here.
+        app.get('/ws', (c) => {
+            if (c.req.header('Upgrade') !== 'websocket') {
+                return c.text('Expected WebSocket upgrade', 426)
+            }
+            const pair = new WebSocketPair()
+            const client = pair[0]
+            const server = pair[1]
+            this.ctx.acceptWebSocket(server)
+            return new Response(null, { status: 101, webSocket: client })
         })
 
         // Server-sent events stream. Broadcasts state-change
@@ -1559,6 +1587,35 @@ export class UserDO extends DurableObject<Env> {
             clearInterval(this.keepaliveInterval)
             this.keepaliveInterval = null
         }
+    }
+
+    // The live channel is server-push only; client pings are handled by
+    // setWebSocketAutoResponse and never arrive here. Defined so future
+    // client->server messages have a home and to satisfy the hibernation
+    // contract.
+    webSocketMessage (_ws:WebSocket, _message:string|ArrayBuffer):void {
+        // no-op
+    }
+
+    webSocketClose (
+        ws:WebSocket,
+        _code:number,
+        _reason:string,
+        _wasClean:boolean
+    ):void {
+        // Close the server side without forwarding the peer's code:
+        // reserved codes (e.g. 1005/1006) throw if passed to close().
+        // No bookkeeping needed because broadcast() reads
+        // ctx.getWebSockets() fresh each time.
+        try {
+            ws.close()
+        } catch {
+            // already closing/closed
+        }
+    }
+
+    webSocketError (_ws:WebSocket, error:unknown):void {
+        console.error('[DO] webSocketError', error)
     }
 
     private getFeedUnreadCount (feedId:number):number {
