@@ -85,6 +85,24 @@ function nextTick ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
 }
 
+function waitFor (
+    condition:() => boolean,
+    desc:string,
+    timeoutMs = 2000
+):Promise<void> {
+    const start = Date.now()
+    return new Promise((resolve, reject) => {
+        const check = () => {
+            if (condition()) return resolve()
+            if (Date.now() - start > timeoutMs) {
+                return reject(new Error(`waitFor timeout: ${desc}`))
+            }
+            setTimeout(check, 10)
+        }
+        check()
+    })
+}
+
 function entitledBilling (
     overrides:Partial<BillingStatus> = {}
 ):BillingStatus {
@@ -563,15 +581,38 @@ test('Per-feed details element contains cache controls', async (t) => {
     const root = mount(state)
     try {
         await nextTick()
-        const details = root.querySelector(
-            '.settings-feed-item details.feed-cache-controls'
+        const host = root.querySelector(
+            '.settings-feed-item .feed-cache-controls'
         )
-        t.ok(details, '<details class="feed-cache-controls"> exists')
+        t.ok(host, '.feed-cache-controls host exists')
+        t.equal(
+            host?.tagName.toLowerCase(),
+            'details-summary',
+            'host is a <details-summary>'
+        )
+        t.equal(
+            host?.getAttribute('duration'),
+            '200',
+            'host duration attribute is 200 (non-reduced default)'
+        )
 
-        const select = details?.querySelector(
+        const innerDetails = host?.querySelectorAll(':scope > details')
+        t.equal(
+            innerDetails?.length,
+            1,
+            'exactly one inner <details>'
+        )
+        const details = innerDetails?.[0] as HTMLDetailsElement|undefined
+
+        const content = details?.querySelector(
+            ':scope > .details-content'
+        )
+        t.ok(content, '.details-content wrapper present')
+
+        const select = content?.querySelector(
             'select[name="feed-cache-mode-3"]'
         ) as HTMLSelectElement|null
-        t.ok(select, 'cache mode select exists')
+        t.ok(select, 'cache mode select exists in .details-content')
 
         const opts = select ?
             Array.from(select.options).map(o => o.value) :
@@ -580,15 +621,18 @@ test('Per-feed details element contains cache controls', async (t) => {
         t.ok(opts.includes('text'), 'has text option')
         t.ok(opts.includes('text_images'), 'has text_images option')
 
-        const sizeInput = details?.querySelector(
+        const sizeInput = content?.querySelector(
             'input[name="feed-max-size-3"]'
         )
-        t.ok(sizeInput, 'max size input exists')
+        t.ok(sizeInput, 'max size input exists in .details-content')
 
-        const ageInput = details?.querySelector(
+        const ageInput = content?.querySelector(
             'input[name="feed-max-age-3"]'
         )
-        t.ok(ageInput, 'max age input exists')
+        t.ok(ageInput, 'max age input exists in .details-content')
+
+        const clear = content?.querySelector('button.btn-clear-cache')
+        t.ok(clear, '.btn-clear-cache button exists in .details-content')
     } finally {
         _resetFeedPolicies()
         unmount(root)
@@ -608,15 +652,25 @@ test(
         const root = mount(state)
         try {
             await nextTick()
-            const details = root.querySelector(
-                '.settings-feed-item details.feed-cache-controls'
-            ) as HTMLDetailsElement|null
-            t.ok(details, 'feed-cache-controls details exists')
-            t.ok(
-                details?.classList.contains('is-disabled'),
-                'has is-disabled class'
+            const host = root.querySelector(
+                '.settings-feed-item .feed-cache-controls'
             )
-            t.equal(details?.open, false, 'details is collapsed')
+            t.ok(host, 'feed-cache-controls host exists')
+            t.equal(
+                host?.tagName.toLowerCase(),
+                'details-summary',
+                'host is a <details-summary>'
+            )
+            t.ok(
+                host?.classList.contains('is-disabled'),
+                'host has is-disabled class'
+            )
+
+            const details = root.querySelector(
+                '.feed-cache-controls details'
+            ) as HTMLDetailsElement|null
+            t.ok(details, 'inner <details> exists')
+            t.equal(details?.open, false, 'inner details is collapsed')
 
             const summary = details?.querySelector('summary')
             t.equal(
@@ -648,14 +702,24 @@ test(
         const root = mount(state)
         try {
             await nextTick()
-            const details = root.querySelector(
-                '.settings-feed-item details.feed-cache-controls'
-            ) as HTMLDetailsElement|null
-            t.ok(details, 'feed-cache-controls details exists')
-            t.ok(
-                !details?.classList.contains('is-disabled'),
-                'does NOT have is-disabled class'
+            const host = root.querySelector(
+                '.settings-feed-item .feed-cache-controls'
             )
+            t.ok(host, 'feed-cache-controls host exists')
+            t.equal(
+                host?.tagName.toLowerCase(),
+                'details-summary',
+                'host is a <details-summary>'
+            )
+            t.ok(
+                !host?.classList.contains('is-disabled'),
+                'host does NOT have is-disabled class'
+            )
+
+            const details = root.querySelector(
+                '.feed-cache-controls details'
+            ) as HTMLDetailsElement|null
+            t.ok(details, 'inner <details> exists')
 
             const summary = details?.querySelector('summary')
             t.ok(
@@ -689,22 +753,36 @@ test(
         const root = mount(state)
         try {
             await nextTick()
-            const details = root.querySelector(
-                '.settings-feed-item details.feed-cache-controls'
-            ) as HTMLDetailsElement|null
-            t.ok(details, 'feed-cache-controls details exists')
+            const host = root.querySelector(
+                '.settings-feed-item .feed-cache-controls'
+            )
+            t.ok(host, 'feed-cache-controls host exists')
+            t.equal(
+                host?.tagName.toLowerCase(),
+                'details-summary',
+                'host is a <details-summary>'
+            )
             t.ok(
-                !details?.classList.contains('is-disabled'),
+                !host?.classList.contains('is-disabled'),
                 'starts enabled (no is-disabled class)'
             )
+
+            const details = root.querySelector(
+                '.feed-cache-controls details'
+            ) as HTMLDetailsElement|null
+            t.ok(details, 'inner <details> exists')
 
             isLocalFirstActive.value = false
             await nextTick()
             t.ok(
-                details?.classList.contains('is-disabled'),
-                'gains is-disabled after flipping false'
+                host?.classList.contains('is-disabled'),
+                'host gains is-disabled after flipping false'
             )
-            t.equal(details?.open, false, 'collapses after flipping false')
+            t.equal(
+                details?.open,
+                false,
+                'inner details collapses after flipping false'
+            )
             const summaryOff = details?.querySelector('summary')
             t.equal(
                 summaryOff?.getAttribute('aria-disabled'),
@@ -720,8 +798,8 @@ test(
             isLocalFirstActive.value = true
             await nextTick()
             t.ok(
-                !details?.classList.contains('is-disabled'),
-                'loses is-disabled after flipping back true'
+                !host?.classList.contains('is-disabled'),
+                'host loses is-disabled after flipping back true'
             )
             const summaryOn = details?.querySelector('summary')
             t.ok(
@@ -729,18 +807,169 @@ test(
                 'summary loses aria-disabled after flipping back true'
             )
 
-            const sameDetails = root.querySelector(
-                '.settings-feed-item details.feed-cache-controls'
+            const sameHost = root.querySelector(
+                '.settings-feed-item .feed-cache-controls'
             )
             t.equal(
-                sameDetails,
-                details,
-                'updates in place (same element instance, no re-mount)'
+                sameHost,
+                host,
+                'updates in place (same host instance, no re-mount)'
             )
         } finally {
             isLocalFirstActive.value = false
             _resetFeedPolicies()
             unmount(root)
+        }
+    }
+)
+
+// 031-animate-cache-settings: web-component disclosure behavior
+
+test(
+    'Per-feed inner details toggles open then closed (open=false)',
+    async (t) => {
+        const state = makeState()
+        state.feeds.value = [makeFeed({ id: 30 })]
+        _resetFeedPolicies()
+        isLocalFirstActive.value = true
+
+        const root = mount(state)
+        try {
+            await nextTick()
+            const details = root.querySelector(
+                '.feed-cache-controls details'
+            ) as HTMLDetailsElement|null
+            t.ok(details, 'inner <details> exists')
+
+            if (details) details.open = true
+            t.equal(details?.open, true, 'opens when set')
+
+            if (details) details.open = false
+            t.equal(
+                details?.open,
+                false,
+                'closed again leaves open === false'
+            )
+        } finally {
+            isLocalFirstActive.value = false
+            _resetFeedPolicies()
+            unmount(root)
+        }
+    }
+)
+
+test(
+    'Per-feed disclosure does not carry open across a fresh mount',
+    async (t) => {
+        const state = makeState()
+        state.feeds.value = [makeFeed({
+            id: 31,
+            url: 'https://a31.example.com/feed.rss'
+        })]
+        _resetFeedPolicies()
+        isLocalFirstActive.value = true
+
+        const rootA = mount(state)
+        try {
+            await nextTick()
+            const detailsA = rootA.querySelector(
+                '.feed-cache-controls details'
+            ) as HTMLDetailsElement|null
+            t.ok(detailsA, 'feed A renders an inner <details>')
+            if (detailsA) detailsA.open = true
+            unmount(rootA)
+
+            state.feeds.value = [makeFeed({
+                id: 32,
+                url: 'https://b32.example.com/feed.rss'
+            })]
+            const rootB = mount(state)
+            try {
+                await nextTick()
+                const detailsB = rootB.querySelector(
+                    '.feed-cache-controls details'
+                ) as HTMLDetailsElement|null
+                t.ok(detailsB, 'feed B renders an inner <details>')
+                t.equal(
+                    detailsB?.hasAttribute('open'),
+                    false,
+                    'fresh disclosure has no open attribute'
+                )
+            } finally {
+                unmount(rootB)
+            }
+        } finally {
+            isLocalFirstActive.value = false
+            _resetFeedPolicies()
+        }
+    }
+)
+
+test(
+    'Per-feed disclosure duration honors prefers-reduced-motion',
+    async (t) => {
+        const state = makeState()
+        state.feeds.value = [makeFeed({ id: 33 })]
+        _resetFeedPolicies()
+        isLocalFirstActive.value = true
+
+        const originalMatchMedia = window.matchMedia
+        const makeMatchMedia = (reduce:boolean) =>
+            ((query:string) => ({
+                matches: query.includes('prefers-reduced-motion') ?
+                    reduce :
+                    false,
+                media: query,
+                onchange: null,
+                addEventListener: () => {},
+                removeEventListener: () => {},
+                addListener: () => {},
+                removeListener: () => {},
+                dispatchEvent: () => false
+            })) as unknown as typeof window.matchMedia
+
+        try {
+            window.matchMedia = makeMatchMedia(true)
+            const rootReduced = mount(state)
+            try {
+                await waitFor(
+                    () => rootReduced.querySelector(
+                        '.feed-cache-controls'
+                    )?.getAttribute('duration') === '0',
+                    'duration becomes "0" under reduced motion'
+                )
+                const host = rootReduced.querySelector(
+                    '.feed-cache-controls'
+                )
+                t.equal(
+                    host?.getAttribute('duration'),
+                    '0',
+                    'duration is "0" when reduced motion matches'
+                )
+            } finally {
+                unmount(rootReduced)
+            }
+
+            window.matchMedia = makeMatchMedia(false)
+            const rootNormal = mount(state)
+            try {
+                await nextTick()
+                await nextTick()
+                const host = rootNormal.querySelector(
+                    '.feed-cache-controls'
+                )
+                t.equal(
+                    host?.getAttribute('duration'),
+                    '200',
+                    'duration is "200" when reduced motion does not match'
+                )
+            } finally {
+                unmount(rootNormal)
+            }
+        } finally {
+            window.matchMedia = originalMatchMedia
+            isLocalFirstActive.value = false
+            _resetFeedPolicies()
         }
     }
 )

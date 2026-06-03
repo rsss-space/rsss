@@ -3,6 +3,7 @@ import { type FunctionComponent } from 'preact'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { useComputed, batch } from '@preact/signals'
 import { CheckBox } from '@substrate-system/check-box'
+import { DetailsSummary } from '@substrate-system/details-summary'
 import { type AppState, State } from '../state.js'
 import { billingStatus, billingError } from '../billing-status.js'
 import { RadioInput } from '@substrate-system/radio-input'
@@ -115,6 +116,20 @@ export const SettingsRoute:FunctionComponent<{
 
     const [subscriptionPending, setSubscriptionPending] = useState(false)
     const [pmModalOpen, setPmModalOpen] = useState(false)
+    const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return
+        const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+        setPrefersReducedMotion(mq.matches)
+        const onChange = (ev:MediaQueryListEvent) => {
+            setPrefersReducedMotion(ev.matches)
+        }
+        mq.addEventListener('change', onChange)
+        return () => {
+            mq.removeEventListener('change', onChange)
+        }
+    }, [])
 
     const supported = localFirstSupported.value
     const inProgress = bootstrapInProgress.value
@@ -776,104 +791,113 @@ export const SettingsRoute:FunctionComponent<{
                                 </span>
                             </div>
                             <div class="feed-controls">
-                                <details
+                                <${DetailsSummary.TAG}
                                     class=${`feed-cache-controls${
                                         cacheDisabled.value ?
                                             ' is-disabled' :
                                             ''
                                     }`}
-                                    open=${cacheDisabled.value ?
-                                        false :
-                                        undefined}
+                                    key=${feed.id}
+                                    duration=${prefersReducedMotion ?
+                                        '0' :
+                                        '200'}
                                 >
-                                    <summary
-                                        aria-disabled=${cacheDisabled.value ?
-                                            'true' :
+                                    <details
+                                        open=${cacheDisabled.value ?
+                                            false :
                                             undefined}
-                                        tabindex=${cacheDisabled.value ?
-                                            -1 :
-                                            undefined}
-                                        onClick=${(e:Event) => {
-                                            if (cacheDisabled.value) {
-                                                e.preventDefault()
-                                            }
-                                        }}
-                                    >Cache settings</summary>
-                                    <div class="feed-cache-form">
-                                        <label class="cache-field-label">
-                                            Cache mode
-                                            <select
-                                                name=${`feed-cache-mode-${feed.id}`}
-                                                onChange=${handleFeedCacheModeChange(
-                                                    feed.id
+                                    >
+                                        <summary
+                                            aria-disabled=${cacheDisabled.value ?
+                                                'true' :
+                                                undefined}
+                                            tabindex=${cacheDisabled.value ?
+                                                -1 :
+                                                undefined}
+                                            onClick=${(e:Event) => {
+                                                if (cacheDisabled.value) {
+                                                    e.preventDefault()
+                                                }
+                                            }}
+                                        >Cache settings</summary>
+                                        <div class="details-content">
+                                            <div class="feed-cache-form">
+                                                <label class="cache-field-label">
+                                                    Cache mode
+                                                    <select
+                                                        name=${`feed-cache-mode-${feed.id}`}
+                                                        onChange=${handleFeedCacheModeChange(
+                                                            feed.id
+                                                        )}
+                                                    >
+                                                        <option
+                                                            value=""
+                                                            selected=${
+                                                                policy?.cache_mode ==
+                                                                null
+                                                            }
+                                                        >
+                                                            Use default
+                                                        </option>
+                                                        <option
+                                                            value="text"
+                                                            selected=${
+                                                                policy?.cache_mode ===
+                                                                'text'
+                                                            }
+                                                        >
+                                                            Text only
+                                                        </option>
+                                                        <option
+                                                            value="text_images"
+                                                            selected=${
+                                                                policy?.cache_mode ===
+                                                                'text_images'
+                                                            }
+                                                        >
+                                                            Text + images
+                                                        </option>
+                                                    </select>
+                                                </label>
+                                                <label class="cache-field-label">
+                                                    Max size (MB, blank = default)
+                                                    <input
+                                                        type="number"
+                                                        name=${`feed-max-size-${feed.id}`}
+                                                        min="1"
+                                                        value=${sizeVal}
+                                                        placeholder="default"
+                                                        onChange=${handleFeedMaxSizeChange(
+                                                            feed.id
+                                                        )}
+                                                    />
+                                                </label>
+                                                <label class="cache-field-label">
+                                                    Keep for (days, blank = default)
+                                                    <input
+                                                        type="number"
+                                                        name=${`feed-max-age-${feed.id}`}
+                                                        min="1"
+                                                        value=${ageVal}
+                                                        placeholder="default"
+                                                        onChange=${handleFeedMaxAgeChange(
+                                                            feed.id
+                                                        )}
+                                                    />
+                                                </label>
+                                            </div>
+                                            <button
+                                                class="btn-clear-cache"
+                                                onClick=${handleClearFeedCache(
+                                                    feed.id,
+                                                    feed.title || feed.url
                                                 )}
                                             >
-                                                <option
-                                                    value=""
-                                                    selected=${
-                                                        policy?.cache_mode ==
-                                                        null
-                                                    }
-                                                >
-                                                    Use default
-                                                </option>
-                                                <option
-                                                    value="text"
-                                                    selected=${
-                                                        policy?.cache_mode ===
-                                                        'text'
-                                                    }
-                                                >
-                                                    Text only
-                                                </option>
-                                                <option
-                                                    value="text_images"
-                                                    selected=${
-                                                        policy?.cache_mode ===
-                                                        'text_images'
-                                                    }
-                                                >
-                                                    Text + images
-                                                </option>
-                                            </select>
-                                        </label>
-                                        <label class="cache-field-label">
-                                            Max size (MB, blank = default)
-                                            <input
-                                                type="number"
-                                                name=${`feed-max-size-${feed.id}`}
-                                                min="1"
-                                                value=${sizeVal}
-                                                placeholder="default"
-                                                onChange=${handleFeedMaxSizeChange(
-                                                    feed.id
-                                                )}
-                                            />
-                                        </label>
-                                        <label class="cache-field-label">
-                                            Keep for (days, blank = default)
-                                            <input
-                                                type="number"
-                                                name=${`feed-max-age-${feed.id}`}
-                                                min="1"
-                                                value=${ageVal}
-                                                placeholder="default"
-                                                onChange=${handleFeedMaxAgeChange(
-                                                    feed.id
-                                                )}
-                                            />
-                                        </label>
-                                    </div>
-                                    <button
-                                        class="btn-clear-cache"
-                                        onClick=${handleClearFeedCache(
-                                            feed.id,
-                                            feed.title || feed.url
-                                        )}
-                                    >
-                                        Clear cache
-                                    </button>
-                                </details>
+                                                Clear cache
+                                            </button>
+                                        </div>
+                                    </details>
+                                <//>
                                 <button
                                     class="btn-delete"
                                     onClick=${(e:Event) => {

@@ -350,6 +350,14 @@
 }
 
 .feed-cache-controls {
+    --details-summary-padding: 0;
+    --details-summary-font-weight: 400;
+    --details-summary-font-size: 1rem;
+    --details-summary-content-color: var(--color-text);
+    --details-summary-transition-speed: 0.2s;
+
+    border-bottom: none;
+
     & summary {
         cursor: pointer;
         font-size: 1rem;
@@ -364,7 +372,15 @@
 
         & summary {
             cursor: default;
+            pointer-events: none;
         }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .feed-cache-controls .details-content {
+        transition: none;
+        transform: none;
     }
 }
 
