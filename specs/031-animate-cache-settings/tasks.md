@@ -45,7 +45,7 @@ Reference (do NOT modify): `src/client/components/cache-settings.ts`
 
 **Purpose**: Make the already-present web component usable in the route.
 
-- [ ] T001 Add `import { DetailsSummary } from '@substrate-system/details-summary'`
+- [X] T001 Add `import { DetailsSummary } from '@substrate-system/details-summary'`
   to `src/client/routes/settings.ts` (near the existing
   `@substrate-system/check-box` import). Confirm no install is needed:
   the dependency already ships and its CSS is already imported globally
@@ -62,7 +62,7 @@ reduced-motion accommodation (US3) remains.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Convert the per-feed disclosure markup in
+- [X] T002 Convert the per-feed disclosure markup in
   `src/client/routes/settings.ts` (the "Subscribed Feeds" list, the
   `<details class="feed-cache-controls">` block ~lines 779–876) to the
   `@substrate-system/details-summary` web component, mirroring
@@ -85,7 +85,7 @@ reduced-motion accommodation (US3) remains.
     (`handleFeedCacheModeChange`, `handleFeedMaxSizeChange`,
     `handleFeedMaxAgeChange`, `handleClearFeedCache`) — FR-010.
 
-- [ ] T003 Scope the disclosure's styles in
+- [X] T003 Scope the disclosure's styles in
   `src/client/routes/settings.css` (the existing `.feed-cache-controls`
   rule ~lines 352–369), mirroring `src/client/routes/feed-reader.css`
   lines 60–69: add `--details-summary-padding: 0`,
@@ -99,7 +99,7 @@ reduced-motion accommodation (US3) remains.
   disabled disclosure. Use existing color variables; change ONLY rules
   related to this disclosure.
 
-- [ ] T004 Retarget the disabled-state regression tests in
+- [X] T004 Retarget the disabled-state regression tests in
   `test/settings-route.ts` to the web-component shape (contract C9/C10),
   mirroring `test/feed-reader-cache-disclosure.ts`: in the three "027"
   tests ("per-feed cache control is disabled…", "…is enabled…",
@@ -131,7 +131,7 @@ controls fully visible and usable when it settles.
 > phase verifies the open behavior independently and locks the host shape
 > + duration in a test.
 
-- [ ] T005 [US1] Update the "Per-feed details element contains cache
+- [X] T005 [US1] Update the "Per-feed details element contains cache
   controls" test in `test/settings-route.ts` to the web-component shape
   (contract C1, C4), mirroring `test/feed-reader-cache-disclosure.ts`:
   assert the `.feed-cache-controls` host is a `<details-summary>`, that a
@@ -166,7 +166,7 @@ only the summary remains and the card returns to collapsed height.
 > verifies it independently. Automated coverage is limited to the inner
 > `<details>` collapse (the WAA motion itself is browser-verified).
 
-- [ ] T007 [US2] Add a DOM-structure test in `test/settings-route.ts`
+- [X] T007 [US2] Add a DOM-structure test in `test/settings-route.ts`
   (contract C2) that toggling the inner `<details>` (reached via
   `.feed-cache-controls details`) open then closed leaves
   `details.open === false`, and that re-rendering the list does not carry
@@ -192,7 +192,7 @@ no animation, controls identical to the animated end state.
 emulation) enabled, open/close a disclosure and confirm it toggles
 instantly with no animation; controls fully usable.
 
-- [ ] T009 [US3] In `src/client/routes/settings.ts`, add a
+- [X] T009 [US3] In `src/client/routes/settings.ts`, add a
   `prefersReducedMotion` state + a `matchMedia('(prefers-reduced-motion:
   reduce)')` effect to the SettingsRoute component, copied from
   `src/client/components/cache-settings.ts` (the `useState` at line 38
@@ -201,14 +201,14 @@ instantly with no animation; controls fully usable.
   (contract C5). Mind ≤80 columns and the no-space-before-colon type
   style.
 
-- [ ] T010 [US3] In `src/client/routes/settings.css`, add a
+- [X] T010 [US3] In `src/client/routes/settings.css`, add a
   `@media (prefers-reduced-motion: reduce)` rule scoped to
   `.feed-cache-controls .details-content` that sets `transition: none`
   and neutralizes the package's translate offset, so the content fade is
   also skipped (not just the height), fully meeting SC-004. Change ONLY
   rules related to this disclosure.
 
-- [ ] T011 [US3] Add a test in `test/settings-route.ts` (contract C4/C5)
+- [X] T011 [US3] Add a test in `test/settings-route.ts` (contract C4/C5)
   that mocks `window.matchMedia` so
   `'(prefers-reduced-motion: reduce)'` matches, mounts the route, and
   asserts the `.feed-cache-controls` host `duration` attribute is `"0"`;
@@ -227,9 +227,9 @@ instantly with no animation; controls fully usable.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T013 [P] Run `npm test` and confirm the full suite passes,
+- [X] T013 [P] Run `npm test` and confirm the full suite passes,
   including the updated `test/settings-route.ts` assertions.
-- [ ] T014 [P] Run `npm run lint` and confirm no violations (≤80 cols,
+- [X] T014 [P] Run `npm run lint` and confirm no violations (≤80 cols,
   no space before type-annotation colon, CSS colors from variables, font
   sizes ≥ 1rem).
 - [ ] T015 Browser regression pass per `quickstart.md` §4, §5, §7:
