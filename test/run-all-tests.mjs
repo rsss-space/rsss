@@ -37,6 +37,7 @@ const commands = [
     'npm run test:adapter-factory',
     'npm run test:resolve-convergence-signal-refresh',
     'npm run test:bootstrap',
+    'npm run test:api-router',
 
     // --- node-platform tests (esbuild -> node -> tap-spec) ---
     [
@@ -77,6 +78,11 @@ const commands = [
     ].join(' '),
     [
         'esbuild ./test/state-refresh-audit.ts --bundle',
+        '--platform=node --format=esm',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
+        'esbuild ./test/live-channel-client.ts --bundle',
         '--platform=node --format=esm',
         '| node --input-type=module | tap-spec'
     ].join(' '),

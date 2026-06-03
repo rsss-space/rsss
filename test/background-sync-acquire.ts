@@ -15,62 +15,10 @@ import {
     init as initDisplayedRefresh,
     _resetForTest as resetDisplayedRefresh,
 } from '../src/client/displayed-refresh-in-progress.js'
-
-type EventListenerFn = (ev:MessageEvent|Event) => void
-
-class StubEventSource {
-    static instances:StubEventSource[] = []
-
-    url:string
-    readyState = 0
-    listeners:Record<string, EventListenerFn[]> = {}
-    onopen:EventListenerFn|null = null
-    onerror:EventListenerFn|null = null
-    onmessage:EventListenerFn|null = null
-    closed = false
-
-    constructor (url:string) {
-        this.url = url
-        StubEventSource.instances.push(this)
-    }
-
-    addEventListener (event:string, listener:EventListenerFn):void {
-        (this.listeners[event] ??= []).push(listener)
-    }
-
-    removeEventListener (event:string, listener:EventListenerFn):void {
-        const list = this.listeners[event]
-        if (!list) return
-        this.listeners[event] = list.filter(fn => fn !== listener)
-    }
-
-    close ():void {
-        this.closed = true
-    }
-
-    fire (event:string, data?:unknown):void {
-        const ev = data === undefined ?
-            new Event(event) :
-            new MessageEvent(event, { data: JSON.stringify(data) })
-        const list = this.listeners[event] ?? []
-        for (const fn of list) fn(ev)
-    }
-}
-
-function withStubbedEventSource<T> (
-    fn:() => Promise<T>,
-):Promise<T> {
-    const original = (globalThis as { EventSource?:typeof EventSource })
-        .EventSource
-    StubEventSource.instances = []
-    ;(globalThis as { EventSource:unknown })
-        .EventSource = StubEventSource as unknown as typeof EventSource
-    return fn().finally(() => {
-        ;(globalThis as { EventSource?:typeof EventSource })
-            .EventSource = original
-        StubEventSource.instances = []
-    })
-}
+import {
+    StubWebSocket,
+    withStubbedWebSocket
+} from './helpers/stub-live-socket.js'
 
 function makeMinimalState ():AppState {
     const refreshInProgress = signal(false)
@@ -150,9 +98,9 @@ async t => {
     }
 
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
 
             t.equal(
                 state.refreshInProgress.value,
@@ -220,9 +168,9 @@ async t => {
     })
 
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
 
             // Fire three events in quick succession
             source.fire('feed-updated')
@@ -280,9 +228,9 @@ async t => {
     }
 
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
 
             state.feedSyncStatus.value = 'synced'
             source.fire('feed-updated')

@@ -4,7 +4,8 @@ import app, {
     dataRouter,
     hasValidCsrfToken,
     isAllowedRequestOrigin,
-    isCrossOriginStateChange
+    isCrossOriginStateChange,
+    isWebSocketUpgrade
 } from '../src/server/index.js'
 
 const TEST_SESSION = {
@@ -540,4 +541,27 @@ test('production health check fails without app origin', async (t) => {
 
     t.equal(res.status, 500)
     t.equal(body.error, 'missing_app_origin')
+})
+
+test('isWebSocketUpgrade detects the Upgrade header case-insensitively', t => {
+    t.equal(
+        isWebSocketUpgrade(new Headers({ Upgrade: 'websocket' })),
+        true,
+        'lowercase value matches'
+    )
+    t.equal(
+        isWebSocketUpgrade(new Headers({ Upgrade: 'WebSocket' })),
+        true,
+        'mixed-case value matches'
+    )
+    t.equal(
+        isWebSocketUpgrade(new Headers({})),
+        false,
+        'no Upgrade header is not an upgrade'
+    )
+    t.equal(
+        isWebSocketUpgrade(new Headers({ Upgrade: 'h2c' })),
+        false,
+        'a non-websocket upgrade is not a websocket upgrade'
+    )
 })

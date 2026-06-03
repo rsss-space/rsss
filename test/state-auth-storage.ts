@@ -34,6 +34,10 @@ import {
 } from '../src/client/state.js'
 import { remoteAdapter } from '../src/client/db/remote-adapter.js'
 import { mockFeeds } from './mock.js'
+import {
+    StubWebSocket,
+    stubWebSocket
+} from './helpers/stub-live-socket.js'
 
 type ErrorCtor = new () => Error
 type StateWithSyncAuth = typeof State & {
@@ -279,53 +283,6 @@ function feedState ():AppState {
     return state
 }
 
-type EventListenerFn = (ev:MessageEvent|Event) => void
-
-class StubEventSource {
-    static instances:StubEventSource[] = []
-
-    url:string
-    listeners:Record<string, EventListenerFn[]> = {}
-
-    constructor (url:string) {
-        this.url = url
-        StubEventSource.instances.push(this)
-    }
-
-    addEventListener (event:string, listener:EventListenerFn):void {
-        (this.listeners[event] ??= []).push(listener)
-    }
-
-    removeEventListener (event:string, listener:EventListenerFn):void {
-        const list = this.listeners[event]
-        if (!list) return
-        this.listeners[event] = list.filter(fn => fn !== listener)
-    }
-
-    close ():void {}
-
-    fire (event:string, data?:unknown):void {
-        const ev = data === undefined ?
-            new Event(event) :
-            new MessageEvent(event, { data: JSON.stringify(data) })
-        const list = this.listeners[event] ?? []
-        for (const fn of list) fn(ev)
-    }
-}
-
-function stubEventSource ():() => void {
-    const original = (globalThis as { EventSource?:typeof EventSource })
-        .EventSource
-    StubEventSource.instances = []
-    ;(globalThis as { EventSource:unknown })
-        .EventSource = StubEventSource as unknown as typeof EventSource
-    return () => {
-        ;(globalThis as { EventSource?:typeof EventSource })
-            .EventSource = original
-        StubEventSource.instances = []
-    }
-}
-
 function itemByRouteResponse ():Response {
     return new Response(JSON.stringify({
         item: {
@@ -434,6 +391,7 @@ test('loadFeeds keeps inactive status after bootstrap failure',
 test('checkAuth does not persist authenticated user to localStorage',
     async t => {
         const originalFetch = globalThis.fetch
+        const restoreSocket = stubWebSocket()
 
         localStorage.removeItem('rsss_user')
 
@@ -459,8 +417,10 @@ test('checkAuth does not persist authenticated user to localStorage',
                 'leaves legacy user storage empty'
             )
         } finally {
+            State.closeEventStream()
             globalThis.fetch = originalFetch
             localStorage.removeItem('rsss_user')
+            restoreSocket()
         }
     })
 
@@ -626,7 +586,7 @@ test('refreshFeeds clears update counts and marks feed sync as synced',
     async t => {
         const originalFetch = globalThis.fetch
         const restoreTimeout = stubRefreshSafetyTimer()
-        const restoreEventSource = stubEventSource()
+        const restoreSocket = stubWebSocket()
         const originalReconcileAfterRefresh = State.reconcileAfterRefresh
 
         try {
@@ -650,7 +610,7 @@ test('refreshFeeds clears update counts and marks feed sync as synced',
             state.feedSyncStatus.value = 'updates'
 
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
 
             await State.refreshFeeds(state)
 
@@ -690,7 +650,7 @@ test('refreshFeeds clears update counts and marks feed sync as synced',
             State.closeEventStream()
             globalThis.fetch = originalFetch
             restoreTimeout()
-            restoreEventSource()
+            restoreSocket()
         }
     })
 
@@ -789,7 +749,7 @@ test('refreshFeeds retries from error state and recovers via SSE',
     async t => {
         const originalFetch = globalThis.fetch
         const restoreTimeout = stubRefreshSafetyTimer()
-        const restoreEventSource = stubEventSource()
+        const restoreSocket = stubWebSocket()
         const originalReconcileAfterRefresh = State.reconcileAfterRefresh
         let resolveRefresh:(response:Response) => void = () => {}
 
@@ -810,7 +770,7 @@ test('refreshFeeds retries from error state and recovers via SSE',
             state.feedSyncError.value = 'first outage'
 
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
 
             const refresh = State.refreshFeeds(state)
             await nextTask()
@@ -863,7 +823,7 @@ test('refreshFeeds retries from error state and recovers via SSE',
             State.closeEventStream()
             globalThis.fetch = originalFetch
             restoreTimeout()
-            restoreEventSource()
+            restoreSocket()
         }
     })
 

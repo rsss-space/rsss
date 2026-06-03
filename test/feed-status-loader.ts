@@ -8,65 +8,10 @@ import {
     _resetRefreshRefCountForTest,
     _registerRefreshSignalForTest,
 } from '../src/client/state.js'
-
-type EventListenerFn = (ev:MessageEvent|Event) => void
-
-class StubEventSource {
-    static instances:StubEventSource[] = []
-    static lastOptions:EventSourceInit|undefined
-
-    url:string
-    readyState = 0
-    listeners:Record<string, EventListenerFn[]> = {}
-    onopen:EventListenerFn|null = null
-    onerror:EventListenerFn|null = null
-    onmessage:EventListenerFn|null = null
-    closed = false
-
-    constructor (url:string, options?:EventSourceInit) {
-        this.url = url
-        StubEventSource.instances.push(this)
-        StubEventSource.lastOptions = options
-    }
-
-    addEventListener (event:string, listener:EventListenerFn) {
-        (this.listeners[event] ??= []).push(listener)
-    }
-
-    removeEventListener (event:string, listener:EventListenerFn) {
-        const list = this.listeners[event]
-        if (!list) return
-        this.listeners[event] = list.filter(fn => fn !== listener)
-    }
-
-    close () {
-        this.closed = true
-    }
-
-    fire (event:string, data?:unknown) {
-        const ev = data === undefined ?
-            new Event(event) :
-            new MessageEvent(event, { data: JSON.stringify(data) })
-        const list = this.listeners[event] ?? []
-        for (const fn of list) fn(ev)
-        if (event === 'open' && this.onopen) this.onopen(ev)
-        if (event === 'error' && this.onerror) this.onerror(ev)
-    }
-}
-
-function withStubbedEventSource<T> (
-    fn:() => Promise<T>
-):Promise<T> {
-    const original = (globalThis as { EventSource?:typeof EventSource })
-        .EventSource
-    StubEventSource.instances = []
-    ;(globalThis as { EventSource:unknown })
-        .EventSource = StubEventSource as unknown as typeof EventSource
-    return fn().finally(() => {
-        ;(globalThis as { EventSource?:typeof EventSource })
-            .EventSource = original
-    })
-}
+import {
+    StubWebSocket,
+    withStubbedWebSocket
+} from './helpers/stub-live-socket.js'
 
 type FetchInput = Parameters<typeof fetch>[0]
 type FetchInit = Parameters<typeof fetch>[1]
@@ -351,9 +296,9 @@ test(
         state.feedUpdateCounts.value = { 1: 1, 7: 4 }
         state.feedSyncStatus.value = 'updates'
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
             source.fire('feed-updates-available', {
                 feedUpdateCounts: { 7: 9 }
             })
@@ -381,9 +326,9 @@ test(
         state.feedUpdateCounts.value = { 1: 5 }
         state.feedSyncStatus.value = 'updates'
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
             source.fire('feed-updates-available', {
                 feedUpdateCounts: { 1: 0 }
             })
@@ -414,9 +359,9 @@ test(
         state.feedUpdateCounts.value = {}
         state.feedSyncStatus.value = 'synced'
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
             source.fire('feed-updates-available', {
                 feedUpdateCounts: { 999: 4 }
             })
@@ -437,12 +382,12 @@ test(
 )
 
 test(
-    'EventSource reconnect: open after error triggers loadFeedStatus reconcile',
+    'live channel reconnect: open after error triggers loadFeedStatus reconcile',
     async t => {
         const state = buildPartialState()
         let fetchCalls = 0
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async () => {
                 fetchCalls += 1
                 return jsonResponse({
@@ -451,7 +396,7 @@ test(
                 })
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
                 source.fire('open')
                 await new Promise(resolve => setTimeout(resolve, 0))
                 t.equal(
@@ -483,7 +428,7 @@ test(
         state.feedSyncStatus.value = 'updates'
         let feedStatusCalls = 0
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -514,7 +459,7 @@ test(
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
                 source.fire('refresh-complete', {})
                 // refreshAfterSync awaits Promise.all of four loaders;
                 // yield enough microtasks for all to resolve and the
@@ -595,9 +540,9 @@ test(
         state.feedUpdateCounts.value = { 1: 2, 2: 5, 3: 1 }
         state.feedSyncStatus.value = 'updates'
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
             source.fire('feed-updates-cleared', {
                 feedIds: ['1', '3']
             })
@@ -625,9 +570,9 @@ test(
         state.feedUpdateCounts.value = { 1: 4 }
         state.feedSyncStatus.value = 'updates'
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
-            const source = StubEventSource.instances[0]
+            const source = StubWebSocket.instances[0]
             source.fire('feed-updates-cleared', {
                 feedIds: ['1']
             })
@@ -648,29 +593,22 @@ test(
 )
 
 test(
-    'openEventStream: connects to /api/events with credentials and is idempotent',
+    'openEventStream: connects to /api/ws and is idempotent',
     async t => {
         const state = buildPartialState()
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             State.openEventStream(state)
             State.openEventStream(state)
 
             t.equal(
-                StubEventSource.instances.length,
+                StubWebSocket.instances.length,
                 1,
                 'second openEventStream call is a no-op (no second connection)'
             )
-            t.equal(
-                StubEventSource.instances[0].url,
-                '/api/events',
-                'EventSource is opened against the SSE endpoint'
-            )
-            t.equal(
-                StubEventSource.lastOptions?.withCredentials,
-                true,
-                'EventSource is opened with credentials so the session ' +
-                    'cookie is sent'
+            t.ok(
+                StubWebSocket.instances[0].url.endsWith('/api/ws'),
+                'WebSocket is opened against the /api/ws endpoint'
             )
         })
         State.closeEventStream()
@@ -688,9 +626,9 @@ test(
         }
 
         try {
-            await withStubbedEventSource(async () => {
+            await withStubbedWebSocket(async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
                 source.fire('feed-updated')
                 source.fire('feed-updated')
                 source.fire('feed-updated')
@@ -720,7 +658,7 @@ test(
         state.feeds.value = [{ id: 1, url: 'a' }] as never
         let fetchCalls = 0
 
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 fetchCalls += 1
                 const url = typeof input === 'string' ?
@@ -738,7 +676,7 @@ test(
                 })
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
                 // Older server bundles emit { feedIds: [...] } without
                 // canonical counts; client should defer to the status
                 // endpoint rather than guessing.

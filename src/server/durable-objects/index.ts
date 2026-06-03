@@ -97,6 +97,12 @@ const FEED_REFRESH_CONCURRENCY = 8
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
 const FEED_REFRESH_INTERVAL_MS = 10 * 60 * 1000
+// Application-level WebSocket keepalive. The client sends LIVE_PING on a
+// timer; the runtime answers LIVE_PONG via setWebSocketAutoResponse
+// WITHOUT waking the hibernated DO, refreshing the idle timer so
+// Cloudflare does not reap the connection.
+const LIVE_PING = JSON.stringify({ type: 'ping' })
+const LIVE_PONG = JSON.stringify({ type: 'pong' })
 const FEED_BACKOFF_MULTIPLIER = 2
 const FEED_BACKOFF_CEILING_MS = 24 * 60 * 60 * 1000
 const ACCOUNT_INACTIVITY_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000
@@ -361,17 +367,18 @@ export class UserDO extends DurableObject<Env> {
     private app: Hono
     private sql: SqlStorage
     private manualRefreshClaims?:Map<number, number>
-    private subscribers = new Set<
-        ReadableStreamDefaultController<Uint8Array>
-    >()
-
-    private encoder = new TextEncoder()
-    private keepaliveInterval:ReturnType<typeof setInterval>|null = null
 
     constructor (ctx: DurableObjectState, env: Env) {
         super(ctx, env)
         this.sql = ctx.storage.sql
         this.app = this.createRouter()
+
+        // Keepalive handled entirely by the runtime: matching pings are
+        // answered without dispatching to webSocketMessage, so the DO
+        // can stay hibernated while clients are connected.
+        ctx.setWebSocketAutoResponse(
+            new WebSocketRequestResponsePair(LIVE_PING, LIVE_PONG)
+        )
 
         ctx.blockConcurrencyWhile(async () => {
             await this.initDatabase()
@@ -700,37 +707,19 @@ export class UserDO extends DurableObject<Env> {
             return c.json({ version, items, feeds, counts })
         })
 
-        // Server-sent events stream. Broadcasts state-change
-        // notifications (e.g. feed-updated) to all open clients
-        // for this user.
-        app.get('/events', () => {
-            let owned:ReadableStreamDefaultController<Uint8Array>|null
-                = null
-            const stream = new ReadableStream<Uint8Array>({
-                start: (controller) => {
-                    owned = controller
-                    controller.enqueue(
-                        this.encoder.encode(': connected\n\n')
-                    )
-                    this.subscribers.add(controller)
-                    this.ensureKeepalive()
-                },
-                cancel: () => {
-                    if (owned) {
-                        this.subscribers.delete(owned)
-                        owned = null
-                    }
-                    this.maybeStopKeepalive()
-                }
-            })
-
-            return new Response(stream, {
-                headers: {
-                    'Content-Type': 'text/event-stream',
-                    'Cache-Control': 'no-cache, no-transform',
-                    'X-Accel-Buffering': 'no'
-                }
-            })
+        // Hibernatable WebSocket live channel. Replaces SSE: the DO can
+        // hibernate between broadcasts because getWebSockets() (not an
+        // in-memory Set) tracks live connections. Auth is enforced by
+        // the Worker proxy (requireAuth) before the upgrade reaches here.
+        app.get('/ws', (c) => {
+            if (c.req.header('Upgrade') !== 'websocket') {
+                return c.text('Expected WebSocket upgrade', 426)
+            }
+            const pair = new WebSocketPair()
+            const client = pair[0]
+            const server = pair[1]
+            this.ctx.acceptWebSocket(server)
+            return new Response(null, { status: 101, webSocket: client })
         })
 
         // Server-vs-client divergence indicator. Single round-trip
@@ -883,8 +872,8 @@ export class UserDO extends DurableObject<Env> {
                     }
                 } else {
                     // 3s elapsed; let the fetch finish in the background so the
-                    // alarm + SSE + Phase 1 convergence pipeline can deliver
-                    // terminal state to the client.
+                    // alarm + live channel + Phase 1 convergence pipeline can
+                    // deliver terminal state to the client.
                     this.ctx.waitUntil(fetchPromise.catch(() => undefined))
                 }
 
@@ -1026,8 +1015,8 @@ export class UserDO extends DurableObject<Env> {
 
         // Refresh all feeds. Kick fetches off in waitUntil and
         // return immediately - clients see per-feed completion via
-        // SSE (`feed-updated`) and the whole-batch completion via
-        // `refresh-complete`.
+        // the live channel (`feed-updated`) and the whole-batch
+        // completion via `refresh-complete`.
         app.post('/feeds/refresh', (c) => {
             const feeds = this.sql.exec('SELECT * FROM feeds')
                 .toArray() as unknown as Feed[]
@@ -1513,52 +1502,52 @@ export class UserDO extends DurableObject<Env> {
     }
 
     /**
-     * Send an SSE event to all connected subscribers for this user.
+     * Send a live-channel event to every connected WebSocket for this
+     * user. Enumerates ctx.getWebSockets() so it works across DO
+     * hibernation/eviction (no in-memory subscriber list to lose).
      */
     private broadcast (event:string, data:unknown):void {
-        if (!this.subscribers) return
-        if (this.subscribers.size === 0) return
+        const sockets = this.ctx.getWebSockets()
+        if (sockets.length === 0) return
 
-        const payload = `event: ${event}\n` +
-            `data: ${JSON.stringify(data)}\n\n`
-        const bytes = this.encoder.encode(payload)
-
-        for (const controller of this.subscribers) {
+        const payload = JSON.stringify({ event, data })
+        for (const ws of sockets) {
             try {
-                controller.enqueue(bytes)
+                ws.send(payload)
             } catch {
-                this.subscribers.delete(controller)
+                // Socket is closing; broadcast() re-reads getWebSockets()
+                // on the next call, so no bookkeeping is needed here.
             }
         }
-        this.maybeStopKeepalive()
     }
 
-    private ensureKeepalive ():void {
-        if (this.keepaliveInterval) return
-        this.keepaliveInterval = setInterval(() => {
-            if (this.subscribers.size === 0) {
-                this.maybeStopKeepalive()
-                return
-            }
-            const bytes = this.encoder.encode(':keepalive\n\n')
-            for (const controller of this.subscribers) {
-                try {
-                    controller.enqueue(bytes)
-                } catch {
-                    this.subscribers.delete(controller)
-                }
-            }
-        }, 20_000)
+    // The live channel is server-push only; client pings are handled by
+    // setWebSocketAutoResponse and never arrive here. Defined so future
+    // client->server messages have a home and to satisfy the hibernation
+    // contract.
+    webSocketMessage (_ws:WebSocket, _message:string|ArrayBuffer):void {
+        // no-op
     }
 
-    private maybeStopKeepalive ():void {
-        if (
-            this.keepaliveInterval &&
-            this.subscribers.size === 0
-        ) {
-            clearInterval(this.keepaliveInterval)
-            this.keepaliveInterval = null
+    webSocketClose (
+        ws:WebSocket,
+        _code:number,
+        _reason:string,
+        _wasClean:boolean
+    ):void {
+        // Close the server side without forwarding the peer's code:
+        // reserved codes (e.g. 1005/1006) throw if passed to close().
+        // No bookkeeping needed because broadcast() reads
+        // ctx.getWebSockets() fresh each time.
+        try {
+            ws.close()
+        } catch {
+            // already closing/closed
         }
+    }
+
+    webSocketError (_ws:WebSocket, error:unknown):void {
+        console.error('[DO] webSocketError', error)
     }
 
     private getFeedUnreadCount (feedId:number):number {
@@ -1861,7 +1850,7 @@ export class UserDO extends DurableObject<Env> {
     /**
      * Mark any feed that has been resolving longer than RESOLVE_WINDOW_MS
      * as failed with a synthetic 504. Broadcasts feed-updated for each
-     * row swept so SSE-connected clients converge immediately. Idempotent:
+     * row swept so connected clients converge immediately. Idempotent:
      * runs only against rows that are still in the resolving state.
      */
     private sweepStuckResolvingFeeds ():void {

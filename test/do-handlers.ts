@@ -274,6 +274,7 @@ function createDoHarness (options:{
                 deleteAlarm:() => Promise<void>
             }
             waitUntil:(promise:Promise<unknown>) => void
+            getWebSockets:() => Array<{ send:(msg:string) => void }>
         }
         fetchFeed:(feed:FeedRow) => Promise<void>
         refreshFeedBatches:() => Promise<void>
@@ -305,6 +306,9 @@ function createDoHarness (options:{
         },
         waitUntil (promise) {
             waitUntilPromises.push(promise)
+        },
+        getWebSockets () {
+            return []
         }
     }
     userDo.fetchFeed = async (feed) => {
@@ -747,4 +751,49 @@ test('UserDO delete feed clamps future client timestamps', async t => {
     } finally {
         console.warn = originalWarn
     }
+})
+
+test('UserDO broadcast sends JSON envelope to every live socket', async t => {
+    const sent:Array<{ socket:number; payload:string }> = []
+    const makeSocket = (n:number) => ({
+        send: (payload:string) => sent.push({ socket: n, payload })
+    })
+    const sockets = [makeSocket(1), makeSocket(2)]
+
+    const userDo = Object.create(UserDO.prototype) as {
+        ctx:{ getWebSockets:() => unknown[] }
+        broadcast:(event:string, data:unknown) => void
+    }
+    userDo.ctx = { getWebSockets: () => sockets }
+
+    userDo.broadcast('feed-updated', { feedId: 7 })
+
+    t.equal(sent.length, 2, 'every live socket receives the message')
+    t.deepEqual(
+        sent.map(s => s.socket),
+        [1, 2],
+        'broadcast enumerates ctx.getWebSockets(), not an in-memory set'
+    )
+    t.equal(
+        sent[0]!.payload,
+        JSON.stringify({ event: 'feed-updated', data: { feedId: 7 } }),
+        'payload is a JSON envelope of { event, data }'
+    )
+})
+
+test('UserDO broadcast drops a failing socket and keeps going', async t => {
+    const delivered:number[] = []
+    const sockets = [
+        { send: () => { throw new Error('socket gone') } },
+        { send: () => delivered.push(2) }
+    ]
+    const userDo = Object.create(UserDO.prototype) as {
+        ctx:{ getWebSockets:() => unknown[] }
+        broadcast:(event:string, data:unknown) => void
+    }
+    userDo.ctx = { getWebSockets: () => sockets }
+
+    userDo.broadcast('feed-updated', { feedId: 1 })
+
+    t.deepEqual(delivered, [2], 'a throwing socket does not abort the loop')
 })

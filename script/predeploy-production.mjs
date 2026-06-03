@@ -1,24 +1,37 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import stripJsonComments from 'strip-json-comments'
 
-const wrangler = readFileSync(
+/**
+ * Guard rails for `wrangler deploy --env production`.
+ *
+ * Named environments do NOT inherit top-level config, so production
+ * must declare its own bindings and vars. We parse wrangler.jsonc as
+ * JSONC (string-aware comment stripping keeps `//` inside URLs intact)
+ * and assert on the structured config rather than scanning raw text,
+ * which is brittle to key ordering between env blocks.
+ */
+const raw = readFileSync(
     new URL('../wrangler.jsonc', import.meta.url),
     'utf8'
 )
-const productionStart = wrangler.indexOf('"production"')
-const observabilityStart = wrangler.indexOf('"observability"')
-const productionBlock = productionStart === -1 || observabilityStart === -1
-    ? ''
-    : wrangler.slice(productionStart, observabilityStart)
 
-assert.notEqual(
-    productionBlock,
-    '',
+let config
+try {
+    config = JSON.parse(stripJsonComments(raw))
+} catch (err) {
+    assert.fail(`wrangler.jsonc is not valid JSONC: ${err.message}`)
+}
+
+const production = config?.env?.production
+
+assert.ok(
+    production,
     'wrangler.jsonc must declare env.production before production deploy'
 )
 
-assert.match(
-    productionBlock,
-    /"NODE_ENV"\s*:\s*"production"/,
+assert.equal(
+    production?.vars?.NODE_ENV,
+    'production',
     'env.production must set NODE_ENV=production before production deploy'
 )
