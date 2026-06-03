@@ -9,3 +9,8 @@
   would be just "(default)".
 * [ ] the "star" button -- when you click it, it is impossible to click it back
   the other way (can't "un-star" things) until you refresh the page.
+
+## Cache Settings
+
+* [ ] I enabled all the "Local Storage" options, but the cache settings below
+  are still disabled ![screenshot of disabled cache settings](image-3.png).
