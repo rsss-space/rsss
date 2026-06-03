@@ -367,12 +367,6 @@ export class UserDO extends DurableObject<Env> {
     private app: Hono
     private sql: SqlStorage
     private manualRefreshClaims?:Map<number, number>
-    private subscribers = new Set<
-        ReadableStreamDefaultController<Uint8Array>
-    >()
-
-    private encoder = new TextEncoder()
-    private keepaliveInterval:ReturnType<typeof setInterval>|null = null
 
     constructor (ctx: DurableObjectState, env: Env) {
         super(ctx, env)
@@ -726,39 +720,6 @@ export class UserDO extends DurableObject<Env> {
             const server = pair[1]
             this.ctx.acceptWebSocket(server)
             return new Response(null, { status: 101, webSocket: client })
-        })
-
-        // Server-sent events stream. Broadcasts state-change
-        // notifications (e.g. feed-updated) to all open clients
-        // for this user.
-        app.get('/events', () => {
-            let owned:ReadableStreamDefaultController<Uint8Array>|null
-                = null
-            const stream = new ReadableStream<Uint8Array>({
-                start: (controller) => {
-                    owned = controller
-                    controller.enqueue(
-                        this.encoder.encode(': connected\n\n')
-                    )
-                    this.subscribers.add(controller)
-                    this.ensureKeepalive()
-                },
-                cancel: () => {
-                    if (owned) {
-                        this.subscribers.delete(owned)
-                        owned = null
-                    }
-                    this.maybeStopKeepalive()
-                }
-            })
-
-            return new Response(stream, {
-                headers: {
-                    'Content-Type': 'text/event-stream',
-                    'Cache-Control': 'no-cache, no-transform',
-                    'X-Accel-Buffering': 'no'
-                }
-            })
         })
 
         // Server-vs-client divergence indicator. Single round-trip
@@ -1554,37 +1515,9 @@ export class UserDO extends DurableObject<Env> {
             try {
                 ws.send(payload)
             } catch {
-                // Socket is closing; webSocketClose will not be needed
-                // because the next broadcast re-reads getWebSockets().
+                // Socket is closing; broadcast() re-reads getWebSockets()
+                // on the next call, so no bookkeeping is needed here.
             }
-        }
-    }
-
-    private ensureKeepalive ():void {
-        if (this.keepaliveInterval) return
-        this.keepaliveInterval = setInterval(() => {
-            if (this.subscribers.size === 0) {
-                this.maybeStopKeepalive()
-                return
-            }
-            const bytes = this.encoder.encode(':keepalive\n\n')
-            for (const controller of this.subscribers) {
-                try {
-                    controller.enqueue(bytes)
-                } catch {
-                    this.subscribers.delete(controller)
-                }
-            }
-        }, 20_000)
-    }
-
-    private maybeStopKeepalive ():void {
-        if (
-            this.keepaliveInterval &&
-            this.subscribers.size === 0
-        ) {
-            clearInterval(this.keepaliveInterval)
-            this.keepaliveInterval = null
         }
     }
 
