@@ -103,6 +103,10 @@ import {
     init as initDisplayedRefresh,
     _resetForTest as resetDisplayedRefresh,
 } from './displayed-refresh-in-progress.js'
+import {
+    liveChannelSocketUrl,
+    parseLiveMessage
+} from './live-channel.js'
 const debug = Debug('rsss:state')
 
 /**
@@ -118,6 +122,12 @@ const CHECKOUT_EMAIL_KEY = 'rsss_checkout_email'
 export const DEFAULT_PAGE_SIZE = 20
 const SYNC_AUTH_EXPIRED = 'Your session expired. Please log in again.'
 const SSE_REFRESH_DEBOUNCE_MS = 250
+// Client keepalive cadence. Must be well under Cloudflare's idle
+// WebSocket timeout; the runtime answers these without waking the DO.
+const LIVE_PING_INTERVAL_MS = 30_000
+const LIVE_PING_FRAME = JSON.stringify({ type: 'ping' })
+const LIVE_RECONNECT_BASE_MS = 1_000
+const LIVE_RECONNECT_MAX_MS = 30_000
 const REFRESH_FEEDS_SAFETY_TIMEOUT_MS = 60_000
 // When the POST response reports `queued: 0`, the server has nothing to
 // fetch. Its `refresh-complete` broadcast races (and sometimes loses) the
@@ -518,10 +528,15 @@ function scheduleResolveConvergence (
     resolveConvergenceTimers.set(feedId, timer)
 }
 
-let eventSource:EventSource|null = null
+let liveSocket:WebSocket|null = null
+let livePingInterval:ReturnType<typeof setInterval>|null = null
+let liveReconnectTimer:ReturnType<typeof setTimeout>|null = null
+let liveReconnectAttempts = 0
+// Closed intentionally by closeEventStream(); suppresses reconnect.
+let liveChannelClosed = false
 
 // Debounce handle for the SSE `feed-updated` -> refreshAfterSync timer.
-// Lifted to module scope (alongside `eventSource`) so closeEventStream
+// Lifted to module scope (alongside the live socket) so closeEventStream
 // can cancel a pending refresh; otherwise a debounced refresh fires
 // after the stream is closed (e.g. on logout/navigation), re-reading
 // state against a torn-down stream.
@@ -1319,18 +1334,20 @@ function buildItemOptions (state:AppState):{
 }
 
 /**
- * Subscribe to server-sent events from the user's Durable Object.
- * The DO broadcasts `feed-updated` after each feed fetch completes
- * (initial add, manual refresh, alarm-driven refresh). On those
- * events we re-read state from the server.
+ * Subscribe to the live channel from the user's Durable Object via a
+ * reconnecting WebSocket. The DO broadcasts `feed-updated` after each
+ * feed fetch completes (initial add, manual refresh, alarm-driven
+ * refresh). On those events we re-read state from the server.
  */
 State.openEventStream = function (state:AppState):void {
-    if (eventSource) return
+    if (liveSocket) return
+    liveChannelClosed = false
 
-    const source = new EventSource('/api/events', {
-        withCredentials: true
-    })
-    eventSource = source
+    // Reconnect-reconcile bookkeeping (was EventSource open/error):
+    // on every reopen *after the first*, refetch authoritative status
+    // so events missed during the outage cannot leave the UI stale.
+    let hasOpenedBefore = false
+    let needsReconcile = false
 
     const scheduleRefresh = () => {
         if (pendingSseRefresh !== null) return
@@ -1339,9 +1356,6 @@ State.openEventStream = function (state:AppState):void {
             trackRefresh(state, 'sse-feed-updated', async () => {
                 await State.refreshAfterSync(state)
             }).catch((err) => {
-                // trackRefresh already set feedSyncStatus = 'error'
-                // and released. Log for parity with prior implicit
-                // unhandled-rejection behavior.
                 debug(
                     'sse-feed-updated refreshAfterSync failed',
                     err instanceof Error ? err.message : err,
@@ -1350,20 +1364,14 @@ State.openEventStream = function (state:AppState):void {
         }, SSE_REFRESH_DEBOUNCE_MS)
     }
 
-    source.addEventListener('feed-updated', () => {
-        debug('SSE feed-updated')
+    const onFeedUpdated = () => {
+        debug('live feed-updated')
         scheduleRefresh()
-    })
+    }
 
-    source.addEventListener('refresh-complete', () => {
-        debug('SSE refresh-complete')
+    const onRefreshComplete = () => {
+        debug('live refresh-complete')
         clearRefreshFeedsSafetyTimeout()
-        // Await the authoritative reconcile so the items list, pill,
-        // and button transition land inside the same paint when we
-        // batch-clear refreshInProgress below (FR-005, SC-002).
-        // reconcileAfterRefresh intentionally does NOT call loadFeeds:
-        // the subscribed-feeds list is only mutated via add/delete or
-        // per-feed SSE, never as a side effect of "Refresh Feeds".
         State.reconcileAfterRefresh(state).catch((err) => {
             debug('refresh-complete reconcile error:', err)
         }).finally(() => {
@@ -1372,143 +1380,182 @@ State.openEventStream = function (state:AppState):void {
                 state.feedsLoading.value = false
             })
         })
-    })
+    }
 
-    // The server sends canonical per-feed pending counts; the
-    // client overwrites (does not increment) so it is a passive
-    // renderer of state. A `0` value means the feed is caught up
-    // and its entry is removed from the map. Entries for feeds the
-    // client does not know about (e.g. unsubscribed in another
-    // tab) are ignored. Legacy `feedIds` payloads from older
-    // server bundles fall back to a status reconcile for one
-    // deploy window (see T025).
-    source.addEventListener('feed-updates-available', (ev) => {
-        debug('SSE feed-updates-available', ev.data)
-        try {
-            const parsed = JSON.parse(ev.data) as {
-                feedUpdateCounts?:Record<string, number>
-                feedIds?:string[]
-            }
-            if (
-                parsed.feedUpdateCounts &&
-                typeof parsed.feedUpdateCounts === 'object'
-            ) {
-                const known = new Set(
-                    state.feeds.value.map(f => String(f.id))
-                )
-                const filteredEntries = Object.entries(
-                    parsed.feedUpdateCounts
-                ).filter(([feedId]) => known.has(feedId))
-                if (filteredEntries.length === 0) return
-                batch(() => {
-                    const next = { ...state.feedUpdateCounts.value }
-                    for (const [feedId, count] of filteredEntries) {
-                        if (count === 0) {
-                            delete next[feedId]
-                        } else {
-                            next[feedId] = count
-                        }
-                    }
-                    state.feedUpdateCounts.value = next
-                    const total = Object.values(next).reduce(
-                        (sum, n) => sum + n,
-                        0
-                    )
-                    state.feedSyncStatus.value = total > 0 ?
-                        'updates' :
-                        'synced'
-                })
-                // Drain any add-feed acquires waiting for these feed ids. Note
-                // that the SSE event signals server-side resolve completion, so
-                // items are ready for the next refreshAfterSync to surface.
-                drainAddFeedAcquires(
-                    filteredEntries.map(([feedId]) => Number(feedId)),
-                )
-                return
-            }
-            // Legacy `feedIds` shape: defer to the authoritative
-            // status endpoint to recover the canonical counts.
-            if (Array.isArray(parsed.feedIds)) {
-                State.loadFeedStatus(state).catch((err) => {
-                    debug('legacy feedIds reconcile error:', err)
-                })
-            }
-        } catch (err) {
-            debug('feed-updates-available parse error:', err)
+    const onUpdatesAvailable = (data:unknown) => {
+        debug('live feed-updates-available', data)
+        if (!data || typeof data !== 'object') return
+        const parsed = data as {
+            feedUpdateCounts?:Record<string, number>
+            feedIds?:string[]
         }
-    })
-
-    source.addEventListener('feed-updates-cleared', (ev) => {
-        debug('SSE feed-updates-cleared', ev.data)
-        try {
-            const { feedIds } = JSON.parse(ev.data) as {
-                feedIds:string[]
-            }
+        if (
+            parsed.feedUpdateCounts &&
+            typeof parsed.feedUpdateCounts === 'object'
+        ) {
+            const known = new Set(
+                state.feeds.value.map(f => String(f.id))
+            )
+            const filteredEntries = Object.entries(
+                parsed.feedUpdateCounts
+            ).filter(([feedId]) => known.has(feedId))
+            if (filteredEntries.length === 0) return
             batch(() => {
-                const counts = clearFeedUpdateCounts(
-                    state.feedUpdateCounts.value,
-                    feedIds
-                )
-                state.feedUpdateCounts.value = counts
-                if (Object.keys(counts).length === 0) {
-                    state.feedSyncStatus.value = 'synced'
+                const next = { ...state.feedUpdateCounts.value }
+                for (const [feedId, count] of filteredEntries) {
+                    if (count === 0) {
+                        delete next[feedId]
+                    } else {
+                        next[feedId] = count
+                    }
                 }
+                state.feedUpdateCounts.value = next
+                const total = Object.values(next).reduce(
+                    (sum, n) => sum + n,
+                    0
+                )
+                state.feedSyncStatus.value = total > 0 ?
+                    'updates' :
+                    'synced'
             })
-        } catch (err) {
-            debug('feed-updates-cleared parse error:', err)
+            drainAddFeedAcquires(
+                filteredEntries.map(([feedId]) => Number(feedId)),
+            )
+            return
         }
-    })
+        if (Array.isArray(parsed.feedIds)) {
+            State.loadFeedStatus(state).catch((err) => {
+                debug('legacy feedIds reconcile error:', err)
+            })
+        }
+    }
 
-    // EventSource auto-reconnects after errors; on each successful
-    // reopen *after the first one* we refetch authoritative status
-    // so missed `feed-updates-available` events during the outage
-    // cannot leave the indicator stale (FR-007). The first `open`
-    // is skipped because the post-auth boot already loaded status.
-    let hasOpenedBefore = false
-    let needsReconcile = false
-    source.addEventListener('open', () => {
-        debug('SSE open')
-        if (hasOpenedBefore) {
-            // If a manual refresh was in flight when SSE dropped, the
-            // server's `refresh-complete` event may have been lost.
-            // Run the full authoritative reconcile and clear the busy
-            // state so the button cannot get stuck waiting for an
-            // event that will never arrive.
-            if (state.refreshInProgress.value) {
-                clearRefreshFeedsSafetyTimeout()
-                needsReconcile = false
-                State.reconcileAfterRefresh(state).catch((err) => {
-                    debug('reconnect reconcileAfterRefresh error:', err)
-                }).finally(() => {
-                    batch(() => {
-                        releaseRefresh(state)
-                        state.feedsLoading.value = false
-                    })
-                })
-            } else if (needsReconcile) {
-                needsReconcile = false
-                State.loadFeedStatus(state).catch((err) => {
-                    debug('reconnect loadFeedStatus error:', err)
-                })
+    const onUpdatesCleared = (data:unknown) => {
+        debug('live feed-updates-cleared', data)
+        if (!data || typeof data !== 'object') return
+        const { feedIds } = data as { feedIds:string[] }
+        if (!Array.isArray(feedIds)) return
+        batch(() => {
+            const counts = clearFeedUpdateCounts(
+                state.feedUpdateCounts.value,
+                feedIds
+            )
+            state.feedUpdateCounts.value = counts
+            if (Object.keys(counts).length === 0) {
+                state.feedSyncStatus.value = 'synced'
             }
-        }
-        hasOpenedBefore = true
-    })
+        })
+    }
 
-    source.addEventListener('error', (ev) => {
-        debug('SSE error (auto-reconnect)', ev)
-        needsReconcile = true
-    })
+    const connect = () => {
+        if (liveChannelClosed) return
+        const socket = new WebSocket(liveChannelSocketUrl(window.location))
+        liveSocket = socket
+
+        socket.addEventListener('open', () => {
+            debug('live open')
+            liveReconnectAttempts = 0
+            if (livePingInterval === null) {
+                livePingInterval = setInterval(() => {
+                    if (liveSocket?.readyState === WebSocket.OPEN) {
+                        liveSocket.send(LIVE_PING_FRAME)
+                    }
+                }, LIVE_PING_INTERVAL_MS)
+            }
+            if (hasOpenedBefore) {
+                if (state.refreshInProgress.value) {
+                    clearRefreshFeedsSafetyTimeout()
+                    needsReconcile = false
+                    State.reconcileAfterRefresh(state).catch((err) => {
+                        debug('reconnect reconcileAfterRefresh error:', err)
+                    }).finally(() => {
+                        batch(() => {
+                            releaseRefresh(state)
+                            state.feedsLoading.value = false
+                        })
+                    })
+                } else if (needsReconcile) {
+                    needsReconcile = false
+                    State.loadFeedStatus(state).catch((err) => {
+                        debug('reconnect loadFeedStatus error:', err)
+                    })
+                }
+            }
+            hasOpenedBefore = true
+        })
+
+        socket.addEventListener('message', (ev) => {
+            const msg = parseLiveMessage(
+                typeof ev.data === 'string' ? ev.data : ''
+            )
+            if (!msg) return
+            switch (msg.event) {
+                case 'feed-updated':
+                    onFeedUpdated()
+                    break
+                case 'refresh-complete':
+                    onRefreshComplete()
+                    break
+                case 'feed-updates-available':
+                    onUpdatesAvailable(msg.data)
+                    break
+                case 'feed-updates-cleared':
+                    onUpdatesCleared(msg.data)
+                    break
+                default:
+                    debug('live unknown event', msg.event)
+            }
+        })
+
+        socket.addEventListener('close', () => {
+            debug('live close')
+            needsReconcile = true
+            if (liveSocket === socket) liveSocket = null
+            if (livePingInterval !== null) {
+                clearInterval(livePingInterval)
+                livePingInterval = null
+            }
+            if (liveChannelClosed) return
+            const delay = Math.min(
+                LIVE_RECONNECT_BASE_MS * 2 ** liveReconnectAttempts,
+                LIVE_RECONNECT_MAX_MS
+            )
+            liveReconnectAttempts++
+            liveReconnectTimer = setTimeout(connect, delay)
+        })
+
+        socket.addEventListener('error', (ev) => {
+            debug('live error', ev)
+            needsReconcile = true
+            try {
+                socket.close()
+            } catch {
+                // already closed
+            }
+        })
+    }
+
+    connect()
 }
 
 State.closeEventStream = function ():void {
+    liveChannelClosed = true
     if (pendingSseRefresh !== null) {
         clearTimeout(pendingSseRefresh)
         pendingSseRefresh = null
     }
-    if (!eventSource) return
-    eventSource.close()
-    eventSource = null
+    if (liveReconnectTimer !== null) {
+        clearTimeout(liveReconnectTimer)
+        liveReconnectTimer = null
+    }
+    if (livePingInterval !== null) {
+        clearInterval(livePingInterval)
+        livePingInterval = null
+    }
+    liveReconnectAttempts = 0
+    if (!liveSocket) return
+    liveSocket.close()
+    liveSocket = null
 }
 
 /**

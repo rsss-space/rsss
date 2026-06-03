@@ -11,64 +11,10 @@ import {
     type AppState,
     _registerRefreshSignalForTest
 } from '../src/client/state.js'
-
-type EventListenerFn = (ev:MessageEvent|Event) => void
-
-class StubEventSource {
-    static instances:StubEventSource[] = []
-
-    url:string
-    readyState = 0
-    listeners:Record<string, EventListenerFn[]> = {}
-    onopen:EventListenerFn|null = null
-    onerror:EventListenerFn|null = null
-    onmessage:EventListenerFn|null = null
-    closed = false
-
-    constructor (url:string) {
-        this.url = url
-        StubEventSource.instances.push(this)
-    }
-
-    addEventListener (event:string, listener:EventListenerFn):void {
-        (this.listeners[event] ??= []).push(listener)
-    }
-
-    removeEventListener (event:string, listener:EventListenerFn):void {
-        const list = this.listeners[event]
-        if (!list) return
-        this.listeners[event] = list.filter(fn => fn !== listener)
-    }
-
-    close ():void {
-        this.closed = true
-    }
-
-    fire (event:string, data?:unknown):void {
-        const ev = data === undefined ?
-            new Event(event) :
-            new MessageEvent(event, { data: JSON.stringify(data) })
-        const list = this.listeners[event] ?? []
-        for (const fn of list) fn(ev)
-        if (event === 'open' && this.onopen) this.onopen(ev)
-        if (event === 'error' && this.onerror) this.onerror(ev)
-    }
-}
-
-function withStubbedEventSource<T> (
-    fn:() => Promise<T>
-):Promise<T> {
-    const original = (globalThis as { EventSource?:typeof EventSource })
-        .EventSource
-    StubEventSource.instances = []
-    ;(globalThis as { EventSource:unknown })
-        .EventSource = StubEventSource as unknown as typeof EventSource
-    return fn().finally(() => {
-        ;(globalThis as { EventSource?:typeof EventSource })
-            .EventSource = original
-        StubEventSource.instances = []
-    })
-}
+import {
+    StubWebSocket,
+    withStubbedWebSocket
+} from './helpers/stub-live-socket.js'
 
 type FetchInput = Parameters<typeof fetch>[0]
 type FetchInit = Parameters<typeof fetch>[1]
@@ -238,7 +184,7 @@ async t => {
 
     const root = mount(state)
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -325,7 +271,7 @@ async t => {
 
     const root = mount(state)
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -338,7 +284,7 @@ async t => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
 
                 const btn = refreshButton(root)
 
@@ -404,7 +350,7 @@ async t => {
 
     const root = mount(state)
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -417,7 +363,7 @@ async t => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
 
                 t.equal(
                     pillDotColor(root),
@@ -497,7 +443,7 @@ async t => {
 
     const root = mount(state)
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -515,7 +461,7 @@ async t => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
 
                 t.equal(
                     pillDotColor(root),
@@ -589,7 +535,7 @@ async t => {
 
     const root = mount(state)
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -668,7 +614,7 @@ async t => {
     let postCalls = 0
     const root = mount(state)
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -682,7 +628,7 @@ async t => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
                 const btn = refreshButton(root)
 
                 for (let i = 1; i <= 3; i++) {
@@ -736,7 +682,7 @@ async t => {
     let postCalls = 0
     const root = mount(state)
     try {
-        await withStubbedEventSource(async () => {
+        await withStubbedWebSocket(async () => {
             await withStubbedFetch(async (input) => {
                 const url = typeof input === 'string' ?
                     input :
@@ -750,7 +696,7 @@ async t => {
                 return jsonResponse({})
             }, async () => {
                 State.openEventStream(state)
-                const source = StubEventSource.instances[0]
+                const source = StubWebSocket.instances[0]
                 const btn = refreshButton(root)
 
                 btn.dispatchEvent(new MouseEvent('click', {
