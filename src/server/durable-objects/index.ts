@@ -872,8 +872,8 @@ export class UserDO extends DurableObject<Env> {
                     }
                 } else {
                     // 3s elapsed; let the fetch finish in the background so the
-                    // alarm + SSE + Phase 1 convergence pipeline can deliver
-                    // terminal state to the client.
+                    // alarm + live channel + Phase 1 convergence pipeline can
+                    // deliver terminal state to the client.
                     this.ctx.waitUntil(fetchPromise.catch(() => undefined))
                 }
 
@@ -1015,8 +1015,8 @@ export class UserDO extends DurableObject<Env> {
 
         // Refresh all feeds. Kick fetches off in waitUntil and
         // return immediately - clients see per-feed completion via
-        // SSE (`feed-updated`) and the whole-batch completion via
-        // `refresh-complete`.
+        // the live channel (`feed-updated`) and the whole-batch
+        // completion via `refresh-complete`.
         app.post('/feeds/refresh', (c) => {
             const feeds = this.sql.exec('SELECT * FROM feeds')
                 .toArray() as unknown as Feed[]
@@ -1850,7 +1850,7 @@ export class UserDO extends DurableObject<Env> {
     /**
      * Mark any feed that has been resolving longer than RESOLVE_WINDOW_MS
      * as failed with a synthetic 504. Broadcasts feed-updated for each
-     * row swept so SSE-connected clients converge immediately. Idempotent:
+     * row swept so connected clients converge immediately. Idempotent:
      * runs only against rows that are still in the resolving state.
      */
     private sweepStuckResolvingFeeds ():void {
