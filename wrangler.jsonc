@@ -23,12 +23,25 @@
 	/**
 	 * Durable Object migrations.
 	 * UserDO is SQLite-backed (uses ctx.storage.sql).
+	 *
+	 * This is the REAL applied lineage: the class was first created as
+	 * CollieUserDO (v1) then renamed to UserDO (v2). The deployed rsss and
+	 * rsss-staging workers both record migration_tag "v2", so this list must
+	 * keep v1+v2 intact. Do NOT collapse it to a single new_sqlite_classes
+	 * for UserDO -- that re-creates an already-existing class and Cloudflare
+	 * rejects the deploy (error 10074).
+	 *
 	 * Migrations are NOT inherited into named environments, so they must
 	 * also be declared inside env.staging and env.production below.
 	 */
 	"migrations": [
 		{
 			"tag": "v1",
+			"new_sqlite_classes": ["CollieUserDO"]
+		},
+		{
+			"tag": "v2",
+			"deleted_classes": ["CollieUserDO"],
 			"new_sqlite_classes": ["UserDO"]
 		}
 	],
@@ -117,6 +130,11 @@
 			"migrations": [
 				{
 					"tag": "v1",
+					"new_sqlite_classes": ["CollieUserDO"]
+				},
+				{
+					"tag": "v2",
+					"deleted_classes": ["CollieUserDO"],
 					"new_sqlite_classes": ["UserDO"]
 				}
 			],
@@ -168,6 +186,11 @@
 			"migrations": [
 				{
 					"tag": "v1",
+					"new_sqlite_classes": ["CollieUserDO"]
+				},
+				{
+					"tag": "v2",
+					"deleted_classes": ["CollieUserDO"],
 					"new_sqlite_classes": ["UserDO"]
 				}
 			],
