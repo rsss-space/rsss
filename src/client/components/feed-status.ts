@@ -100,6 +100,13 @@ export const FeedStatus:FunctionComponent<{
 
     return html`
         <span class="feed-status-wrap">
+            ${status === 'updates' ?
+                html`<${Button}
+                    className="fetch-updates-btn"
+                    onClick=${() => State.refreshFeeds(state)}
+                    isSpinning=${state.refreshInProgress}
+                >fetch updates<//>` :
+                ''}
             <span
                 key=${status}
                 class=${wrapperClass}
@@ -113,13 +120,6 @@ export const FeedStatus:FunctionComponent<{
                     ''}
                 <${Dot} color=${color} />
             </span>
-            ${status === 'updates' ?
-                html`<${Button}
-                    className="fetch-updates-btn"
-                    onClick=${() => State.refreshFeeds(state)}
-                    isSpinning=${state.refreshInProgress}
-                >fetch updates<//>` :
-                ''}
         </span>
     `
 }
