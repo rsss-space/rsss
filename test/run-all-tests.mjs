@@ -38,6 +38,7 @@ const commands = [
     'npm run test:resolve-convergence-signal-refresh',
     'npm run test:bootstrap',
     'npm run test:api-router',
+    'npm run test:sentry-wiring',
 
     // --- node-platform tests (esbuild -> node -> tap-spec) ---
     [

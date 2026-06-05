@@ -41,7 +41,7 @@ test-harness only:
 
 **Purpose**: Add the build/run entry point both P1 stories execute through.
 
-- [ ] T001 Add a `test:sentry-wiring` script to `package.json` `scripts`,
+- [X] T001 Add a `test:sentry-wiring` script to `package.json` `scripts`,
   mirroring `test:api-router`: bundle `./test/sentry-wiring.ts` with esbuild
   (`--bundle --loader:.wasm=dataurl`,
   `--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts`,
@@ -57,7 +57,7 @@ suite skeleton that all per-story assertions extend.
 
 **⚠️ CRITICAL**: US1, US2, and the smoke guard all depend on Phase 2.
 
-- [ ] T002 Extend `test/sentry-cloudflare-stub.ts` (additive only): have
+- [X] T002 Extend `test/sentry-cloudflare-stub.ts` (additive only): have
   `withSentry` and `instrumentDurableObjectWithSentry` record the
   `optionsCallback` they receive into module-level slots; export
   `getWorkerSentryOptionsCallback()`, `getDOSentryOptionsCallback()`, and
@@ -65,7 +65,7 @@ suite skeleton that all per-story assertions extend.
   values and every existing export unchanged so current consumers
   (`test:browser`, `test:api-router`, `test:report-error`, the
   `test/index.ts` bundle) are unaffected.
-- [ ] T003 Create `test/sentry-wiring.ts`: import the worker default export
+- [X] T003 Create `test/sentry-wiring.ts`: import the worker default export
   and `UserDO` from `../src/server/index.js` (this triggers `withSentry` /
   `instrumentDurableObjectWithSentry` at module load and populates the
   captured callbacks), import the three getters from
@@ -73,7 +73,7 @@ suite skeleton that all per-story assertions extend.
   'https://public@o0.ingest.sentry.io/0'`, and add a smoke `test(...)`
   asserting both captured callbacks are functions (proves the worker and DO
   are wired to a callback at all — contract "Wiring guarantees").
-- [ ] T004 Register the suite in `test/run-all-tests.mjs` by adding
+- [X] T004 Register the suite in `test/run-all-tests.mjs` by adding
   `'npm run test:sentry-wiring'` to the "kept separate" group next to
   `'npm run test:api-router'` (it imports the worker and mutates shared
   singletons, so it must run in its own bundle, not the consolidated one).
@@ -94,16 +94,16 @@ wiring to leak the DSN in dev (T012) makes exactly these assertions fail.
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] In `test/sentry-wiring.ts`, add a test on the captured
+- [X] T005 [US1] In `test/sentry-wiring.ts`, add a test on the captured
   **worker** callback for `{ NODE_ENV: 'development', SENTRY_DSN: DSN }`:
   assert `cb(devEnv).dsn === undefined` and
   `'tracesSampleRate' in cb(devEnv) === false` (FR-001, FR-004, FR-007;
   contract `development` row).
-- [ ] T006 [US1] In `test/sentry-wiring.ts`, add the same dev-env assertions
+- [X] T006 [US1] In `test/sentry-wiring.ts`, add the same dev-env assertions
   on the captured **DO** callback (`dsn === undefined`, no `tracesSampleRate`)
   so the stateful surface is covered, not just the request handler
   (FR-002, FR-003).
-- [ ] T007 [US1] In `test/sentry-wiring.ts`, add assertions for **unset**
+- [X] T007 [US1] In `test/sentry-wiring.ts`, add assertions for **unset**
   `NODE_ENV` (`{ SENTRY_DSN: DSN }`) on both worker and DO callbacks:
   `dsn === undefined` and `'tracesSampleRate' in opts === false` (contract
   `unset` row; edge case "labeled development").
@@ -124,14 +124,14 @@ sample rate in deployed envs.
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] In `test/sentry-wiring.ts`, add a test on the captured
+- [X] T008 [US2] In `test/sentry-wiring.ts`, add a test on the captured
   **worker** callback: `{ NODE_ENV: 'production', SENTRY_DSN: DSN }` →
   `dsn === DSN`, `tracesSampleRate === 0.2`; and
   `{ NODE_ENV: 'staging', SENTRY_DSN: DSN }` → `dsn === DSN`,
   `tracesSampleRate === 1.0` (FR-005; contract `production`/`staging` rows).
-- [ ] T009 [US2] In `test/sentry-wiring.ts`, add the same production/staging
+- [X] T009 [US2] In `test/sentry-wiring.ts`, add the same production/staging
   assertions on the captured **DO** callback (FR-003, FR-005).
-- [ ] T010 [US2] In `test/sentry-wiring.ts`, add a test asserting the worker
+- [X] T010 [US2] In `test/sentry-wiring.ts`, add a test asserting the worker
   and DO callbacks return deep-equal options for every env (`production`,
   `staging`, `development`, unset), so the two surfaces cannot drift
   (contract "Wiring guarantees" item 2).
@@ -151,7 +151,7 @@ suppression does not reduce local debugging visibility (FR-006).
 
 ### Implementation for User Story 3
 
-- [ ] T011 [US3] Verify `test/report-error.ts` asserts `reportError` writes to
+- [X] T011 [US3] Verify `test/report-error.ts` asserts `reportError` writes to
   `console.error` (it currently overrides `console.error` at ~lines 10-33 and
   checks it is called). Confirm `test:report-error` stays registered in
   `test/run-all-tests.mjs`. If the `console.error` assertion is absent or
@@ -165,7 +165,7 @@ suppression does not reduce local debugging visibility (FR-006).
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T012 Prove the regression guard has teeth: temporarily edit
+- [X] T012 Prove the regression guard has teeth: temporarily edit
   `src/server/index.ts` so `getSentryOptions`/`getDOSentryOptions` return the
   DSN in dev (e.g. `(env) => ({ dsn: env.SENTRY_DSN })`), run
   `npm run test:sentry-wiring`, confirm the US1 dev assertions (T005-T007)
@@ -177,7 +177,7 @@ suppression does not reduce local debugging visibility (FR-006).
   an error, confirm no event appears in the Sentry dashboard for the
   development environment and the error still prints to the local
   console/`wrangler` output.
-- [ ] T014 Run the full project gate `npm test && npm run lint` and confirm
+- [X] T014 Run the full project gate `npm test && npm run lint` and confirm
   green — verifying the additive stub change broke no existing suite and that
   no production source was modified (`git diff --stat` shows only `test/` and
   `package.json`).
