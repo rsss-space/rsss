@@ -39,7 +39,7 @@ repository root, per plan.md "Project Structure".
 initialization is needed — the build, lint, and test infra already exist
 (`npm test && npm run lint`).
 
-- [ ] T001 Confirm the reuse surface this feature binds to, without
+- [X] T001 Confirm the reuse surface this feature binds to, without
   changing code: the shared `Button` (`src/client/components/button.ts`)
   exposes `onClick`, `className`, and `isSpinning:Signal<boolean>`
   (sets `disabled` + `aria-busy`); `State.refreshFeeds(state)` and the
@@ -59,7 +59,7 @@ button has a slot that sits outside the `role="status"` live region
 
 **⚠️ CRITICAL**: Both user stories depend on this phase.
 
-- [ ] T002 In `src/client/components/feed-status.ts`, refactor the
+- [X] T002 In `src/client/components/feed-status.ts`, refactor the
   non-error `return` so the existing `role="status"` `aria-live="polite"`
   span (keep its `key=${status}` and `aria-label`) is wrapped in a new
   `<span class="feed-status-wrap">` container, with an empty sibling slot
@@ -68,7 +68,7 @@ button has a slot that sits outside the `role="status"` live region
   `import { State } from '../state.js'` (extend the existing
   `type { AppState }` import). Do not change the `status === 'error'`
   branch or the live-region markup. Keep lines ≤80 cols.
-- [ ] T003 [P] In `src/client/components/feed-status.css`, add a
+- [X] T003 [P] In `src/client/components/feed-status.css`, add a
   `.feed-status-wrap` rule with `display: inline-flex; align-items:
   center; gap: 0.5rem;`. Do not modify the existing `.feed-status` rule
   or the existing `@media (680px <= width < 1000px)` block. Lines ≤80
@@ -92,7 +92,7 @@ the right of the text; it is absent for `synced`/`syncing`/`error`/
 
 ### Tests for User Story 1 (write first; expect FAIL before T006/T007)
 
-- [ ] T004 [P] [US1] In `test/feed-status.ts`, add presence/absence +
+- [X] T004 [P] [US1] In `test/feed-status.ts`, add presence/absence +
   accessible-name cases via the existing `feedStatusState` /
   `renderFeedStatus` helpers: the button (queried as
   `root.querySelector('.fetch-updates-btn')` or by accessible name) is
@@ -103,7 +103,7 @@ the right of the text; it is absent for `synced`/`syncing`/`error`/
   `'syncing'` (FR-002). Assert the button's accessible name equals
   exactly `"fetch updates"` (FR-008) — the only DOM-text assertion this
   feature adds.
-- [ ] T005 [P] [US1] Create `test/fetch-updates-button.ts` mirroring
+- [X] T005 [P] [US1] Create `test/fetch-updates-button.ts` mirroring
   `test/sidebar-footer-refresh.ts` (local `withStubbedFetch` +
   `jsonResponse`, `withStubbedWebSocket` / `StubWebSocket` from
   `./helpers/stub-live-socket.js`, and `_registerRefreshSignalForTest`).
@@ -116,7 +116,7 @@ the right of the text; it is absent for `synced`/`syncing`/`error`/
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] In `src/client/components/feed-status.ts`, render the
+- [X] T006 [US1] In `src/client/components/feed-status.ts`, render the
   button in the previously-added slot, gated on `status === 'updates'`:
   `${status === 'updates' ? html\`<${Button}
   className="fetch-updates-btn" onClick=${() => State.refreshFeeds(state)}
@@ -125,7 +125,7 @@ the right of the text; it is absent for `synced`/`syncing`/`error`/
   read into `status`), so the button appears/disappears reactively with no
   reload (FR-001, FR-002, FR-004, FR-007, FR-009). Lines ≤80 cols.
   (Depends on T002.)
-- [ ] T007 [P] [US1] In `src/client/components/feed-status.css`, style
+- [X] T007 [P] [US1] In `src/client/components/feed-status.css`, style
   `.fetch-updates-btn` reusing existing button/`--color-*` variables
   (reuse `--color-primary`; introduce no new color) and add the button
   to the existing responsive rule so it is hidden in the
@@ -151,7 +151,7 @@ running starts no second fetch.
 
 ### Tests for User Story 2 (write first; expect FAIL before T009)
 
-- [ ] T008 [P] [US2] In `test/fetch-updates-button.ts`, add re-entrancy +
+- [X] T008 [P] [US2] In `test/fetch-updates-button.ts`, add re-entrancy +
   feedback cases: (a) mount in `'updates'` with `refreshInProgress=true`
   and assert the button is `disabled` and `aria-busy="true"` (FR-005);
   (b) with a fetch already in progress (set `refreshInProgress=true`
@@ -162,7 +162,7 @@ running starts no second fetch.
 
 ### Implementation for User Story 2
 
-- [ ] T009 [US2] In `src/client/components/feed-status.ts`, add
+- [X] T009 [US2] In `src/client/components/feed-status.ts`, add
   `isSpinning=${state.refreshInProgress}` to the `Button` rendered in
   T006, matching `SidebarFooter`. This gives `disabled` + `aria-busy`
   while a fetch is in flight (FR-005) and DOM-level re-entrancy on top of
@@ -179,10 +179,10 @@ ignores clicks while a fetch is in progress. T004, T005, and T008 pass.
 **Purpose**: Verify the feature end-to-end against the spec and the
 constitution's browser-verification requirement.
 
-- [ ] T010 Run `npm test && npm run lint` and confirm both are clean,
+- [X] T010 Run `npm test && npm run lint` and confirm both are clean,
   including the new `test/feed-status.ts` cases and
   `test/fetch-updates-button.ts`.
-- [ ] T011 Run `npm start` and perform the quickstart.md browser checks:
+- [X] T011 Run `npm start` and perform the quickstart.md browser checks:
   drive a feed into the `'updates'` state and confirm the button shows to
   the right of the "N updates" text; click it and confirm it fetches like
   "Refresh Feeds" and the indicator transitions to "updating" then to

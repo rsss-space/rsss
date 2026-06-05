@@ -1,3 +1,9 @@
+.feed-status-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 .feed-status {
     display: inline-flex;
     align-items: center;
@@ -14,8 +20,23 @@
     }
 }
 
+.fetch-updates-btn.btn {
+    padding: 0.125rem 0.5rem;
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.fetch-updates-btn.btn:hover {
+    color: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+}
+
 @media (680px <= width < 1000px) {
     .feed-status:not(.syncing) .feed-status-legend {
+        display: none;
+    }
+
+    .feed-status-wrap .fetch-updates-btn {
         display: none;
     }
 }
