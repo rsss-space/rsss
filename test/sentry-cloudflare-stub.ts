@@ -4,15 +4,44 @@
 // throughs preserve the runtime shape of the wrapped handlers and DO
 // class without pulling in Node built-ins.
 
-export function withSentry<T> (_optionsCallback:unknown, handler:T):T {
+// Capture the options callback each wrapper is given so wiring tests can
+// invoke the *real* getSentryOptions / getDOSentryOptions across envs. The
+// wrappers still pass the handler / class straight through, so every other
+// consumer is unaffected by the capture.
+export type SentryOptionsCallback = (env:unknown) => unknown
+
+let workerSentryOptionsCallback:SentryOptionsCallback|undefined
+let doSentryOptionsCallback:SentryOptionsCallback|undefined
+
+export function withSentry<T> (
+    optionsCallback:SentryOptionsCallback,
+    handler:T
+):T {
+    workerSentryOptionsCallback = optionsCallback
     return handler
 }
 
 export function instrumentDurableObjectWithSentry<T> (
-    _optionsCallback:unknown,
+    optionsCallback:SentryOptionsCallback,
     DurableObjectClass:T
 ):T {
+    doSentryOptionsCallback = optionsCallback
     return DurableObjectClass
+}
+
+export function getWorkerSentryOptionsCallback ()
+    :SentryOptionsCallback|undefined {
+    return workerSentryOptionsCallback
+}
+
+export function getDOSentryOptionsCallback ()
+    :SentryOptionsCallback|undefined {
+    return doSentryOptionsCallback
+}
+
+export function resetCapturedSentryCallbacks ():void {
+    workerSentryOptionsCallback = undefined
+    doSentryOptionsCallback = undefined
 }
 
 export function instrumentD1WithSentry<T> (binding:T):T {

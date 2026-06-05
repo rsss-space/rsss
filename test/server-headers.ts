@@ -39,3 +39,34 @@ test('image responses do not receive document isolation headers',
         )
     }
 )
+
+test('websocket upgrade (status 101) passes through untouched',
+    (t) => {
+        // A real WebSocket upgrade response has status 101 and an empty
+        // content-type. Reconstructing it with `new Response(body, {
+        // status: 101 })` throws RangeError (codes must be 200-599) and
+        // would drop the attached `webSocket`, so it must pass through.
+        const upgrade = {
+            status: 101,
+            statusText: 'Switching Protocols',
+            headers: new Headers(),
+            body: null
+        } as unknown as Response
+
+        let err:unknown = null
+        let res:Response|null = null
+        try {
+            res = withIsolationHeaders(upgrade)
+        } catch (caught) {
+            err = caught
+        }
+
+        t.equal(err, null, 'does not throw on a 101 upgrade response')
+        t.equal(res, upgrade, 'returns the upgrade response unmodified')
+        t.equal(
+            res?.headers.get('Cross-Origin-Opener-Policy'),
+            null,
+            'does not add COOP to an upgrade response'
+        )
+    }
+)
