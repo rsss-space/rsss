@@ -1,6 +1,6 @@
 # rsss Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-02
+Auto-generated from all feature plans. Last updated: 2026-06-04
 
 ## Active Technologies
 - Per-user Durable Object SQLite (server-authoritative); local (002-full-article-fetch)
@@ -35,6 +35,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-02
 - N/A — UI-only. Reuses the existing client signal (027-disable-cache-settings-link)
 - N/A for this feature. Reuses existing `Item.link` already (030-article-source-url)
 - N/A — presentation-only. No SQLite (local or DO) schema (031-animate-cache-settings)
+- TypeScript (Cloudflare Workers runtime, ES2022 lib) for + `@sentry/cloudflare` (worker + DO), (033-no-sentry-in-dev)
+- N/A — no local SQLite or DO schema change (033-no-sentry-in-dev)
 
 - TypeScript (Cloudflare Workers runtime, ES2022 lib) + `hono`, `@cloudflare/workers-types`, `fast-xml-parser` (001-fix-og-image-redirects)
 
@@ -55,9 +57,9 @@ npm test && npm run lint
 TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Recent Changes
+- 033-no-sentry-in-dev: Added TypeScript (Cloudflare Workers runtime, ES2022 lib) for + `@sentry/cloudflare` (worker + DO),
 - 031-animate-cache-settings: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`,
 - 030-article-source-url: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
-- 027-disable-cache-settings-link: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -51,11 +51,11 @@ export default defineConfig(({ mode }) => {
             },
         },
         server: {
-            port: 5555,
+            port: 2222,
             host: true,
             // Use 127.0.0.1 (not localhost) so the OAuth loopback-client
             // redirect lands on the same origin as the session cookie.
-            open: 'http://127.0.0.1:5555/',
+            open: 'http://127.0.0.1:2222/',
             headers: {
                 'Cross-Origin-Opener-Policy': 'same-origin',
                 'Cross-Origin-Embedder-Policy': 'credentialless',
