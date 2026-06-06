@@ -30,16 +30,20 @@ See [rsss.space](https://rsss.space/).
   * [Local First](#local-first)
   * [Sync (remote/local)](#sync-remotelocal)
   * [Worker (Hono) - Main entry point](#worker-hono---main-entry-point)
-  * [Durable Object per user (RsssUserDO)](#durable-object-per-user-userdo)
+  * [Durable Object per user (RsssUserDO)](#durable-object-per-user-rsssuserdo)
   * [Frontend](#frontend)
+- [Images](#images)
+  * [Blur-Up](#blur-up)
 - [Files](#files)
 - [Running Locally](#running-locally)
 - [Deploy](#deploy)
+  * [Workers Builds (CI deploys from Git)](#workers-builds-ci-deploys-from-git)
   * [Rotate `SESSION_SECRET`](#rotate-session_secret)
 - [Notes](#notes)
   * [Generate a Secret](#generate-a-secret)
   * [Local Durable Object](#local-durable-object)
   * [Storage use vs quota](#storage-use-vs-quota)
+  * [Blur Hash](#blur-hash)
 
 <!-- tocstop -->
 
@@ -395,13 +399,3 @@ user for repeated requests.
 ```
 
 --------------------------------------------------------------
-
-
-
-
-
- 
- 
- 
- 
- 
