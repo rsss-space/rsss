@@ -102,7 +102,11 @@
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
 	 */
 	"assets": {
-		"directory": "./public/",
+		// The @cloudflare/vite-plugin emits the client SPA into
+		// public/client/ (and the worker build into public/rsss/).
+		// ASSETS must point at the client output, not public/ itself,
+		// or the SPA root index.html is missing and / 404s.
+		"directory": "./public/client",
 		"not_found_handling": "single-page-application",
 		"binding": "ASSETS",
 		"run_worker_first": true
