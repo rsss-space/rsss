@@ -15,6 +15,7 @@ See [rsss.space](https://rsss.space/).
 * [Wired Top Stories](https://www.wired.com/feed/rss)
 * [Wired Gear](https://www.wired.com/feed/category/gear/latest/rss)
 * [Wired Culture](https://www.wired.com/feed/category/culture/latest/rss)
+* [techcrunch.com](https://techcrunch.com/feed/)
 
 >
 > [!WARNING]  
