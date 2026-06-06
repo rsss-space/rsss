@@ -1,13 +1,14 @@
-# Copied to public/.assetsignore by `npm run build`. Patterns here are
-# excluded from the Cloudflare static-assets upload (gitignore syntax).
+# Copied to public/client/.assetsignore by `npm run build`. Patterns
+# here are excluded from the Cloudflare static-assets upload (gitignore
+# syntax).
 #
-# WHY: the @cloudflare/vite-plugin worker build is emitted into
-# public/rsss/, and that output includes a generated .dev.vars (real
-# secrets) plus wrangler.json. The assets directory is ./public, so
-# without this file wrangler would publish those at /rsss/.dev.vars etc.
-# Source maps are dev-only and must not be served publicly either.
+# The assets directory is ./public/client (the @cloudflare/vite-plugin
+# client output). The worker build (public/rsss/, with its generated
+# .dev.vars + wrangler.json) lives outside the assets dir, so it is
+# never uploaded and needs no exclusion here.
+#
+# Source maps are emitted into public/client/assets in production
+# ('hidden' sourcemaps for Sentry upload) and must not be served
+# publicly.
 
-.dev.vars
-wrangler.json
-rsss/
 *.map

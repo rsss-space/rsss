@@ -49,7 +49,7 @@
     "test:signup:ui": "esbuild ./test/signup-ui.ts --bundle --loader:.css=text | tapout",
     "test:signup": "npm run test:signup:server && npm run test:signup:ui",
     "test:headers": "node test/run-header-tests.mjs",
-    "build": "mkdir -p ./public && rm -rf ./public/* && npx vite build $([ \"$NODE_ENV\" != \"production\" ] && echo \"--mode staging\") && cp script/assetsignore public/.assetsignore",
+    "build": "mkdir -p ./public && rm -rf ./public/* && npx vite build $([ \"$NODE_ENV\" != \"production\" ] && echo \"--mode staging\") && cp script/assetsignore public/client/.assetsignore",
     "start": "vite",
     "toc": "markdown-toc --maxdepth 3 -i README.md",
     "preversion": "npm run lint",
