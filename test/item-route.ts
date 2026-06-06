@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface QueryResult {
     toArray:() => unknown[]
@@ -39,7 +39,7 @@ function createItemRouteDo () {
         'https://example.com/posts/item/',
         'http://example.com/posts/item'
     ]
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
         createRouter:() => { request:(path:string) => Promise<Response> }
     }

@@ -22,7 +22,7 @@ The stack trace points at `@sentry/cloudflare` internals
 - `src/server/index.ts` wraps the worker with
   `Sentry.withSentry(getSentryOptions, worker)` and the Durable Object
   with `Sentry.instrumentDurableObjectWithSentry(getDOSentryOptions,
-  UserDOBase)`. These are the **only** sources of server spans — a
+  RsssUserDOBase)`. These are the **only** sources of server spans — a
   repo-wide grep found no manual `Sentry.startSpan` calls in `src/`.
 - `getSentryOptions` / `getDOSentryOptions` set:
   - `dsn`: present only when `NODE_ENV` is `production` or `staging`

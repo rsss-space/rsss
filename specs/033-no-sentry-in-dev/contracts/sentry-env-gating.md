@@ -37,8 +37,8 @@ Notes:
 1. The worker default export is `Sentry.withSentry(cb, worker)` and the
    captured `cb(devEnv).dsn === undefined`; `cb(prodEnv).dsn === SENTRY_DSN`
    with `tracesSampleRate === 0.2`; `cb(stagingEnv).tracesSampleRate === 1.0`.
-2. The `UserDO` export is
-   `Sentry.instrumentDurableObjectWithSentry(cb, UserDOBase)` and its captured
+2. The `RsssUserDO` export is
+   `Sentry.instrumentDurableObjectWithSentry(cb, RsssUserDOBase)` and its captured
    `cb` produces the same mapping as the worker's (the two MUST NOT drift).
 3. For both, `'tracesSampleRate' in cb(devEnv) === false`.
 

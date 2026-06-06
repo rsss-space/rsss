@@ -269,3 +269,96 @@ test(
         }
     }
 )
+
+// US1 - T004: the "fetch updates" button is present only in the
+// 'updates' state, for both singular and plural counts, with the exact
+// accessible name "fetch updates" (FR-001, FR-004, FR-008).
+test(
+    'FeedStatus shows the "fetch updates" button with a single update ' +
+    'and exposes the exact accessible name (FR-004 / FR-008)',
+    t => {
+        const { root, cleanup } = renderFeedStatus(feedStatusState({
+            feedSyncStatus: 'updates',
+            feedUpdateCounts: { 1: 1 }
+        }))
+
+        try {
+            const btn = root.querySelector('.fetch-updates-btn')
+            t.ok(btn, 'button is present for a single update (FR-004)')
+            t.equal(
+                btn?.textContent?.trim(),
+                'fetch updates',
+                'accessible name is exactly "fetch updates" (FR-008)'
+            )
+        } finally {
+            cleanup()
+        }
+    }
+)
+
+test(
+    'FeedStatus shows the "fetch updates" button for a multi-feed ' +
+    'update count (FR-001)',
+    t => {
+        const { root, cleanup } = renderFeedStatus(feedStatusState({
+            feedSyncStatus: 'updates',
+            feedUpdateCounts: { 1: 2, 2: 3 }
+        }))
+
+        try {
+            t.ok(
+                root.querySelector('.fetch-updates-btn'),
+                'button is present for a multi-feed update count'
+            )
+        } finally {
+            cleanup()
+        }
+    }
+)
+
+// US1 - T004: the button is absent for every non-'updates' displayed
+// status (FR-002).
+test(
+    'FeedStatus hides the "fetch updates" button for synced, error, ' +
+    'and inactive (FR-002)',
+    t => {
+        for (const status of ['synced', 'error', 'inactive'] as const) {
+            const { root, cleanup } = renderFeedStatus(feedStatusState({
+                feedSyncStatus: status
+            }))
+
+            try {
+                t.equal(
+                    root.querySelector('.fetch-updates-btn'),
+                    null,
+                    `button is absent for ${status}`
+                )
+            } finally {
+                cleanup()
+            }
+        }
+    }
+)
+
+test(
+    'FeedStatus hides the "fetch updates" button while refreshing, when ' +
+    'displayed status resolves to syncing (FR-002)',
+    t => {
+        const { root, cleanup } = renderFeedStatus(feedStatusState({
+            feedSyncStatus: 'updates',
+            feedUpdateCounts: { 1: 4 },
+            refreshInProgress: true
+        }))
+
+        try {
+            t.equal(
+                root.querySelector('.fetch-updates-btn'),
+                null,
+                'button is absent once refreshInProgress flips the ' +
+                'displayed status to syncing'
+            )
+        } finally {
+            cleanup()
+        }
+    }
+)

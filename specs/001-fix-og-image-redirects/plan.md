@@ -54,7 +54,7 @@ v1.0.0:
 - **II. Idempotent, Outbox-Backed Sync** — N/A. No mutations introduced or
   modified. The refresh path already returns idempotent feed/item writes.
 - **III. Edge-Native Topology** — Compatible. All work stays inside the
-  per-user `UserDO`. No new cross-user state, no external queues, no new
+  per-user `RsssUserDO`. No new cross-user state, no external queues, no new
   alarms or workers.
 - **IV. Capability-Gated Progressive Enhancement** — N/A. No new client
   read or write path; both `localAdapter` and `remoteAdapter` are unaffected

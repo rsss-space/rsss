@@ -40,7 +40,7 @@ Produced by the options builder from `Env`.
 ### DOSentryOptions (Durable Object)
 
 Same shape and same rules as `SentryOptions`, derived from the DO's
-narrower `Env` (`UserDOEnv`). The worker and DO option builders MUST
+narrower `Env` (`RsssUserDOEnv`). The worker and DO option builders MUST
 stay in lockstep.
 
 ## State transitions

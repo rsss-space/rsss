@@ -12,8 +12,8 @@ import {
     type OAuthState
 } from './auth/oauth.js'
 import {
-    UserDO as UserDOBase,
-    type Env as UserDOEnv
+    RsssUserDO as RsssUserDOBase,
+    type Env as RsssUserDOEnv
 } from './durable-objects/index.js'
 import { withIsolationHeaders } from './isolation-headers.js'
 import {
@@ -55,7 +55,7 @@ import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
 export interface Env {
-    USER_DO:DurableObjectNamespace<UserDOBase>;
+    USER_DO:DurableObjectNamespace<RsssUserDOBase>;
     SESSIONS:KVNamespace;
     BLURHASH_KV:KVNamespace;
     HTML_KV?:KVNamespace;
@@ -902,10 +902,10 @@ const requireAdmin = async (c:Context<{
 /**
  * Get the user's Durable Object
  */
-function getUserDO (
+function getRsssUserDO (
     env:Env,
     did:string
-):DurableObjectStub<UserDOBase> {
+):DurableObjectStub<RsssUserDOBase> {
     // Use the DID as the DO name for consistent routing
     const id = env.USER_DO.idFromName(did)
     return env.USER_DO.get(id)
@@ -1211,7 +1211,7 @@ async function readPendingDeletion (
     did:string
 ):Promise<{ scheduledFor:number }|null> {
     try {
-        const stub = getUserDO(env, did)
+        const stub = getRsssUserDO(env, did)
         const res = await stub.fetch(
             new Request(
                 'http://do/internal/account/deletion',
@@ -1257,7 +1257,7 @@ app.post('/api/account/delete', requireAuth, async (c) => {
         }
     }
 
-    const stub = getUserDO(c.env, session.did)
+    const stub = getRsssUserDO(c.env, session.did)
     const res = await stub.fetch(
         new Request(
             'http://do/internal/account/deletion',
@@ -1315,7 +1315,7 @@ app.post('/api/account/delete', requireAuth, async (c) => {
  */
 app.delete('/api/account/delete', requireAuth, async (c) => {
     const session = c.get('session')!
-    const stub = getUserDO(c.env, session.did)
+    const stub = getRsssUserDO(c.env, session.did)
     const res = await stub.fetch(
         new Request(
             'http://do/internal/account/deletion',
@@ -1886,7 +1886,7 @@ function buildDoProxyHeaders (headers:Headers):Headers {
  */
 dataRouter.all('*', async (c) => {
     const session = c.get('session')!
-    const stub = getUserDO(c.env, session.did)
+    const stub = getRsssUserDO(c.env, session.did)
 
     // WebSocket upgrades cannot go through buildDoProxyHeaders (it
     // strips Upgrade/Connection) and must return the DO's 101 response
@@ -1995,7 +1995,7 @@ app.post('/admin/refresh-all', requireAdmin, async (c) => {
     const results:Record<string, unknown>[] = []
     for (const did of dids) {
         try {
-            const stub = getUserDO(c.env, did)
+            const stub = getRsssUserDO(c.env, did)
             const res = await stub.fetch(
                 new Request(
                     'http://do/feeds/refresh',
@@ -2048,7 +2048,7 @@ app.all('*', (c) => {
         return handleLazyHtmlRequest({
             did,
             kv: c.env.HTML_KV,
-            doStub: getUserDO(c.env, did),
+            doStub: getRsssUserDO(c.env, did),
             assets: c.env.ASSETS,
             request: c.req.raw
         })
@@ -2073,13 +2073,13 @@ const worker = Object.assign(app, {
 const getSentryOptions = (env:Env) => buildSentryOptions(env)
 
 // DO has its own narrower Env type; same builder so the two cannot drift.
-const getDOSentryOptions = (env:UserDOEnv) => buildSentryOptions(env)
+const getDOSentryOptions = (env:RsssUserDOEnv) => buildSentryOptions(env)
 
-// Wrap UserDO so unhandled errors and storage/RPC spans flow to Sentry.
-// Wrangler resolves the class by export name — keep this named `UserDO`.
-export const UserDO = Sentry.instrumentDurableObjectWithSentry(
+// Wrap RsssUserDO so unhandled errors and storage/RPC spans flow to Sentry.
+// Wrangler resolves the class by export name — keep this named `RsssUserDO`.
+export const RsssUserDO = Sentry.instrumentDurableObjectWithSentry(
     getDOSentryOptions,
-    UserDOBase
+    RsssUserDOBase
 )
 
 // Wrap the worker so fetch and queue handlers report to Sentry.

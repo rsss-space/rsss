@@ -1,6 +1,7 @@
 import { html } from 'htm/preact/index.js'
 import { type FunctionComponent } from 'preact'
-import { type AppState } from '../state.js'
+import { State, type AppState } from '../state.js'
+import { Button } from './button.js'
 import { Dot } from './dot.js'
 import './feed-status.css'
 
@@ -98,17 +99,27 @@ export const FeedStatus:FunctionComponent<{
         'feed-status'
 
     return html`
-        <span
-            key=${status}
-            class=${wrapperClass}
-            role="status"
-            aria-live="polite"
-            aria-label=${legend.ariaLabel}
-        >
-            ${legend.label ?
-                html`<span class="feed-status-legend">${legend.label}</span>` :
+        <span class="feed-status-wrap">
+            ${status === 'updates' ?
+                html`<${Button}
+                    className="fetch-updates-btn"
+                    onClick=${() => State.refreshFeeds(state)}
+                    isSpinning=${state.refreshInProgress}
+                >fetch updates<//>` :
                 ''}
-            <${Dot} color=${color} />
+            <span
+                key=${status}
+                class=${wrapperClass}
+                role="status"
+                aria-live="polite"
+                aria-label=${legend.ariaLabel}
+            >
+                ${legend.label ?
+                    html`<span class="feed-status-legend"
+                        >${legend.label}</span>` :
+                    ''}
+                <${Dot} color=${color} />
+            </span>
         </span>
     `
 }

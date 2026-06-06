@@ -112,7 +112,7 @@ test/
 ├── sentry-cloudflare-stub.ts  # ADD: capture the option callbacks passed to
 │                              #   withSentry / instrumentDurableObjectWith-
 │                              #   Sentry, plus getters + reset (additive)
-├── sentry-wiring.ts           # NEW: import the real worker + UserDO, invoke
+├── sentry-wiring.ts           # NEW: import the real worker + RsssUserDO, invoke
 │                              #   the captured callbacks across envs
 ├── sentry-options.ts          # UNCHANGED — existing buildSentryOptions tests
 └── run-all-tests.mjs          # ADD: register the new wiring suite

@@ -99,21 +99,21 @@ git commit -m "feat(do): add user_state.feed_version counter for lazy html cache
 ## Task 2 — DO method: `bumpFeedVersion` + `getFeedVersion`
 
 **Files:**
-- Modify: `src/server/durable-objects/index.ts` (add private helpers near the top of `UserDO` class — adjacent to other private helpers like `rowsWritten`)
+- Modify: `src/server/durable-objects/index.ts` (add private helpers near the top of `RsssUserDO` class — adjacent to other private helpers like `rowsWritten`)
 
 - [ ] **Step 1: Write the failing test**
 
 Create a new file `test/lazy-html-do-bump.ts` only if a DO unit-test harness exists for similar patterns. **If not** (most DO logic in this repo is exercised via integration), skip the explicit test here and rely on the handler-level tests in Task 7. Search:
 
 ```bash
-grep -l "new UserDO\|UserDO.prototype" test/
+grep -l "new RsssUserDO\|RsssUserDO.prototype" test/
 ```
 
 If no harness, add `// covered by lazy-html-handler tests` comment in the handler test file later and proceed.
 
 - [ ] **Step 2: Implement `bumpFeedVersion` and `getFeedVersion`**
 
-Add to the `UserDO` class:
+Add to the `RsssUserDO` class:
 
 ```ts
 private bumpFeedVersion ():number {
@@ -808,7 +808,7 @@ app.all('*', async (c) => {
     const did = session?.did
 
     if (did && c.env.HTML_KV && c.env.USER_DO) {
-        const stub = getUserDO(c.env, did)
+        const stub = getRsssUserDO(c.env, did)
         return handleLazyHtmlRequest({
             did,
             kv: c.env.HTML_KV,
@@ -822,7 +822,7 @@ app.all('*', async (c) => {
 })
 ```
 
-(`getUserDO` is already used elsewhere in this file; reuse the existing helper signature — confirm the exact name/import. The handler's `wantsHtml` guard means non-HTML asset requests still hit `ASSETS.fetch` from inside the handler, so this change is safe for `.js`, `.css`, `.png` etc.)
+(`getRsssUserDO` is already used elsewhere in this file; reuse the existing helper signature — confirm the exact name/import. The handler's `wantsHtml` guard means non-HTML asset requests still hit `ASSETS.fetch` from inside the handler, so this change is safe for `.js`, `.css`, `.png` etc.)
 
 - [ ] **Step 2: Run typecheck**
 

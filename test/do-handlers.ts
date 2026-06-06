@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface FeedRow {
     id:number
@@ -262,7 +262,7 @@ function createDoHarness (options:{
     const storage = new Map<string, unknown>()
     let alarmAt:number|null = null
     const refreshFeedBatchesCalls:number[] = []
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:ReturnType<typeof createSql>
         ctx:{
             storage:{
@@ -329,7 +329,7 @@ function createDoHarness (options:{
     }
 }
 
-test('UserDO feed handlers list create and refresh feeds', async t => {
+test('RsssUserDO feed handlers list create and refresh feeds', async t => {
     const {
         app,
         sql,
@@ -378,7 +378,7 @@ test('UserDO feed handlers list create and refresh feeds', async t => {
     t.deepEqual(refreshed, [3, 3], 'created feed is refreshed')
 })
 
-test('UserDO internal blurhash handler writes image metadata', async t => {
+test('RsssUserDO internal blurhash handler writes image metadata', async t => {
     const { app, sql } = createDoHarness()
 
     const response = await app.request('/internal/blurhash/items/77', {
@@ -401,7 +401,7 @@ test('UserDO internal blurhash handler writes image metadata', async t => {
 })
 
 test(
-    'UserDO internal feed-version endpoint returns current version',
+    'RsssUserDO internal feed-version endpoint returns current version',
     async t => {
         const { app, sql } = createDoHarness({ feedVersion: 42 })
 
@@ -417,7 +417,7 @@ test(
 )
 
 test(
-    'UserDO internal lazy-html-data returns version and first page',
+    'RsssUserDO internal lazy-html-data returns version and first page',
     async t => {
         const { app, sql } = createDoHarness({ feedVersion: 12 })
 
@@ -471,7 +471,7 @@ test(
     }
 )
 
-test('UserDO manual feed refresh is rate limited per feed', async t => {
+test('RsssUserDO manual feed refresh is rate limited per feed', async t => {
     const { app, refreshed, storage } = createDoHarness()
     const responses = await Promise.all(Array.from({ length: 100 }, () => {
         return app.request('/feeds/1/refresh', { method: 'POST' })
@@ -486,7 +486,7 @@ test('UserDO manual feed refresh is rate limited per feed', async t => {
 })
 
 test(
-    'UserDO add feed treats client_op_id duplicate URL as idempotent',
+    'RsssUserDO add feed treats client_op_id duplicate URL as idempotent',
     async t => {
         const { app, sql, waitUntilPromises } = createDoHarness()
 
@@ -508,7 +508,7 @@ test(
     }
 )
 
-test('UserDO add feed deduplicates canonical URL variants', async t => {
+test('RsssUserDO add feed deduplicates canonical URL variants', async t => {
     const { app, sql, waitUntilPromises } = createDoHarness()
 
     const createResponse = await app.request('/feeds', {
@@ -543,7 +543,7 @@ test('UserDO add feed deduplicates canonical URL variants', async t => {
 })
 
 test(
-    'UserDO delete feed treats client_op_id missing row as idempotent',
+    'RsssUserDO delete feed treats client_op_id missing row as idempotent',
     async t => {
         const { app, sql } = createDoHarness()
 
@@ -726,7 +726,7 @@ test(
     }
 )
 
-test('UserDO delete feed clamps future client timestamps', async t => {
+test('RsssUserDO delete feed clamps future client timestamps', async t => {
     const { app, sql } = createDoHarness()
     const originalWarn = console.warn
     const warnings:unknown[][] = []
@@ -753,14 +753,14 @@ test('UserDO delete feed clamps future client timestamps', async t => {
     }
 })
 
-test('UserDO broadcast sends JSON envelope to every live socket', async t => {
+test('RsssUserDO broadcast sends JSON envelope to every live socket', async t => {
     const sent:Array<{ socket:number; payload:string }> = []
     const makeSocket = (n:number) => ({
         send: (payload:string) => sent.push({ socket: n, payload })
     })
     const sockets = [makeSocket(1), makeSocket(2)]
 
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         ctx:{ getWebSockets:() => unknown[] }
         broadcast:(event:string, data:unknown) => void
     }
@@ -781,13 +781,13 @@ test('UserDO broadcast sends JSON envelope to every live socket', async t => {
     )
 })
 
-test('UserDO broadcast drops a failing socket and keeps going', async t => {
+test('RsssUserDO broadcast drops a failing socket and keeps going', async t => {
     const delivered:number[] = []
     const sockets = [
         { send: () => { throw new Error('socket gone') } },
         { send: () => delivered.push(2) }
     ]
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         ctx:{ getWebSockets:() => unknown[] }
         broadcast:(event:string, data:unknown) => void
     }

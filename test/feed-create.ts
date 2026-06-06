@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface FeedRow {
     id:number
@@ -88,7 +88,7 @@ function createRouterForPostFeeds (
     fetchFeed:(feed:FeedRow) => Promise<void>
 ) {
     const sql = createFeedSql()
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:ReturnType<typeof createFeedSql>
         ctx:{
             waitUntil:(promise:Promise<unknown>) => void

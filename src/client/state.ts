@@ -103,6 +103,7 @@ import {
     init as initDisplayedRefresh,
     _resetForTest as resetDisplayedRefresh,
 } from './displayed-refresh-in-progress.js'
+import { initDocumentTitle } from './document-title.js'
 import {
     liveChannelSocketUrl,
     parseLiveMessage
@@ -1051,10 +1052,16 @@ export function State ():AppState {
         }, { timeout: 200 })
     })
 
+    const disposeDocumentTitle = initDocumentTitle(
+        state.displayedFeedSyncStatus,
+        state.feedUpdateCounts
+    )
+
     state.cleanup = () => {
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
         State.closeEventStream()
+        disposeDocumentTitle()
     }
 
     ;(async () => {

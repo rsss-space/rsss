@@ -41,7 +41,7 @@ UPDATE feeds SET updated_at = datetime('now')
 ```
 
 The migration MUST be guarded by a `migration_version` storage key
-so it runs at most once per UserDO. After the bump, the next
+so it runs at most once per RsssUserDO. After the bump, the next
 incremental `pullSync(since=<lastSyncTime>)` from each client picks
 up every feed row and writes the freshly-projected
 `last_pulled_at`. Subsequent pulls remain incremental.

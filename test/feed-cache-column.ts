@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import { TABLES_SQL } from '../src/shared/schema.js'
 
 interface QueryResult {
@@ -29,7 +29,7 @@ function createPatchRouteDo () {
         created_at: '2026-04-26 00:00:00',
         updated_at: '2026-04-26 00:00:00'
     }
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
         createRouter:() => { request:(path:string, init:RequestInit) =>
             Promise<Response> }

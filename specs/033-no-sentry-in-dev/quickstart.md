@@ -15,7 +15,7 @@ The behavior is pinned by:
 - `test/sentry-options.ts` — pure `buildSentryOptions` / `isSentryEnv` cases
   (runs inside the consolidated `npm run test:browser` bundle).
 - `test/sentry-wiring.ts` — NEW. Imports the real worker default export and
-  `UserDO` from `src/server/index.ts` and asserts the captured option
+  `RsssUserDO` from `src/server/index.ts` and asserts the captured option
   callbacks match the contract in
   [`contracts/sentry-env-gating.md`](./contracts/sentry-env-gating.md):
   no DSN in `development` / unset, DSN + correct `tracesSampleRate` in

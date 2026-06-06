@@ -22,7 +22,7 @@ bundled with `esbuild` and run through `tapout` (real DOM) or `tap-spec`.
    + `resolveHostname`; no network)
    - `esbuild ./test/article-fetch.ts --bundle | tapout`
 3. `test/fetch-full-endpoint.ts` (DO endpoint — `createHarness` over a mock
-   `UserDO`; no Miniflare)
+   `RsssUserDO`; no Miniflare)
    - `esbuild ./test/fetch-full-endpoint.ts --bundle --platform=node`
      `--format=esm`
      `--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts`

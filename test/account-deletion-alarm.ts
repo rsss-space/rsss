@@ -1,5 +1,5 @@
 /**
- * Tests for the account-deletion path inside UserDO.alarm().
+ * Tests for the account-deletion path inside RsssUserDO.alarm().
  *
  * When the DO storage holds a `pending_deletion` record whose
  * scheduledFor timestamp has passed, alarm() must drop the user
@@ -7,7 +7,7 @@
  * feed-refresh path.
  */
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface QueryResult {
     toArray:() => unknown[]
@@ -47,7 +47,7 @@ function createDeletionDo (initial:{
     let scheduledRefresh = false
     let refreshedFeeds = false
 
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
         ctx:{ storage:FakeStorage }
         env:{ SESSIONS:FakeKv } & Record<string, unknown>

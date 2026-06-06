@@ -1,6 +1,6 @@
 # rsss Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-04
+Auto-generated from all feature plans. Last updated: 2026-06-05
 
 ## Active Technologies
 - Per-user Durable Object SQLite (server-authoritative); local (002-full-article-fetch)
@@ -37,6 +37,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-04
 - N/A — presentation-only. No SQLite (local or DO) schema (031-animate-cache-settings)
 - TypeScript (Cloudflare Workers runtime, ES2022 lib) for + `@sentry/cloudflare` (worker + DO), (033-no-sentry-in-dev)
 - N/A — no local SQLite or DO schema change (033-no-sentry-in-dev)
+- N/A — UI-only. No local SQLite, DO SQLite, or `/api/sync` (034-fetch-updates-button)
 
 - TypeScript (Cloudflare Workers runtime, ES2022 lib) + `hono`, `@cloudflare/workers-types`, `fast-xml-parser` (001-fix-og-image-redirects)
 
@@ -57,9 +58,9 @@ npm test && npm run lint
 TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Recent Changes
+- 034-fetch-updates-button: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
 - 033-no-sentry-in-dev: Added TypeScript (Cloudflare Workers runtime, ES2022 lib) for + `@sentry/cloudflare` (worker + DO),
 - 031-animate-cache-settings: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`,
-- 030-article-source-url: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
 
 
 <!-- MANUAL ADDITIONS START -->

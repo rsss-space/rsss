@@ -195,7 +195,7 @@ Expected: TypeScript compiles.
 
 Mirror `test/feed-resolve-state.ts` for the fetch harness pattern.
 The existing harness already covers:
-- Construction of `UserDO` via `Object.create(UserDO.prototype)`.
+- Construction of `RsssUserDO` via `Object.create(RsssUserDO.prototype)`.
 - Mocked `sql.exec` with a queryable call log.
 - Mocked `doFetchFeedText` returning canned text.
 - A mocked `parseFeed` returning a chosen item list.
@@ -246,11 +246,11 @@ INSERT calls were made, the feed row updates to resolved
 
 **Test 5 — Re-add after delete restarts the boundary:**
 Extend `test/do-handlers.ts` directly — its `createDoHarness`
-helper (see line 322 `test('UserDO feed handlers list create and
+helper (see line 322 `test('RsssUserDO feed handlers list create and
 refresh feeds')` for the existing pattern) supports both DELETE
 (harness recognizes `'DELETE FROM feeds WHERE id = ?'` at line
 181) and POST /feeds (line 339). Add a new top-level
-`test('UserDO re-add after delete starts at zero unread', ...)`
+`test('RsssUserDO re-add after delete starts at zero unread', ...)`
 that:
 1. POSTs a new feed via the harness.
 2. Awaits the `waitUntilPromises` so the initial fetch ingests

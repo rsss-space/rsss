@@ -63,7 +63,7 @@ for (const [envName, envBlock, nodeEnv, queueName] of [
     )
     assert.match(
         envBlock,
-        /"name"\s*:\s*"USER_DO"[\s\S]*?"class_name"\s*:\s*"UserDO"/,
+        /"name"\s*:\s*"USER_DO"[\s\S]*?"class_name"\s*:\s*"RsssUserDO"/,
         `${envName} declares USER_DO binding`
     )
     for (const binding of ['SESSIONS', 'BLURHASH_KV', 'HTML_KV']) {

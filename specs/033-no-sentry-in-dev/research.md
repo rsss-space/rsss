@@ -13,7 +13,7 @@ Investigated the three integration surfaces named in the spec (FR-003).
   `Sentry.withSentry(getSentryOptions, worker)` where
   `getSentryOptions = (env) => buildSentryOptions(env)`.
 - **Durable Object** — same file exports
-  `Sentry.instrumentDurableObjectWithSentry(getDOSentryOptions, UserDOBase)`
+  `Sentry.instrumentDurableObjectWithSentry(getDOSentryOptions, RsssUserDOBase)`
   with `getDOSentryOptions = (env) => buildSentryOptions(env)`.
 - **Browser** — `src/client/sentry.ts` calls `Sentry.init(...)` only inside
   `if (dsn && import.meta.env.PROD)`.
@@ -94,7 +94,7 @@ targets.
 - **Decision**: Extend `test/sentry-cloudflare-stub.ts` so `withSentry` and
   `instrumentDurableObjectWithSentry` record the options callback they are
   given (plus getters and a reset). Add `test/sentry-wiring.ts` that imports
-  the real worker default export and `UserDO` from `src/server/index.ts`
+  the real worker default export and `RsssUserDO` from `src/server/index.ts`
   (which triggers the wrappers at module load), retrieves the captured
   callbacks, and asserts their output across `development`, `production`,
   `staging`, and unset `NODE_ENV`.

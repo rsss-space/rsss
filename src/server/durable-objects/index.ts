@@ -31,7 +31,7 @@ import {
 } from '../blurhash.js'
 
 export interface Env {
-    USER:DurableObjectNamespace<UserDO>
+    USER:DurableObjectNamespace<RsssUserDO>
     SESSIONS:KVNamespace
     BLURHASH_KV:KVNamespace
     BLURHASH_QUEUE:Queue
@@ -363,7 +363,7 @@ function manualRefreshRetryAfterSeconds (
  * - Uses alarms for periodic feed polling (every 10 min)
  * - State persists in SQLite across hibernation cycles
  */
-export class UserDO extends DurableObject<Env> {
+export class RsssUserDO extends DurableObject<Env> {
     private app: Hono
     private sql: SqlStorage
     private manualRefreshClaims?:Map<number, number>
@@ -422,7 +422,7 @@ export class UserDO extends DurableObject<Env> {
         // One-time bump: re-emit every feed row to clients so they
         // pick up the newly-projected `last_pulled_at` column.
         // Guarded by its own storage key so it runs at most once
-        // per UserDO regardless of the schema migration version.
+        // per RsssUserDO regardless of the schema migration version.
         const feedsBumpDone = await this.ctx.storage.get<boolean>(
             FEEDS_UPDATED_AT_BUMP_KEY
         )

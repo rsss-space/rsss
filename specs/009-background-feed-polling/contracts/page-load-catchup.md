@@ -1,6 +1,6 @@
 # Contract: Page-Load Catch-Up Trigger
 
-**Owner**: The `GET /feed-status` handler in `UserDO`
+**Owner**: The `GET /feed-status` handler in `RsssUserDO`
 (`src/server/durable-objects/index.ts`).
 **Trigger**: Any HTTP request to `/feed-status` (the page-load
 indicator endpoint introduced by feature 008).

@@ -106,7 +106,7 @@ Evaluated against `.specify/memory/constitution.md` v1.0.0
   is honored by *not adding* poller-internal columns to the synced
   `feeds` table — see `data-model.md` for the rationale.
 - **III. Edge-Native Topology (Worker + Per-User DO)** — PASS. All
-  polling logic lives inside `UserDO`. The DO alarm mechanism is the
+  polling logic lives inside `RsssUserDO`. The DO alarm mechanism is the
   driver (existing 10-min cadence per the constitution); no external
   cron, queue, or worker is introduced. Per-feed and per-account
   poller state lives in the same per-user DO's storage — no cross-

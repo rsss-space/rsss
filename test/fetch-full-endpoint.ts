@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import type { FetchFullArticleResult } from '../src/server/article-fetch.js'
 
 interface ItemRow {
@@ -116,7 +116,7 @@ function createHarness (
     const sql = createSql(items)
     const storage = new Map<string, unknown>()
     const fetcher = { calls: 0, next: fetchResult }
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:ReturnType<typeof createSql>
         ctx:{
             storage:{

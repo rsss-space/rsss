@@ -100,7 +100,7 @@ space between a colon and its type (`status:string`), ternaries with the
   HTML strings.
 - `test/fetch-full-endpoint.ts` exercises the DO route WITHOUT Miniflare:
   a `createHarness(items, fetcherResult)` helper builds the router via
-  `createRouter()` over a mock DO (`Object.create(UserDO.prototype)`), a
+  `createRouter()` over a mock DO (`Object.create(RsssUserDO.prototype)`), a
   mock `sql` that parses the UPDATE/SELECT strings against an in-memory
   item array, mock storage `Map`, and a stub fetcher
   (`{ calls, next:FetchFullArticleResult|null }`). It returns `{ app,

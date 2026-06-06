@@ -48,7 +48,7 @@ Per-feed entry. The columns relevant to this feature:
 
 ## Derived view: pending counts
 
-Computed on demand by the existing `UserDO.getFeedUpdateCounts()`:
+Computed on demand by the existing `RsssUserDO.getFeedUpdateCounts()`:
 
 ```sql
 SELECT

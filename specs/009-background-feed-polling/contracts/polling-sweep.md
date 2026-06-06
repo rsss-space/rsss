@@ -1,6 +1,6 @@
 # Contract: Polling Sweep (DO Alarm)
 
-**Owner**: `UserDO.alarm()` and `UserDO.refreshFeedBatches()` in
+**Owner**: `RsssUserDO.alarm()` and `RsssUserDO.refreshFeedBatches()` in
 `src/server/durable-objects/index.ts`
 **Trigger**: Cloudflare Durable Object alarm, fired by
 `ctx.storage.setAlarm()`.

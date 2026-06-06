@@ -160,7 +160,7 @@ For the server-side DO database (when investigating a deploy):
 
 ```sh
 sqlite3 \
-  /Users/nick/code/rsss/.wrangler/state/v3/do/rsss-UserDO/<hash>.sqlite
+  /Users/nick/code/rsss/.wrangler/state/v3/do/rsss-RsssUserDO/<hash>.sqlite
 sqlite> SELECT id, length(full_content), full_content_status FROM items
         WHERE full_content_status IS NOT NULL LIMIT 20;
 ```

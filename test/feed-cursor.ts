@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface FeedRow {
     id:number
@@ -41,7 +41,7 @@ function feedRow (
 
 test('getFeedsWithUpdates returns string IDs of feeds with newer items',
     t => {
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
             getFeedsWithUpdates:() => string[]
         }
@@ -59,7 +59,7 @@ test('getFeedsWithUpdates returns string IDs of feeds with newer items',
 
 test('getFeedsWithUpdates query uses last_pulled_at', t => {
     let capturedQuery = ''
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
         getFeedsWithUpdates:() => string[]
     }
@@ -83,7 +83,7 @@ test('getFeedsWithUpdates query uses last_pulled_at', t => {
 })
 
 test('getFeedsWithUpdates returns empty when all feeds caught up', t => {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
         getFeedsWithUpdates:() => string[]
     }
@@ -125,7 +125,7 @@ function createCursorHarness (
     const waitUntilPromises:Promise<unknown>[] = []
     const storage = new Map<string, unknown>()
 
-    const userDo = Object.create(UserDO.prototype) as CursorDoType
+    const userDo = Object.create(RsssUserDO.prototype) as CursorDoType
 
     userDo.sql = {
         exec (query:string, ...params:unknown[]) {
@@ -328,7 +328,7 @@ function createFetchFeedHarness (opts:{
     let getFeedsCallCount = 0
     let _insertCallCount = 0
 
-    const userDo = Object.create(UserDO.prototype) as FetchFeedDoType
+    const userDo = Object.create(RsssUserDO.prototype) as FetchFeedDoType
     userDo.broadcasts = broadcasts
 
     const harnessStorage = new Map<string, unknown>()
@@ -761,7 +761,7 @@ test('GET /feeds includes feedUpdateStatus updates when feeds pending',
 
 test('GET /feeds includes per-feed update counts from cached items',
     async t => {
-        const userDo = Object.create(UserDO.prototype) as CursorDoType
+        const userDo = Object.create(RsssUserDO.prototype) as CursorDoType
 
         userDo.sql = {
             exec (query:string) {
@@ -827,7 +827,7 @@ function createPendingHarness (opts:{
 
     const feed:FeedRow = feedRow(1, 'https://a.example/feed', lastPulledAt)
 
-    const userDo = Object.create(UserDO.prototype) as CursorDoType
+    const userDo = Object.create(RsssUserDO.prototype) as CursorDoType
 
     userDo.sql = {
         exec (query:string, ..._params:unknown[]) {
@@ -967,7 +967,7 @@ function createItemsHarness (opts:{
     const capturedListQuery = { value: '' }
     const capturedCountQuery = { value: '' }
 
-    const userDo = Object.create(UserDO.prototype) as CursorDoType
+    const userDo = Object.create(RsssUserDO.prototype) as CursorDoType
 
     function applyCursor (
         rows:typeof items,
@@ -1114,7 +1114,7 @@ test('GET /items excludes items past the cursor on synced feeds', async t => {
 test('advanceFeedCursor SQL sets last_pulled_at = MAX(pub_date)',
     async t => {
         let cursorSql = ''
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
             getFeedsWithUpdates:() => string[]
             broadcast:() => void
@@ -1169,7 +1169,7 @@ test('US2: refresh of NULL-cursor feed advances exactly once', async t => {
 test('US2: full refresh advances cursor on every subscribed feed',
     async t => {
         // Multi-feed harness: two feeds, both NULL cursor.
-        const userDo = Object.create(UserDO.prototype) as CursorDoType
+        const userDo = Object.create(RsssUserDO.prototype) as CursorDoType
         const cursorIds:number[] = []
         const waitUntilPromises:Promise<unknown>[] = []
         const feeds = [
