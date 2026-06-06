@@ -66,7 +66,7 @@ suite skeleton that all per-story assertions extend.
   (`test:browser`, `test:api-router`, `test:report-error`, the
   `test/index.ts` bundle) are unaffected.
 - [X] T003 Create `test/sentry-wiring.ts`: import the worker default export
-  and `UserDO` from `../src/server/index.js` (this triggers `withSentry` /
+  and `RsssUserDO` from `../src/server/index.js` (this triggers `withSentry` /
   `instrumentDurableObjectWithSentry` at module load and populates the
   captured callbacks), import the three getters from
   `./sentry-cloudflare-stub.js`, define `const DSN =

@@ -30,7 +30,7 @@ See [rsss.space](https://rsss.space/).
   * [Local First](#local-first)
   * [Sync (remote/local)](#sync-remotelocal)
   * [Worker (Hono) - Main entry point](#worker-hono---main-entry-point)
-  * [Durable Object per user (UserDO)](#durable-object-per-user-userdo)
+  * [Durable Object per user (RsssUserDO)](#durable-object-per-user-userdo)
   * [Frontend](#frontend)
 - [Files](#files)
 - [Running Locally](#running-locally)
@@ -101,7 +101,7 @@ cross-origin-isolated worker.
 * Static asset serving for the Preact frontend
 
 
-### Durable Object per user (UserDO)
+### Durable Object per user (RsssUserDO)
 
 * Uses SQLite storage for feeds and items
 * Uses the Hibernation API (extends DurableObject)
@@ -203,7 +203,7 @@ src/
 │   ├── index.ts                    # Main Hono worker
 │   ├── auth/                       # Bluesky OAuth implementation
 │   └── durable-objects/
-│       └── index.ts                # Per-user DO (UserDO) with SQLite
+│       └── index.ts                # Per-user DO (RsssUserDO) with SQLite
 └── client/
     ├── index.ts                    # Main Preact entry
     ├── state.ts                    # State management & API client
@@ -347,7 +347,7 @@ openssl rand -base64 32
 
 ```sh
 sqlite3 \
-  /Users/nick/code/rsss/.wrangler/state/v3/do/rsss-UserDO/\
+  /Users/nick/code/rsss/.wrangler/state/v3/do/rsss-RsssUserDO/\
 5ccaac5db5efdc5e2ac84cd63b9141cf9dcf247c7a410cc13ce1f9d1ebbc1410.sqlite
 ```
 

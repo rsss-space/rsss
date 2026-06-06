@@ -261,10 +261,10 @@
     {
       "id": "US-014",
       "title": "Add bumpFeedVersion and getFeedVersion DO helpers",
-      "description": "As a developer, I need private helpers on `UserDO` to read and atomically increment `feed_version` so write paths can bump the counter and the worker can read the current version.",
+      "description": "As a developer, I need private helpers on `RsssUserDO` to read and atomically increment `feed_version` so write paths can bump the counter and the worker can read the current version.",
       "acceptanceCriteria": [
-        "`bumpFeedVersion()` private method on `UserDO` runs `UPDATE user_state SET feed_version = feed_version + 1 WHERE id = 1 RETURNING feed_version` and returns the new value (or 0 on null)",
-        "`getFeedVersion()` private method on `UserDO` runs `SELECT feed_version FROM user_state WHERE id = 1` and returns the value (or 0 on null)",
+        "`bumpFeedVersion()` private method on `RsssUserDO` runs `UPDATE user_state SET feed_version = feed_version + 1 WHERE id = 1 RETURNING feed_version` and returns the new value (or 0 on null)",
+        "`getFeedVersion()` private method on `RsssUserDO` runs `SELECT feed_version FROM user_state WHERE id = 1` and returns the value (or 0 on null)",
         "Both helpers are placed near other private helpers like `rowsWritten`",
         "Both helpers use the existing `this.sql.exec(...).one()` pattern",
         "Typecheck passes",
@@ -372,9 +372,9 @@
       "description": "As a developer, I need the worker's catch-all route to consult the lazy-html handler for authenticated HTML GETs so signed-in users get the embedded bootstrap and anonymous users still get the bare static shell.",
       "acceptanceCriteria": [
         "Import `handleLazyHtmlRequest` at top of `src/server/index.ts`",
-        "Replace catch-all `app.all('*', ...)` (~lines 1465-1472) with logic that: returns `c.notFound()` if no `ASSETS`, reads `session?.did`, and if `did && c.env.HTML_KV && c.env.USER_DO` calls `handleLazyHtmlRequest` with `getUserDO(c.env, did)` as `doStub`",
+        "Replace catch-all `app.all('*', ...)` (~lines 1465-1472) with logic that: returns `c.notFound()` if no `ASSETS`, reads `session?.did`, and if `did && c.env.HTML_KV && c.env.USER_DO` calls `handleLazyHtmlRequest` with `getRsssUserDO(c.env, did)` as `doStub`",
         "Anonymous requests still fall through to `c.env.ASSETS.fetch(c.req.raw)` (no DO call)",
-        "Reuse the existing helper for resolving the user DO stub (e.g. `getUserDO`) — confirm exact name/import",
+        "Reuse the existing helper for resolving the user DO stub (e.g. `getRsssUserDO`) — confirm exact name/import",
         "Non-HTML asset requests (`.js`, `.css`, `.png`) still served by ASSETS via the handler's internal `wantsHtml` guard",
         "Smoke test: authenticated `curl -H 'cookie: session=...' -H 'accept: text/html' /` response contains `<script id=\"initial-feed\" type=\"application/json\">` with feed JSON",
         "Smoke test: unauthenticated `curl -H 'accept: text/html' /` returns shell without the bootstrap script",

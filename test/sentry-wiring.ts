@@ -4,7 +4,7 @@ import { test } from '@substrate-system/tapzero'
 // at top level. Under the esbuild `@sentry/cloudflare` alias those are the
 // stub's capturing versions, so the real getSentryOptions / getDOSentryOptions
 // callbacks land in the slots below. The smoke test references both bindings.
-import worker, { UserDO } from '../src/server/index.js'
+import worker, { RsssUserDO } from '../src/server/index.js'
 import {
     getWorkerSentryOptionsCallback,
     getDOSentryOptionsCallback
@@ -31,7 +31,7 @@ function callDO (env:Env):Opts {
 
 test('worker and DO are wired to a Sentry options callback', t => {
     t.ok(worker, 'worker default export loaded')
-    t.ok(UserDO, 'UserDO export loaded')
+    t.ok(RsssUserDO, 'RsssUserDO export loaded')
     const workerCb = getWorkerSentryOptionsCallback()
     const doCb = getDOSentryOptionsCallback()
     t.equal(typeof workerCb, 'function', 'worker callback captured')

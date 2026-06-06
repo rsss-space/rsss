@@ -81,7 +81,7 @@ Evaluated against `.specify/memory/constitution.md` v1.0.0
   read-only. No new mutations, no outbox change, no idempotency key
   required.
 - **III. Edge-Native Topology (Worker + Per-User DO)** - PASS. The
-  `/feed-status` route lives inside `UserDO` and reads its own SQLite
+  `/feed-status` route lives inside `RsssUserDO` and reads its own SQLite
   storage. No cross-user shared state, no external queue, no extra
   cron. The Worker proxies via the existing `/api/*` -> DO path.
 - **IV. Capability-Gated Progressive Enhancement** - PASS. Both

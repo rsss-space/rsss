@@ -103,7 +103,7 @@ src/
 │   │                            #   options builder; withSentry /
 │   │                            #   instrumentDurableObjectWithSentry
 │   │                            #   wiring (unchanged shape)
-│   ├── durable-objects/index.ts # UserDOBase (no change; wrapped by
+│   ├── durable-objects/index.ts # RsssUserDOBase (no change; wrapped by
 │   │                            #   instrumentDurableObjectWithSentry)
 │   ├── lazy-html-handler.ts     # /post/* serving path (no change)
 │   └── lib/report-error.ts      # Sentry.captureException (no change)

@@ -115,7 +115,7 @@ v1.0.0:
   table is needed because the result is derived server-side and returned
   inline; the client trusts the row in the response.
 - **III. Edge-Native Topology** — Compliant. All fetching, extraction,
-  and storage stay inside the user's `UserDO`. No new alarms, queues,
+  and storage stay inside the user's `RsssUserDO`. No new alarms, queues,
   workers, or cross-user state. The DO continues to be the single
   authoritative source for `items`.
 - **IV. Capability-Gated Progressive Enhancement** — Compliant. The

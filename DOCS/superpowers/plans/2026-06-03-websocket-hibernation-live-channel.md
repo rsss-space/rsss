@@ -20,7 +20,7 @@ The repo's server tests run in **Node** (esbuild bundle → `node`/`tapout`), no
 
 Therefore: we unit-test what is genuinely runnable in Node — `broadcast()` framing (mocking `ctx.getWebSockets`) and extracted **pure helpers** (`isWebSocketUpgrade`, `parseLiveMessage`, `liveChannelSocketUrl`). The actual upgrade handshake, hibernation eligibility, auto-response ping/pong, and client reconnect are verified **manually with `wrangler dev`** (Task 7). We do **not** fake the WebSocket stack with stubs — that would be brittle and is disallowed by project rules.
 
-The DO test harness pattern (see `test/do-handlers.ts`) builds an instance via `Object.create(UserDO.prototype)`, hand-mocks `userDo.ctx` and `userDo.sql`, and exercises Hono routes via `app.request(path)`. New unit tests follow this exact pattern.
+The DO test harness pattern (see `test/do-handlers.ts`) builds an instance via `Object.create(RsssUserDO.prototype)`, hand-mocks `userDo.ctx` and `userDo.sql`, and exercises Hono routes via `app.request(path)`. New unit tests follow this exact pattern.
 
 ---
 
@@ -103,7 +103,7 @@ Immediately above the existing `app.get('/events', ...)` route, add:
         })
 ```
 
-- [ ] **Step 4: Add the hibernation lifecycle handlers as methods on the `UserDO` class**
+- [ ] **Step 4: Add the hibernation lifecycle handlers as methods on the `RsssUserDO` class**
 
 Add these three methods to the class (e.g. directly after the `broadcast()` method). The client is push-only, so `webSocketMessage` is a no-op today (pings never reach it — the runtime auto-answers them); keep it for forward compatibility.
 
@@ -162,17 +162,17 @@ This is the correctness core: enumerate live sockets from the runtime (survives 
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `test/do-handlers.ts` (the harness builds `userDo` via `Object.create(UserDO.prototype)`; we attach a mock `ctx.getWebSockets` and call the private `broadcast` through a cast):
+Add to `test/do-handlers.ts` (the harness builds `userDo` via `Object.create(RsssUserDO.prototype)`; we attach a mock `ctx.getWebSockets` and call the private `broadcast` through a cast):
 
 ```ts
-test('UserDO broadcast sends JSON envelope to every live socket', async t => {
+test('RsssUserDO broadcast sends JSON envelope to every live socket', async t => {
     const sent:Array<{ socket:number; payload:string }> = []
     const makeSocket = (n:number) => ({
         send: (payload:string) => sent.push({ socket: n, payload })
     })
     const sockets = [makeSocket(1), makeSocket(2)]
 
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         ctx:{ getWebSockets:() => unknown[] }
         broadcast:(event:string, data:unknown) => void
     }
@@ -193,13 +193,13 @@ test('UserDO broadcast sends JSON envelope to every live socket', async t => {
     )
 })
 
-test('UserDO broadcast drops a failing socket and keeps going', async t => {
+test('RsssUserDO broadcast drops a failing socket and keeps going', async t => {
     const delivered:number[] = []
     const sockets = [
         { send: () => { throw new Error('socket gone') } },
         { send: () => delivered.push(2) }
     ]
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         ctx:{ getWebSockets:() => unknown[] }
         broadcast:(event:string, data:unknown) => void
     }
@@ -364,7 +364,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Add the upgrade branch to the proxy**
 
-At the **top** of the `dataRouter.all('*')` handler body — after `const session = c.get('session')!` and `const stub = getUserDO(c.env, session.did)`, before the existing header/URL building — insert:
+At the **top** of the `dataRouter.all('*')` handler body — after `const session = c.get('session')!` and `const stub = getRsssUserDO(c.env, session.did)`, before the existing header/URL building — insert:
 
 ```ts
     // WebSocket upgrades cannot go through buildDoProxyHeaders (it

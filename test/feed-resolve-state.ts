@@ -9,7 +9,7 @@ import {
 } from '../src/client/db/sqlite-init.js'
 import { upsertFeedFromServer } from '../src/client/db/push-sync.js'
 import {
-    UserDO,
+    RsssUserDO,
     RESOLVE_TIMEOUT_ERROR,
     RESOLVE_WINDOW_MS
 } from '../src/server/durable-objects/index.js'
@@ -79,7 +79,7 @@ function createFetchHarness (opts:{
     const broadcasts:Array<{ event:string; data:unknown }> = []
     const harnessStorage = new Map<string, unknown>()
 
-    const userDo = Object.create(UserDO.prototype) as FetchFeedDoType
+    const userDo = Object.create(RsssUserDO.prototype) as FetchFeedDoType
     userDo.broadcasts = broadcasts
 
     userDo.sql = {
@@ -226,7 +226,7 @@ test(
         const sqlCalls:SqlExecCall[] = []
         const broadcasts:Array<{ event:string; data:unknown }> = []
 
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
             broadcast:(event:string, data:unknown) => void
             sweepStuckResolvingFeeds:() => void
@@ -309,7 +309,7 @@ test(
             updated_at: '2026-05-10 12:00:00'
         }
 
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
             ctx:{
                 storage:{

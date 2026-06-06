@@ -373,7 +373,7 @@ What is **not** tested:
 - DPoP proof construction (which is dead code, but still — it's complicated dead code).
 - Autumn billing helpers (mock the Autumn client and test `verifySubscription`).
 - Email dedupe with KV.
-- The DO's HTTP handlers (you can instantiate `UserDO` in a Worker test environment via `@cloudflare/workers-types`/`workerd`).
+- The DO's HTTP handlers (you can instantiate `RsssUserDO` in a Worker test environment via `@cloudflare/workers-types`/`workerd`).
 - The HTML sanitizer (which currently passes nothing because no test calls it — see #2; an XSS test suite would have caught the regression).
 - The route-to-item match logic (#22, #30).
 

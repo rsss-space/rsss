@@ -1,4 +1,4 @@
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 // Test fixture: per-account bookkeeping helpers no-op (writes) /
 // return undefined (reads) when a test harness omits `ctx.storage`.
@@ -19,10 +19,10 @@ type WriteHelper = (this:{ ctx:DoCtx }, ...args:unknown[]) =>
 // in that case, otherwise delegate to the REAL implementation so tests
 // that attach a ctx.getWebSockets stub (e.g. do-handlers) still
 // exercise the real code path. Mirrors the read/write wrappers below.
-const origBroadcast = (UserDO.prototype as unknown as {
+const origBroadcast = (RsssUserDO.prototype as unknown as {
     broadcast:(event:string, data:unknown) => void
 }).broadcast
-;(UserDO.prototype as unknown as {
+;(RsssUserDO.prototype as unknown as {
     broadcast:(event:string, data:unknown) => void
 }).broadcast = function (
     this:{ ctx:DoCtx },
@@ -36,7 +36,7 @@ const origBroadcast = (UserDO.prototype as unknown as {
     origBroadcast.call(this, event, data)
 }
 
-const proto = UserDO.prototype as unknown as Record<
+const proto = RsssUserDO.prototype as unknown as Record<
     string,
     (...args:unknown[]) => Promise<unknown>
 >

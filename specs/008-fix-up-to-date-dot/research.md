@@ -12,7 +12,7 @@ validated the chosen approach.
 **Decision**: Add `GET /api/feed-status` (proxied to DO `/feed-status`)
 that returns `{ feedUpdateCounts:Record<feedId,number>, totalPending:
 number }`, computed from the existing
-`UserDO.getFeedUpdateCounts()` query.
+`RsssUserDO.getFeedUpdateCounts()` query.
 
 **Rationale**: The indicator is intrinsically a server-vs-client
 divergence question; the local DB cannot answer it. Today the data

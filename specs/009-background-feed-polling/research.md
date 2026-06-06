@@ -127,7 +127,7 @@ to accept an optional `validators` input
 (`{ etag?:string; lastModified?:string }`) and to return a richer
 result that includes (a) whether the response was 304, (b) the new
 validators read from the response headers, and (c) the body text
-(empty string on 304). The caller (`UserDO.fetchFeed`) reads the
+(empty string on 304). The caller (`RsssUserDO.fetchFeed`) reads the
 prior validators from DO storage, passes them in, and on a 304
 returns early without re-parsing or re-ingesting items.
 

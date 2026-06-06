@@ -1,7 +1,7 @@
 # Contract: Conditional Feed Fetch
 
 **Owner**: `fetchFeedText` in `src/server/feed-fetch.ts`
-**Caller**: `UserDO.fetchFeed` in
+**Caller**: `RsssUserDO.fetchFeed` in
 `src/server/durable-objects/index.ts`
 
 This contract extends the existing feed-fetching helper to support

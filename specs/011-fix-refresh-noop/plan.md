@@ -167,7 +167,7 @@ Evaluated against `.specify/memory/constitution.md` v1.0.0
   semantics are touched.
 - **III. Edge-Native Topology (Worker + Per-User DO)** — PASS.
   No server changes. All polling, refresh fanout, and SSE
-  broadcasting stay in `UserDO`. No external cron, queue, or
+  broadcasting stay in `RsssUserDO`. No external cron, queue, or
   worker introduced.
 - **IV. Capability-Gated Progressive Enhancement** — PASS. The
   manual refresh flow already works through both `localAdapter`

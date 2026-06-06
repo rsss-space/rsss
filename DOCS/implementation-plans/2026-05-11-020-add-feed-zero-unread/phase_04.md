@@ -118,7 +118,7 @@ Also satisfied transitively:
 
 **Implementation:**
 
-Add the new method on `UserDO`:
+Add the new method on `RsssUserDO`:
 
 ```ts
 getPerFeedUnreadCounts ():Record<string, number> {

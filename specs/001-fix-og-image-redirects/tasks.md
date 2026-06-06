@@ -82,7 +82,7 @@ loops no longer produce error-level `console.error` lines during a
 
 **Independent Test**: Stub `fetch` so an article URL returns more than
 `MAX_ARTICLE_REDIRECTS` 302s; spy on `console.error` for the duration of
-a `UserDO` refresh; assert no spy call matches
+a `RsssUserDO` refresh; assert no spy call matches
 `/redirected too many times/i` or `/og image/i`. Stub a feed-XML URL the
 same way and assert one `console.error('Error fetching feed …')` line
 fires.
@@ -103,7 +103,7 @@ fires.
       `FeedFetchError('Feed redirected too many times')`.
 - [X] T008 [P] [US1] In `test/feed-parser.ts` add a test that stubs
       `globalThis.fetch` so an article URL returns 302→302→302→302→302→302
-      (exceeds `MAX_ARTICLE_REDIRECTS`), runs the `UserDO` refresh path
+      (exceeds `MAX_ARTICLE_REDIRECTS`), runs the `RsssUserDO` refresh path
       that triggers OG enrichment, spies on `console.error`, and asserts
       the spy was NOT called with anything matching
       `/redirected too many times/i` or `/og image/i` (research.md R-6).

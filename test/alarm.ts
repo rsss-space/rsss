@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface FeedRow {
     id:number
@@ -67,7 +67,7 @@ function createAlarmDo (
     setAlarm = async (_time:number) => {},
     storage:Partial<AlarmStorage> = {}
 ) {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
         ctx:{ storage:AlarmStorage }
         fetchFeed:(feed:FeedRow) => Promise<void>
@@ -280,7 +280,7 @@ test('fetchFeed stores last_error and last_status on failure', async t => {
         status:unknown
         id:unknown
     } = null
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
         fetchFeed:(feed:FeedRow) => Promise<void>
     }

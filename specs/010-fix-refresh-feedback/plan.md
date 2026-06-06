@@ -157,7 +157,7 @@ Evaluated against `.specify/memory/constitution.md` v1.0.0
   (FR-011).
 - **III. Edge-Native Topology (Worker + Per-User DO)** — PASS. No
   server changes. All polling and refresh fanout continue to live
-  in `UserDO`. No external cron, queue, or worker introduced.
+  in `RsssUserDO`. No external cron, queue, or worker introduced.
 - **IV. Capability-Gated Progressive Enhancement** — PASS. The
   manual refresh flow already works through both `localAdapter`
   and `remoteAdapter` because it triggers the server and the

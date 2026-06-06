@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-// Test fixtures must run BEFORE other test modules import UserDO so
+// Test fixtures must run BEFORE other test modules import RsssUserDO so
 // the prototype patches are in place before any test body runs.
 import './_test-fixtures.js'
 import './sidebar-footer-refresh.js'

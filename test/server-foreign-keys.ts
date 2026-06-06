@@ -3,7 +3,7 @@ import { test } from '@substrate-system/tapzero'
 // @ts-expect-error -- no type declarations for .wasm imports
 import wasmUrl from '@sqlite.org/sqlite-wasm/sqlite3.wasm'
 import sqlite3Module from '@sqlite.org/sqlite-wasm'
-import { UserDO, type Env } from '../src/server/durable-objects/index.js'
+import { RsssUserDO, type Env } from '../src/server/durable-objects/index.js'
 
 type Row = Record<string, unknown>
 type SqliteExec = (opts:{
@@ -52,7 +52,7 @@ function createFakeSqlStorage (execSql:SqliteExec) {
 }
 
 async function createDoWithMemorySql ():Promise<{
-    userDo:UserDO
+    userDo:RsssUserDO
     sql:ReturnType<typeof createFakeSqlStorage>
     close:() => void
 }> {
@@ -75,7 +75,7 @@ async function createDoWithMemorySql ():Promise<{
             barrier = fn()
         }
     } as unknown as DurableObjectState
-    const userDo = new UserDO(ctx, {} as Env)
+    const userDo = new RsssUserDO(ctx, {} as Env)
     await barrier
 
     return {
@@ -87,7 +87,7 @@ async function createDoWithMemorySql ():Promise<{
     }
 }
 
-test('UserDO init enables foreign key cascades', async (t) => {
+test('RsssUserDO init enables foreign key cascades', async (t) => {
     const { userDo: _userDo, sql, close } = await createDoWithMemorySql()
     try {
         sql.exec("INSERT INTO feeds (url) VALUES ('https://example.com/rss')")

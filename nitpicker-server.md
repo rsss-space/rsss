@@ -427,7 +427,7 @@ Prior nitpicker review claimed both `app.get('/health', ...)` and `app.get('/api
 
 ```jsonc
 { "tag": "v1", "new_sqlite_classes": ["CollieUserDO"] },
-{ "tag": "v2", "deleted_classes": ["CollieUserDO"], "new_sqlite_classes": ["UserDO"] }
+{ "tag": "v2", "deleted_classes": ["CollieUserDO"], "new_sqlite_classes": ["RsssUserDO"] }
 ```
 
 `CollieUserDO` is a leftover from a different project (presumably renamed). Migrations are append-only in CF; deleting them isn't safe once deployed. Verify this matches what's actually in production. If not, you'll get a deploy failure or class mismatch on next push.

@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface PollerFeedState {
     etag?:string
@@ -20,7 +20,7 @@ interface LastAnySuccessRecord {
 
 function createPollDo () {
     const storage = new Map<string, unknown>()
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         ctx:{
             storage:{
                 get:<T>(key:string) => Promise<T|undefined>

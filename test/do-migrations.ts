@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import {
     INDEXES_SQL,
     TABLES_SQL,
@@ -75,12 +75,12 @@ function createConstructorContext (storedVersion:number | null) {
     }
 }
 
-test('UserDO skips migration introspection when version is current',
+test('RsssUserDO skips migration introspection when version is current',
     async t => {
         const currentMigrationVersion = 6
         const setup = createConstructorContext(currentMigrationVersion)
 
-        const userDo = new UserDO(setup.ctx, {} as never)
+        const userDo = new RsssUserDO(setup.ctx, {} as never)
         await setup.ready()
 
         const introspectionQueries = setup.statements.filter(query => {
@@ -103,11 +103,11 @@ test('UserDO skips migration introspection when version is current',
         )
     })
 
-test('UserDO reruns migrations when stored version is stale', async t => {
+test('RsssUserDO reruns migrations when stored version is stale', async t => {
     const previousMigrationVersion = 1
     const setup = createConstructorContext(previousMigrationVersion)
 
-    const userDo = new UserDO(setup.ctx, {} as never)
+    const userDo = new RsssUserDO(setup.ctx, {} as never)
     await setup.ready()
 
     const introspectionQueries = setup.statements.filter(query => {
@@ -127,7 +127,7 @@ test('UserDO reruns migrations when stored version is stale', async t => {
     )
 })
 
-test('UserDO migrates missing item thumbnail column', async t => {
+test('RsssUserDO migrates missing item thumbnail column', async t => {
     const setup = createConstructorContext(2)
     const originalExec = setup.ctx.storage.sql.exec.bind(
         setup.ctx.storage.sql
@@ -141,7 +141,7 @@ test('UserDO migrates missing item thumbnail column', async t => {
         return originalExec(query)
     }) as typeof setup.ctx.storage.sql.exec
 
-    const userDo = new UserDO(setup.ctx, {} as never)
+    const userDo = new RsssUserDO(setup.ctx, {} as never)
     await setup.ready()
 
     t.ok(userDo, 'Durable Object constructed successfully')
@@ -213,10 +213,10 @@ test('user state schema creates the feed version counter row', t => {
     )
 })
 
-test('UserDO applies user state schema after dead letter outbox', async t => {
+test('RsssUserDO applies user state schema after dead letter outbox', async t => {
     const setup = createConstructorContext(6)
 
-    const userDo = new UserDO(setup.ctx, {} as never)
+    const userDo = new RsssUserDO(setup.ctx, {} as never)
     await setup.ready()
 
     const deadLetterIndex = setup.statements.findIndex(query => {
@@ -235,9 +235,9 @@ test('UserDO applies user state schema after dead letter outbox', async t => {
     )
 })
 
-test('UserDO reads and bumps feed version through user_state', t => {
+test('RsssUserDO reads and bumps feed version through user_state', t => {
     const statements:{ query:string, params:unknown[] }[] = []
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => QueryResult
         }
@@ -277,7 +277,7 @@ test('UserDO reads and bumps feed version through user_state', t => {
     )
 })
 
-test('UserDO migrates missing item image metadata columns', async t => {
+test('RsssUserDO migrates missing item image metadata columns', async t => {
     const setup = createConstructorContext(5)
     const originalExec = setup.ctx.storage.sql.exec.bind(
         setup.ctx.storage.sql
@@ -297,7 +297,7 @@ test('UserDO migrates missing item image metadata columns', async t => {
         return originalExec(query)
     }) as typeof setup.ctx.storage.sql.exec
 
-    const userDo = new UserDO(setup.ctx, {} as never)
+    const userDo = new RsssUserDO(setup.ctx, {} as never)
     await setup.ready()
 
     const expectedMigrations = [

@@ -1,9 +1,9 @@
 import { test } from '@substrate-system/tapzero'
-import { UserDO } from '../src/server/durable-objects/index.js'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 const pollerStorage = new Map<string, unknown>()
 
-;(UserDO.prototype as unknown as {
+;(RsssUserDO.prototype as unknown as {
     ctx:{
         storage:{
             get:<T>(key:string) => Promise<T|undefined>
@@ -43,7 +43,7 @@ interface ParsedFeed {
 }
 
 function parseFeed (xml:string):ParsedFeed {
-    const parser = Object.create(UserDO.prototype) as {
+    const parser = Object.create(RsssUserDO.prototype) as {
         parseFeed:(value:string) => ParsedFeed
     }
 
@@ -293,7 +293,7 @@ test('parseFeed truncates oversized content fields', t => {
 
 test('fetchFeed records feed too large when parsed rows are truncated',
     async t => {
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
                 exec:(query:string, ...params:unknown[]) => {
                     toArray:() => []
@@ -403,7 +403,7 @@ test('fetchFeed records feed too large when parsed rows are truncated',
     })
 
 test('fetchFeed stores og image for newly inserted items', async t => {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => {
                 toArray:() => unknown[]
@@ -541,7 +541,7 @@ test('fetchFeed stores og image for newly inserted items', async t => {
 })
 
 test('fetchFeed stores article og:image in og_image_url', async t => {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => {
                 toArray:() => unknown[]
@@ -677,7 +677,7 @@ test('fetchFeed writes cached blurhash metadata without queueing',
     async t => {
         const imageUrl = 'https://cdn.example.com/parser.jpg'
         const expectedKey = await blurhashKeyFor(imageUrl)
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             env:{
                 BLURHASH_KV:{
                     get:(key:string) => Promise<string|null>
@@ -880,7 +880,7 @@ test('fetchFeed writes cached blurhash metadata without queueing',
 
 test('fetchFeed enqueues blurhash job on cache miss', async t => {
     const imageUrl = 'https://cdn.example.com/miss.jpg'
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         env:{
             BLURHASH_KV:{
                 get:(key:string) => Promise<string|null>
@@ -1072,7 +1072,7 @@ test('fetchFeed enqueues blurhash job on cache miss', async t => {
 })
 
 test('fetchFeed caps concurrent og image requests at four', async t => {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => {
                 toArray:() => unknown[]
@@ -1209,7 +1209,7 @@ test('fetchFeed caps concurrent og image requests at four', async t => {
 })
 
 test('fetchFeed silently handles og failures, uses parser image', async t => {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => {
                 toArray:() => unknown[]
@@ -1368,7 +1368,7 @@ test('fetchFeed silently handles og failures, uses parser image', async t => {
 })
 
 test('fetchFeed records non-duplicate item insert failures', async t => {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => {
                 toArray:() => []
@@ -1491,7 +1491,7 @@ test('fetchFeed records non-duplicate item insert failures', async t => {
 
 test('fetchFeed stays quiet when article URL exceeds redirect budget',
     async t => {
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
                 exec:(query:string, ...params:unknown[]) => {
                     toArray:() => unknown[]
@@ -1624,7 +1624,7 @@ test('fetchFeed stays quiet when article URL exceeds redirect budget',
 
 test('fetchFeed resolves og image after multi-hop article redirects',
     async t => {
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
                 exec:(query:string, ...params:unknown[]) => {
                     toArray:() => unknown[]
@@ -1774,7 +1774,7 @@ test('fetchFeed resolves og image after multi-hop article redirects',
 
 test('fetchFeed falls back to feed image when article redirects loop',
     async t => {
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
                 exec:(query:string, ...params:unknown[]) => {
                     toArray:() => unknown[]
@@ -1914,7 +1914,7 @@ test('fetchFeed falls back to feed image when article redirects loop',
 
 test('fetchFeed leaves thumbnail null when article loops and feed has none',
     async t => {
-        const userDo = Object.create(UserDO.prototype) as {
+        const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
                 exec:(query:string, ...params:unknown[]) => {
                     toArray:() => unknown[]
@@ -2040,7 +2040,7 @@ test('fetchFeed leaves thumbnail null when article loops and feed has none',
 )
 
 test('fetchFeed loudly reports feed-XML redirect overflow', async t => {
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => {
                 toArray:() => unknown[]
@@ -2201,7 +2201,7 @@ function createUrlPersistHarness (opts:{
         collisionProbe: null
     }
 
-    const userDo = Object.create(UserDO.prototype) as {
+    const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
             exec:(query:string, ...params:unknown[]) => {
                 toArray:() => unknown[]

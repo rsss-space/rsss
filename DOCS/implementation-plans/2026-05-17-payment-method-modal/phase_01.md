@@ -114,7 +114,7 @@ Final `Env` interface (the diff is two new lines after
 
 ```typescript
 export interface Env {
-    USER_DO:DurableObjectNamespace<UserDOBase>;
+    USER_DO:DurableObjectNamespace<RsssUserDOBase>;
     SESSIONS:KVNamespace;
     BLURHASH_KV:KVNamespace;
     HTML_KV?:KVNamespace;

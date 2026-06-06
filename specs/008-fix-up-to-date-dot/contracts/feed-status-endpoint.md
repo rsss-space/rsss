@@ -4,7 +4,7 @@
 
 The Worker proxies any unmatched `/api/*` request to the caller's
 Durable Object, so this endpoint is implemented as `GET /feed-status`
-on `UserDO` and reachable to authenticated clients at
+on `RsssUserDO` and reachable to authenticated clients at
 `/api/feed-status`.
 
 ## Purpose

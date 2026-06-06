@@ -111,7 +111,7 @@ instant) — leading with the WHY is the user CLAUDE.md rule. No
 comment is also acceptable per CLAUDE.md "Default to writing no
 comments."
 
-Next, add a private helper method on `UserDO` to compute the per-
+Next, add a private helper method on `RsssUserDO` to compute the per-
 feed unread count using exactly the same SQL pattern as the
 existing /counts query at lines 681-684:
 
@@ -306,7 +306,7 @@ Mirror the style and harness pattern used by
 `test/feed-resolve-state.ts`. Reuse the existing
 `createFetchHarness` test fixture if it can be adapted; if not,
 create a new fixture that:
-1. Instantiates `UserDO` via `Object.create(UserDO.prototype)`.
+1. Instantiates `RsssUserDO` via `Object.create(RsssUserDO.prototype)`.
 2. Mocks `sql.exec` to return canned row sequences for the INSERT
    and the subsequent SELECT.
 3. Mocks `doFetchFeedText` to either resolve fast (well under 3s)
@@ -332,8 +332,8 @@ result is a failure" edge case from spec.
 **Test 3 — slow path returns 'timeout' from helper:** Drive a
 hand-controlled `fetchPromise` that never resolves. Call
 `awaitFetchOrTimeout(neverResolves, 50)` (Task 1's helper) directly
-against an instance of `UserDO` constructed via the test harness'
-`Object.create(UserDO.prototype)` pattern. Assert the helper
+against an instance of `RsssUserDO` constructed via the test harness'
+`Object.create(RsssUserDO.prototype)` pattern. Assert the helper
 resolves to `'timeout'` within ~100ms of real time. No production-
 code test hatch is required because the helper IS the unit of
 behavior: Test 1 and Test 2 already exercise the full handler

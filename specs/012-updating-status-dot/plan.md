@@ -147,7 +147,7 @@ Evaluated against `.specify/memory/constitution.md` v1.0.0
   shape. The display masking is purely render-time.
 - **III. Edge-Native Topology (Worker + Per-User DO)** — PASS. No
   server changes. Polling, refresh fanout, and SSE broadcasting all
-  stay in `UserDO`. No external cron, queue, or worker introduced.
+  stay in `RsssUserDO`. No external cron, queue, or worker introduced.
 - **IV. Capability-Gated Progressive Enhancement** — PASS. The fix
   lives in `state.ts` and `feed-status.ts`, which both adapter modes
   share. `aria-busy` (010), the controlled-Button contract (011),
@@ -349,7 +349,7 @@ same five principles:
   `client_op_id` outbox semantics, and `/api/sync` payload shape are
   all untouched.
 - **III**: confirmed — no DO changes, no new alarm or queue. The
-  `refresh-complete` event sequence in `UserDO` is unchanged.
+  `refresh-complete` event sequence in `RsssUserDO` is unchanged.
 - **IV**: confirmed — the fix lives in shared client state and a
   shared component, so it works under both `localAdapter` and
   `remoteAdapter` modes without branching.
