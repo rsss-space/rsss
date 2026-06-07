@@ -16,7 +16,8 @@ import {
 import { isSummaryOnly } from '../../shared/article-detect.js'
 import {
     publisherLinkLabel,
-    publisherLinkHref
+    publisherLinkHref,
+    sourceLinkLabel
 } from '../../shared/publisher-link.js'
 import './item-reader.css'
 import { noticeForStatus } from './item-reader-notice.js'
@@ -119,6 +120,17 @@ export const ItemReader:FunctionComponent<{
                 <a class="btn btn-back" href="/">
                     ${'<'} Back
                 </a>
+                ${item.link && (() => {
+                    const label = sourceLinkLabel(item.link)
+                    const href = publisherLinkHref(item.link)
+                    if (!label || !href) return null
+                    return html`<a
+                        class="reader-source-link"
+                        href=${href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >${label}</a>`
+                })()}
                 <div class="reader-actions">
                     <button
                         class="btn-star ${isStarred ?

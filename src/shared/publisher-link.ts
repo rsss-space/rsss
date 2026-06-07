@@ -33,3 +33,9 @@ export function publisherLinkHref (link:string):string|null {
     if (!url) return null
     return url.toString()
 }
+
+export function sourceLinkLabel (link:string):string|null {
+    const url = tryParse(link)
+    if (!url) return null
+    return 'Read this article on ' + publisherHost(url)
+}
