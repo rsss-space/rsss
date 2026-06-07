@@ -11,3 +11,11 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - Both Env interfaces (index.ts and DO/index.ts) needed the binding; DO's local Env omits the optional marker so Queue is non-optional there too.
 ---
 
+## 2026-06-07 - US-002
+- What was implemented: Created src/server/article-fetch-job.ts exporting ArticleFetchJob interface and isArticleFetchJob type guard. Created test/article-fetch-job.ts with 8 tests covering valid and invalid jobs. Registered the test in test/browser-tests.ts.
+- Files changed: src/server/article-fetch-job.ts (new), test/article-fetch-job.ts (new), test/browser-tests.ts, specs/prd.json
+- **Learnings for future iterations:**
+  - tapzero's Test type does not expose `notOk`; use `t.equal(result, false, msg)` instead.
+  - The guard pattern mirrors isBlurhashJob in blurhash-consumer.ts: check `!value || typeof value !== 'object'` first, then cast to Partial<T> and check each field type.
+---
+
