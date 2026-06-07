@@ -60,6 +60,7 @@ export interface Env {
     BLURHASH_KV:KVNamespace;
     HTML_KV?:KVNamespace;
     BLURHASH_QUEUE:Queue;
+    ARTICLE_FETCH_QUEUE:Queue;
     ASSETS:Fetcher;
     SESSION_SECRET:string;
     OAUTH_CLIENT_ID?:string;

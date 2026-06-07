@@ -3,3 +3,11 @@
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
 
+## 2026-06-07 - US-001
+- What was implemented: Added ARTICLE_FETCH_QUEUE producer+consumer to wrangler.jsonc (root, staging env, and production env queues blocks). Added ARTICLE_FETCH_QUEUE:Queue to the Env interface in src/server/index.ts and src/server/durable-objects/index.ts.
+- Files changed: wrangler.jsonc, src/server/index.ts, src/server/durable-objects/index.ts
+- **Learnings for future iterations:**
+  - The production env block in wrangler.jsonc does declare its own queues block, so it needed the new queue mirrored there too (using production queue names article-fetch-jobs / article-fetch-dlq, same as root).
+  - Both Env interfaces (index.ts and DO/index.ts) needed the binding; DO's local Env omits the optional marker so Queue is non-optional there too.
+---
+

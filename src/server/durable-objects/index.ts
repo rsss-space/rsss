@@ -35,6 +35,7 @@ export interface Env {
     SESSIONS:KVNamespace
     BLURHASH_KV:KVNamespace
     BLURHASH_QUEUE:Queue
+    ARTICLE_FETCH_QUEUE:Queue
     ASSETS:Fetcher
     AUTUMN_SECRET_KEY?:string
     AUTUMN_DISABLED?:string

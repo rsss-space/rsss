@@ -15,7 +15,7 @@
         "Typecheck passes (npx tsc --noEmit)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 1.1. wrangler.jsonc + src/server/index.ts:57-77 + DO local Env."
     },
     {
