@@ -52,6 +52,19 @@ export function sanitizeHtml (html:string):string {
     })
 }
 
+export function addImageLoadingHints (html:string):string {
+    if (!html) return html
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const imgs = doc.body.querySelectorAll('img')
+    if (imgs.length === 0) return html
+    imgs.forEach((img) => {
+        // Force lazy + async; publisher hints are unreliable here.
+        img.setAttribute('loading', 'lazy')
+        img.setAttribute('decoding', 'async')
+    })
+    return doc.body.innerHTML
+}
+
 export function formatBytes (n:number):string {
     if (n === 0) return '0 B'
     if (n < 1_000) return `${n} B`
