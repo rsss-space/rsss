@@ -23,6 +23,27 @@ export function formatDate (dateStr:string|null):string {
     return date.toLocaleDateString()
 }
 
+// Article bodies are publisher HTML injected verbatim via
+// dangerouslySetInnerHTML. Publisher chrome ships interactive controls
+// ("Save this story" bookmark widgets, share bars, inline subscribe
+// forms) that have no place in a reader. DOMPurify's `html` profile
+// keeps these tags, and merely forbidding a tag re-parents its children
+// (KEEP_CONTENT defaults true) -- so a forbidden <button> would leave
+// its "Save this story" label behind. Remove the whole node instead.
+const STRIPPED_CONTROL_TAGS = new Set([
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'label'
+])
+
+DOMPurify.addHook('uponSanitizeElement', (node, data) => {
+    if (STRIPPED_CONTROL_TAGS.has(data.tagName)) {
+        node.parentNode?.removeChild(node)
+    }
+})
+
 export function sanitizeHtml (html:string):string {
     return DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true },
