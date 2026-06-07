@@ -1,9 +1,9 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
-import { useCallback, useEffect } from 'preact/hooks'
+import { useCallback, useEffect, useMemo } from 'preact/hooks'
 import { useComputed } from '@preact/signals'
 import { NotFound } from '../not-found.js'
-import { formatDate, sanitizeHtml } from '../util.js'
+import { formatDate, sanitizeHtml, addImageLoadingHints } from '../util.js'
 import {
     type Item,
     type AppState,
@@ -59,11 +59,13 @@ export const ItemReader:FunctionComponent<{
     const itemId = item.id
     const isStarred = !!item.is_starred
     const isRead = !!item.is_read
-    const articleHtml = sanitizeHtml(
-        item.full_content ||
+    const rawHtml = item.full_content ||
         item.content ||
         item.description ||
         ''
+    const articleHtml = useMemo(
+        () => sanitizeHtml(addImageLoadingHints(rawHtml)),
+        [rawHtml]
     )
     const contentUnavailable = (
         !articleHtml &&
