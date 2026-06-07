@@ -1,7 +1,8 @@
 import { test } from '@substrate-system/tapzero'
 import {
     publisherLinkLabel,
-    publisherLinkHref
+    publisherLinkHref,
+    sourceLinkLabel
 } from '../src/shared/publisher-link.js'
 
 test('publisherLinkLabel - basic host', t => {
@@ -101,6 +102,71 @@ test('publisherLinkHref - preserves path and query', t => {
         'https://example.com/post?x=1#h',
         'href round-trips path/query/hash'
     )
+})
+
+test('sourceLinkLabel - basic host', t => {
+    t.equal(
+        sourceLinkLabel('https://brittanyellich.com/post'),
+        'Read this article on brittanyellich.com',
+        'host appears verbatim'
+    )
+})
+
+test('sourceLinkLabel - strips leading www.', t => {
+    t.equal(
+        sourceLinkLabel('https://www.example.com/x'),
+        'Read this article on example.com',
+        'www. prefix removed from host'
+    )
+})
+
+test('sourceLinkLabel - keeps non-www subdomain', t => {
+    t.equal(
+        sourceLinkLabel('https://blog.example.com/x'),
+        'Read this article on blog.example.com',
+        'blog. subdomain preserved'
+    )
+})
+
+test('sourceLinkLabel - empty / null / malformed → null', t => {
+    t.equal(sourceLinkLabel(''), null, 'empty → null')
+    t.equal(sourceLinkLabel('not a url'), null, 'malformed → null')
+})
+
+test('sourceLinkLabel - non-http(s) → null', t => {
+    t.equal(
+        sourceLinkLabel('mailto:hi@example.com'),
+        null,
+        'mailto → null'
+    )
+    t.equal(
+        sourceLinkLabel('javascript:alert(1)'),
+        null,
+        'javascript: → null'
+    )
+})
+
+test('sourceLinkLabel - host is lower-cased', t => {
+    t.equal(
+        sourceLinkLabel('https://EXAMPLE.com/x'),
+        'Read this article on example.com',
+        'uppercase host folded to lowercase'
+    )
+})
+
+test('sourceLinkLabel - always starts with the prefix', t => {
+    const cases = [
+        'https://example.com/',
+        'https://www.example.com/',
+        'http://example.com/'
+    ]
+    for (const link of cases) {
+        const label = sourceLinkLabel(link)
+        t.ok(
+            label && label.startsWith('Read this article on '),
+            `label for ${link} starts with prefix`
+        )
+    }
 })
 
 test('item-reader rendering decision (null when helpers return null)', t => {
