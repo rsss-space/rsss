@@ -9,6 +9,7 @@ import {
     DEAD_LETTER_OUTBOX_SQL,
     USER_STATE_SQL,
     ALL_FULL_CONTENT_STATUSES,
+    type FullContentStatus,
     isSuccessStatus,
     FETCH_FULL_MIN_INTERVAL_MS
 } from '../../shared/schema.js'
@@ -659,6 +660,57 @@ export class RsssUserDO extends DurableObject<Env> {
                 body.image_height,
                 id
             )
+            this.bumpFeedVersion()
+
+            return new Response(null, { status: 204 })
+        })
+
+        app.post('/internal/full-content/items/:id', async (c) => {
+            const id = Number(c.req.param('id'))
+            if (!Number.isInteger(id) || id < 1) {
+                return c.json({ error: 'Invalid item id' }, 400)
+            }
+
+            const body = await c.req.json<{
+                html?:unknown
+                fetchedAt?:unknown
+                status?:unknown
+            }>()
+
+            if (
+                typeof body.status !== 'string' ||
+                !ALL_FULL_CONTENT_STATUSES.includes(
+                    body.status as FullContentStatus
+                )
+            ) {
+                return c.json({ error: 'Invalid status' }, 400)
+            }
+
+            if (
+                typeof body.html === 'string' &&
+                body.html.length > 0
+            ) {
+                const fetchedAt = typeof body.fetchedAt === 'string' ?
+                    body.fetchedAt :
+                    new Date().toISOString()
+                this.sql.exec(
+                    'UPDATE items SET full_content = ?, ' +
+                    'full_content_fetched_at = ?, ' +
+                    'full_content_status = ? WHERE id = ?',
+                    body.html,
+                    fetchedAt,
+                    body.status,
+                    id
+                )
+            } else {
+                this.sql.exec(
+                    'UPDATE items SET ' +
+                    "full_content_fetched_at = datetime('now'), " +
+                    'full_content_status = ? WHERE id = ?',
+                    body.status,
+                    id
+                )
+            }
             this.bumpFeedVersion()
 
             return new Response(null, { status: 204 })

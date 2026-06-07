@@ -19,3 +19,11 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The guard pattern mirrors isBlurhashJob in blurhash-consumer.ts: check `!value || typeof value !== 'object'` first, then cast to Partial<T> and check each field type.
 ---
 
+
+## 2026-06-07 - US-003
+- What was implemented: Added `app.post('/internal/full-content/items/:id')` route to the DO router immediately after `/internal/blurhash/items/:id`. Added `type FullContentStatus` to the import from shared/schema.js. The handler validates the id (integer >= 1) and the status against ALL_FULL_CONTENT_STATUSES, returns 400 on invalid input, writes full_content + full_content_fetched_at + full_content_status when html is non-empty, writes only full_content_fetched_at + full_content_status on failure, calls bumpFeedVersion(), and returns 204. Created test/store-full-content-endpoint.ts (7 tests, node-platform) and registered it in test/run-all-tests.mjs.
+- Files changed: src/server/durable-objects/index.ts, test/store-full-content-endpoint.ts (new), test/run-all-tests.mjs, specs/prd.json
+- **Learnings for future iterations:**
+  - The DO's createSql mock must handle `UPDATE user_state SET feed_version` for bumpFeedVersion; the SQL mock pattern in test/fetch-full-endpoint.ts does NOT handle it (since that endpoint does not call bumpFeedVersion), so new tests for routes that call bumpFeedVersion need to add it to the mock.
+  - Node-platform test registration: add an esbuild entry to run-all-tests.mjs under the "node-platform tests" section, mirroring the fetch-full-endpoint.ts pattern.
+---

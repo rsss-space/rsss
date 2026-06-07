@@ -1,7 +1,7 @@
 {
   "project": "RSSS",
   "branchName": "ralph/article-image-blurhash",
-  "description": "Blur-Hash Placeholders for Article Images — compute blur hashes ahead of time for images inside article bodies (by eagerly pre-fetching summary-only article bodies at poll time) and render them as <blur-hash> placeholders, falling back to the 037 gray box. A new article-fetch-jobs queue is enqueued during DO polling for summary-only new items; its consumer fetches the body, stores it via a new internal DO endpoint, then enqueues body-image blur jobs on the existing BLURHASH_QUEUE (extended with target:'body'). Blur results merge into a new items.full_content_images JSON column, synced to the client, which swaps <img> to <blur-hash> after DOMPurify. See specs/038-article-image-blurhash/plan.md.",
+  "description": "Blur-Hash Placeholders for Article Images \u2014 compute blur hashes ahead of time for images inside article bodies (by eagerly pre-fetching summary-only article bodies at poll time) and render them as <blur-hash> placeholders, falling back to the 037 gray box. A new article-fetch-jobs queue is enqueued during DO polling for summary-only new items; its consumer fetches the body, stores it via a new internal DO endpoint, then enqueues body-image blur jobs on the existing BLURHASH_QUEUE (extended with target:'body'). Blur results merge into a new items.full_content_images JSON column, synced to the client, which swaps <img> to <blur-hash> after DOMPurify. See specs/038-article-image-blurhash/plan.md.",
   "userStories": [
     {
       "id": "US-001",
@@ -47,7 +47,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 1.3. DO route near existing /internal/blurhash/items/:id (~line 664). Server code must not use DOMParser."
     },
     {
