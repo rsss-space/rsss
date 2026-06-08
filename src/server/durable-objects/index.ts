@@ -32,7 +32,11 @@ import {
 } from '../blurhash.js'
 import { isPrefetchEligible } from '../article-prefetch-eligible.js'
 import { type ArticleFetchJob } from '../article-fetch-job.js'
-import { mergeFullContentImage } from '../full-content-images.js'
+import {
+    mergeFullContentImage,
+    parseImageMap
+} from '../full-content-images.js'
+import { enqueueBodyBlurJobs } from '../blurhash-body-enqueue.js'
 
 export interface Env {
     USER:DurableObjectNamespace<RsssUserDO>
@@ -148,6 +152,14 @@ const ITEM_SYNC_COLUMNS = `
     ${ITEM_COLUMNS},
     feeds.title AS feed_title
 `
+
+// True when the stored body blur map already holds at least one entry.
+// Reuses parseImageMap so a null/whitespace/malformed/`{}` value counts as
+// empty and lazy-fill proceeds; any real entry makes lazy-fill skip.
+function hasBodyBlurMap (value:unknown):boolean {
+    if (typeof value !== 'string') return false
+    return Object.keys(parseImageMap(value)).length > 0
+}
 
 function errorMessage (err:unknown):string {
     return err instanceof Error ? err.message : String(err)
@@ -1527,6 +1539,30 @@ export class RsssUserDO extends DurableObject<Env> {
                 typeof item.full_content === 'string' &&
                 item.full_content.length > 0
             ) {
+                // Lazy-fill: a previously-fetched body whose blur map is
+                // still empty enqueues body blur jobs from the stored HTML
+                // on this open. Best-effort — never fail the cache-hit
+                // response. Self-limiting: once the consumer writes any map
+                // entry back, later opens see a non-empty map and skip.
+                const fullContent = item.full_content
+                const env:Env|undefined = this.env
+                if (
+                    env?.BLURHASH_QUEUE &&
+                    !hasBodyBlurMap(item.full_content_images)
+                ) {
+                    try {
+                        await enqueueBodyBlurJobs(
+                            env.BLURHASH_QUEUE,
+                            fullContent,
+                            id,
+                            this.ctx.id.toString()
+                        )
+                    } catch (err) {
+                        console.error(
+                            'body blur enqueue failed (lazy):', err
+                        )
+                    }
+                }
                 return c.json({ item })
             }
 
@@ -1560,6 +1596,27 @@ export class RsssUserDO extends DurableObject<Env> {
                     result.status,
                     id
                 )
+
+                // Fresh fetch: enqueue body blur jobs for the newly-stored
+                // HTML. Best-effort — a queue failure must never fail the
+                // fetch-full response.
+                if (result.html) {
+                    const env:Env|undefined = this.env
+                    if (env?.BLURHASH_QUEUE) {
+                        try {
+                            await enqueueBodyBlurJobs(
+                                env.BLURHASH_QUEUE,
+                                result.html,
+                                id,
+                                this.ctx.id.toString()
+                            )
+                        } catch (err) {
+                            console.error(
+                                'body blur enqueue failed (fetch):', err
+                            )
+                        }
+                    }
+                }
             } else {
                 // Preserve any prior full_content on failure.
                 this.sql.exec(

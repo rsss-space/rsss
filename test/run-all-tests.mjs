@@ -48,6 +48,12 @@ const commands = [
         '| node --input-type=module | tap-spec'
     ].join(' '),
     [
+        'esbuild ./test/fetch-full-body-blur.ts --bundle',
+        '--platform=node --format=esm',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
         'esbuild ./test/store-full-content-endpoint.ts --bundle',
         '--platform=node --format=esm',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
