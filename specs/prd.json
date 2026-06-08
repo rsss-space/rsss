@@ -140,7 +140,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 2.3. Match article-extract.ts regex style; Workers runtime has no DOMParser."
     },
     {

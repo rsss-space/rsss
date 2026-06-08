@@ -69,3 +69,12 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
 - **Learnings for future iterations:**
   - For optional discriminator fields on job types, add them to the interface but leave guards unchanged so existing job messages without the field continue to route correctly (absent = legacy/thumbnail behavior).
 ---
+
+## 2026-06-07 - US-009
+- What was implemented: Created src/server/extract-image-urls.ts exporting `extractImageUrls(html:string):string[]`. Uses a single regex (`/<img\b[^>]+\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*))/gi`) to match all `<img src=...>` variants (double-quoted, single-quoted, unquoted). Filters to absolute http(s) URLs only, deduplicates with a Set, returns [] on empty input. Created test/extract-image-urls.ts (4 tests, node-platform): found, dedupe, skip non-http (data: / relative / protocol-relative), and none. Registered in test/run-all-tests.mjs.
+- Files changed: src/server/extract-image-urls.ts (new), test/extract-image-urls.ts (new), test/run-all-tests.mjs, specs/prd.json
+- **Learnings for future iterations:**
+  - Workers runtime has no DOMParser — regex is the only parse option for server-side HTML.
+  - The IMG_SRC_RE regex must reset `lastIndex = 0` before each call since it uses the `g` flag on a module-level variable; otherwise it retains position across invocations.
+  - Match groups: `match[1]` = double-quoted, `match[2]` = single-quoted, `match[3]` = unquoted — use `??` chain for all three.
+---

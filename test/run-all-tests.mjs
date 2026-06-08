@@ -60,6 +60,12 @@ const commands = [
         '| node --input-type=module | tap-spec'
     ].join(' '),
     [
+        'esbuild ./test/extract-image-urls.ts --bundle',
+        '--platform=node --format=esm',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
         'esbuild ./test/session-record.ts --bundle --platform=node',
         '--format=esm',
         '--external:./src/server/blurhash-runtime.js',
