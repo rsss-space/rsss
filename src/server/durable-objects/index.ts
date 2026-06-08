@@ -105,7 +105,7 @@ const FEED_XML_PARSER = new XMLParser({
 const FEED_REFRESH_CONCURRENCY = 8
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
-const FEED_REFRESH_INTERVAL_MS = 10 * 60 * 1000
+const FEED_REFRESH_INTERVAL_MS = 60 * 60 * 1000
 // Application-level WebSocket keepalive. The client sends LIVE_PING on a
 // timer; the runtime answers LIVE_PONG via setWebSocketAutoResponse
 // WITHOUT waking the hibernated DO, refreshing the idle timer so
@@ -378,7 +378,10 @@ function manualRefreshRetryAfterSeconds (
  *
  * Uses the Hibernation API:
  * - DO hibernates between requests to minimize cost
- * - Uses alarms for periodic feed polling (every 10 min)
+ * - Uses alarms for periodic feed polling (every 60 min); the alarm
+ *   stops re-arming once the account is idle past
+ *   ACCOUNT_INACTIVITY_THRESHOLD_MS so an idle DO incurs zero request
+ *   cost, and is re-armed on the user's next request.
  * - State persists in SQLite across hibernation cycles
  */
 export class RsssUserDO extends DurableObject<Env> {

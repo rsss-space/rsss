@@ -164,6 +164,35 @@ function createResumeAlarmDo (
     return userDo
 }
 
+test('scheduleNextFeedRefresh arms the next alarm ~60 minutes out', async t => {
+    const armedTimes:number[] = []
+    const userDo = Object.create(RsssUserDO.prototype) as {
+        ctx:{ storage:{ setAlarm:(time:number) => Promise<void> } }
+        scheduleNextFeedRefresh:() => Promise<void>
+    }
+    userDo.ctx = {
+        storage: {
+            async setAlarm (time:number) {
+                armedTimes.push(time)
+            }
+        }
+    }
+
+    const before = Date.now()
+    await userDo.scheduleNextFeedRefresh()
+
+    t.equal(armedTimes.length, 1, 'exactly one alarm armed')
+    const delta = armedTimes[0] - before
+    t.ok(
+        delta >= 60 * 60 * 1000,
+        'next alarm is at least 60 minutes out'
+    )
+    t.ok(
+        delta < 61 * 60 * 1000,
+        'next alarm is under 61 minutes out'
+    )
+})
+
 test('alarm refreshes feeds with concurrency limited to 8', async t => {
     const feeds = Array.from({ length: 20 }, (_value, index) => {
         return createFeed(index + 1)
