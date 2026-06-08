@@ -105,7 +105,7 @@ const FEED_XML_PARSER = new XMLParser({
 const FEED_REFRESH_CONCURRENCY = 8
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
-const FEED_REFRESH_INTERVAL_MS = 10 * 60 * 1000
+const FEED_REFRESH_INTERVAL_MS = 60 * 60 * 1000
 // Application-level WebSocket keepalive. The client sends LIVE_PING on a
 // timer; the runtime answers LIVE_PONG via setWebSocketAutoResponse
 // WITHOUT waking the hibernated DO, refreshing the idle timer so
@@ -114,7 +114,7 @@ const LIVE_PING = JSON.stringify({ type: 'ping' })
 const LIVE_PONG = JSON.stringify({ type: 'pong' })
 const FEED_BACKOFF_MULTIPLIER = 2
 const FEED_BACKOFF_CEILING_MS = 24 * 60 * 60 * 1000
-const ACCOUNT_INACTIVITY_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000
+const ACCOUNT_INACTIVITY_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000
 const ACTIVITY_MARKER_COALESCE_MS = 60 * 1000
 const MANUAL_REFRESH_LIMIT_MS = 60 * 1000
 const MANUAL_REFRESH_STORAGE_PREFIX = 'manual_refresh:'
@@ -378,7 +378,10 @@ function manualRefreshRetryAfterSeconds (
  *
  * Uses the Hibernation API:
  * - DO hibernates between requests to minimize cost
- * - Uses alarms for periodic feed polling (every 10 min)
+ * - Uses alarms for periodic feed polling (every 60 min); the alarm
+ *   stops re-arming once the account is idle past
+ *   ACCOUNT_INACTIVITY_THRESHOLD_MS so an idle DO incurs zero request
+ *   cost, and is re-armed on the user's next request.
  * - State persists in SQLite across hibernation cycles
  */
 export class RsssUserDO extends DurableObject<Env> {
@@ -405,7 +408,7 @@ export class RsssUserDO extends DurableObject<Env> {
             // This wakes the DO periodically to refresh feeds
             const currentAlarm = await ctx.storage.getAlarm()
             if (!currentAlarm) {
-                // Set first alarm 10 minutes from now
+                // Set first alarm one refresh interval from now
                 await ctx.storage.setAlarm(
                     Date.now() + FEED_REFRESH_INTERVAL_MS
                 )
@@ -2795,6 +2798,7 @@ export class RsssUserDO extends DurableObject<Env> {
             lastAnySuccessAt < now - FEED_REFRESH_INTERVAL_MS
         )
         await this.writeAccountActivity(now)
+        await this.ensureFeedRefreshArmed()
         if (trigger) {
             this.ctx.waitUntil(this.refreshFeedBatches())
         }
@@ -2814,23 +2818,23 @@ export class RsssUserDO extends DurableObject<Env> {
 
         this.sweepStuckResolvingFeeds()
 
-        await this.scheduleNextFeedRefresh()
-
-        // Inactivity gate (FR-008, SC-005): accounts that have not
-        // been active beyond the threshold incur zero polling cost
-        // until the next sign-in/page-load advances last_active_at.
-        // The next alarm has already been re-armed above, so we keep
-        // ticking on cadence and resume work as soon as the account
-        // becomes active again.
+        // Inactivity gate (FR-008, SC-005): once an account has been
+        // idle past the threshold, STOP the polling alarm so the DO
+        // goes silent and incurs zero Durable Object request cost.
+        // It is re-armed on the user's next request (constructor +
+        // maybeKickCatchUp -> ensureFeedRefreshArmed). A pending
+        // (not-yet-due) deletion must keep the alarm ticking so it
+        // executes when due, so only silence the alarm when no
+        // deletion is pending.
         const activity = await this.readAccountActivity()
-        if (
-            activity &&
+        const idlePastThreshold = activity != null &&
             Date.now() - activity.lastActiveAt >
                 ACCOUNT_INACTIVITY_THRESHOLD_MS
-        ) {
+        if (idlePastThreshold && pending == null) {
             return
         }
 
+        await this.scheduleNextFeedRefresh()
         await this.refreshFeedBatches()
     }
 
@@ -2878,6 +2882,21 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Wipe DO state (alarm, cursor, pending deletion, etc.)
         await this.ctx.storage.deleteAll()
+    }
+
+    /**
+     * Ensure a periodic feed-refresh alarm is armed. Called from the
+     * per-request activity hook (maybeKickCatchUp) so a returning user
+     * whose alarm was stopped by the inactivity gate resumes polling.
+     * Idempotent: a no-op when an alarm is already scheduled.
+     */
+    private async ensureFeedRefreshArmed ():Promise<void> {
+        const existing = await this.ctx.storage.getAlarm()
+        if (existing == null) {
+            await this.ctx.storage.setAlarm(
+                Date.now() + FEED_REFRESH_INTERVAL_MS
+            )
+        }
     }
 
     private async scheduleNextFeedRefresh ():Promise<void> {

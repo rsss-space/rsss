@@ -164,6 +164,35 @@ function createResumeAlarmDo (
     return userDo
 }
 
+test('scheduleNextFeedRefresh arms the next alarm ~60 minutes out', async t => {
+    const armedTimes:number[] = []
+    const userDo = Object.create(RsssUserDO.prototype) as {
+        ctx:{ storage:{ setAlarm:(time:number) => Promise<void> } }
+        scheduleNextFeedRefresh:() => Promise<void>
+    }
+    userDo.ctx = {
+        storage: {
+            async setAlarm (time:number) {
+                armedTimes.push(time)
+            }
+        }
+    }
+
+    const before = Date.now()
+    await userDo.scheduleNextFeedRefresh()
+
+    t.equal(armedTimes.length, 1, 'exactly one alarm armed')
+    const delta = armedTimes[0] - before
+    t.ok(
+        delta >= 60 * 60 * 1000,
+        'next alarm is at least 60 minutes out'
+    )
+    t.ok(
+        delta < 61 * 60 * 1000,
+        'next alarm is under 61 minutes out'
+    )
+})
+
 test('alarm refreshes feeds with concurrency limited to 8', async t => {
     const feeds = Array.from({ length: 20 }, (_value, index) => {
         return createFeed(index + 1)
@@ -407,16 +436,16 @@ test(
 )
 
 test(
-    'alarm short-circuits when account is inactive past threshold',
+    'alarm stops re-arming when account is idle past threshold',
     async t => {
         const feeds = [createFeed(1), createFeed(2), createFeed(3)]
         const fetched:number[] = []
         const stored = new Map<string, unknown>()
         const alarmTimes:number[] = []
-        // Seed last_active_at to 31 days ago.
-        const thirtyOneDaysAgo = Date.now() - 31 * 24 * 60 * 60 * 1000
+        // Seed last_active_at well past the inactivity threshold.
+        const longAgo = Date.now() - 31 * 24 * 60 * 60 * 1000
         stored.set('poll:account:last_active_at', {
-            lastActiveAt: thirtyOneDaysAgo
+            lastActiveAt: longAgo
         })
 
         const userDo = createAlarmDo(
@@ -445,13 +474,99 @@ test(
         t.equal(
             fetched.length,
             0,
-            'inactive account: zero feed fetches during alarm tick (SC-005)'
+            'idle account: zero feed fetches during alarm tick'
         )
         t.equal(
             alarmTimes.length,
-            1,
-            'alarm re-arms normally for the next cadence'
+            0,
+            'idle account: alarm is NOT re-armed (DO goes silent)'
         )
+    }
+)
+
+test(
+    'alarm stays armed for an idle account with a pending deletion',
+    async t => {
+        const feeds = [createFeed(1)]
+        const stored = new Map<string, unknown>()
+        const alarmTimes:number[] = []
+        // Idle past threshold...
+        stored.set('poll:account:last_active_at', {
+            lastActiveAt: Date.now() - 31 * 24 * 60 * 60 * 1000
+        })
+        // ...but a deletion is scheduled for the future.
+        stored.set('pending_deletion', {
+            scheduledFor: Date.now() + 60_000,
+            did: 'did:plc:alice'
+        })
+
+        const userDo = createAlarmDo(
+            feeds,
+            async () => {},
+            async (time) => {
+                alarmTimes.push(time)
+            },
+            {
+                async get<T> (key:string) {
+                    return stored.get(key) as T|undefined
+                },
+                async put (key:string, value:unknown) {
+                    stored.set(key, value)
+                },
+                async delete (key:string) {
+                    stored.delete(key)
+                }
+            }
+        )
+
+        await userDo.alarm()
+
+        t.equal(
+            alarmTimes.length,
+            1,
+            'pending deletion keeps the alarm ticking so it fires when due'
+        )
+    }
+)
+
+test(
+    'alarm stops for an account idle just over 3 days',
+    async t => {
+        const feeds = [createFeed(1)]
+        const fetched:number[] = []
+        const stored = new Map<string, unknown>()
+        const alarmTimes:number[] = []
+        // 4 days idle: under the old 30-day threshold (would have kept
+        // polling) but over the new 3-day threshold.
+        stored.set('poll:account:last_active_at', {
+            lastActiveAt: Date.now() - 4 * 24 * 60 * 60 * 1000
+        })
+
+        const userDo = createAlarmDo(
+            feeds,
+            async (feed) => {
+                fetched.push(feed.id)
+            },
+            async (time) => {
+                alarmTimes.push(time)
+            },
+            {
+                async get<T> (key:string) {
+                    return stored.get(key) as T|undefined
+                },
+                async put (key:string, value:unknown) {
+                    stored.set(key, value)
+                },
+                async delete (key:string) {
+                    stored.delete(key)
+                }
+            }
+        )
+
+        await userDo.alarm()
+
+        t.equal(fetched.length, 0, '4-days-idle: no feed fetches')
+        t.equal(alarmTimes.length, 0, '4-days-idle: alarm stops re-arming')
     }
 )
 

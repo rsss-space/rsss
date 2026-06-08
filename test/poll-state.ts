@@ -20,12 +20,16 @@ interface LastAnySuccessRecord {
 
 function createPollDo () {
     const storage = new Map<string, unknown>()
+    let alarmTime:number|null = null
+    const alarmTimes:number[] = []
     const userDo = Object.create(RsssUserDO.prototype) as {
         ctx:{
             storage:{
                 get:<T>(key:string) => Promise<T|undefined>
                 put:<T>(key:string, value:T) => Promise<void>
                 delete:(key:string) => Promise<void>
+                getAlarm:() => Promise<number|null>
+                setAlarm:(time:number) => Promise<void>
             }
         }
         readPollerFeedState:(feedId:number) => Promise<PollerFeedState|undefined>
@@ -35,6 +39,8 @@ function createPollDo () {
         writeAccountActivity:(now:number) => Promise<void>
         readLastAnySuccess:() => Promise<number|undefined>
         writeLastAnySuccess:(now:number) => Promise<void>
+        ensureFeedRefreshArmed:() => Promise<void>
+        maybeKickCatchUp:(now:number) => Promise<void>
     }
 
     userDo.ctx = {
@@ -47,11 +53,26 @@ function createPollDo () {
             },
             async delete (key:string) {
                 storage.delete(key)
+            },
+            async getAlarm () {
+                return alarmTime
+            },
+            async setAlarm (time:number) {
+                alarmTime = time
+                alarmTimes.push(time)
             }
         }
     }
 
-    return { userDo, storage }
+    return {
+        userDo,
+        storage,
+        alarmTimes,
+        // Seed an existing alarm without recording it as a new arm.
+        seedAlarm (time:number) {
+            alarmTime = time
+        }
+    }
 }
 
 test('readPollerFeedState returns undefined when no record exists', async t => {
@@ -170,6 +191,49 @@ test(
         t.equal(readBack, t0 + 1_000, 'read returns the stored value')
     }
 )
+
+test('ensureFeedRefreshArmed arms an alarm when none is set', async t => {
+    const { userDo, alarmTimes } = createPollDo()
+    const before = Date.now()
+
+    await userDo.ensureFeedRefreshArmed()
+
+    t.equal(alarmTimes.length, 1, 'an alarm was armed')
+    const delta = alarmTimes[0] - before
+    t.ok(
+        delta >= 60 * 60 * 1000 && delta < 61 * 60 * 1000,
+        'armed ~60 minutes out'
+    )
+})
+
+test('ensureFeedRefreshArmed is a no-op when an alarm exists', async t => {
+    const { userDo, alarmTimes, seedAlarm } = createPollDo()
+    seedAlarm(Date.now() + 5 * 60 * 1000)
+
+    await userDo.ensureFeedRefreshArmed()
+
+    t.equal(alarmTimes.length, 0, 'existing alarm is left untouched')
+})
+
+test('maybeKickCatchUp re-arms the alarm for a returning user', async t => {
+    const { userDo, storage, alarmTimes } = createPollDo()
+    const now = 1_700_000_000_000
+    // Recent activity + recent success -> catch-up NOT triggered, so
+    // refreshFeedBatches/waitUntil are never referenced; we isolate the
+    // alarm-arming behaviour. No alarm is currently set.
+    storage.set('poll:account:last_active_at', { lastActiveAt: now - 1_000 })
+    storage.set('poll:account:last_any_success_at', {
+        lastAnySuccessAt: now - 1_000
+    })
+
+    await userDo.maybeKickCatchUp(now)
+
+    t.equal(
+        alarmTimes.length,
+        1,
+        'activity ensures a polling alarm is armed'
+    )
+})
 
 test('poll-state tests done', () => {
     if (window) {
