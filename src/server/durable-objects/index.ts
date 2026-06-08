@@ -408,7 +408,7 @@ export class RsssUserDO extends DurableObject<Env> {
             // This wakes the DO periodically to refresh feeds
             const currentAlarm = await ctx.storage.getAlarm()
             if (!currentAlarm) {
-                // Set first alarm 10 minutes from now
+                // Set first alarm one refresh interval from now
                 await ctx.storage.setAlarm(
                     Date.now() + FEED_REFRESH_INTERVAL_MS
                 )
