@@ -65,7 +65,8 @@ function createSql (items:ItemRow[]) {
         exec (query:string, ...params:unknown[]) {
             const q = query.replace(/\s+/g, ' ').trim()
 
-            if (q.startsWith('SELECT') && q.includes('FROM items WHERE id = ?')) {
+            if (q.startsWith('SELECT') &&
+                q.includes('FROM items WHERE id = ?')) {
                 const id = params[0] as number
                 return result(items.filter(i => i.id === id))
             }
