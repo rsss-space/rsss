@@ -42,6 +42,11 @@
         border-top: 1px solid var(--color-border, #e0e0e0);
     }
 
+    & .pagination.pagination-header {
+        padding: 0;
+        border-top: none;
+    }
+
     & .pagination-info {
         color: var(--color-text-secondary);
         font-size: 0.875rem;
