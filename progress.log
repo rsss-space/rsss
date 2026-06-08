@@ -112,3 +112,12 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - Re-exporting with `export { X, Y }` after importing keeps the old public surface of item-row intact for any code that imported those symbols from there directly.
   - The comment block explaining WHY the decode max is 32 belongs on the shared module (the canonical home), not on the re-export site.
 ---
+
+## 2026-06-07 - US-014
+- What was implemented: Created `src/client/blur-hash-swap.ts` exporting `addBlurHashPlaceholders(html, imageMap)`. Uses DOMParser to parse html, iterates `<img>` elements, replaces those whose `src` is in imageMap with a `<blur-hash>` element carrying placeholder, src, alt, width/height (via `blurhashDecodeSize`), loading=lazy, and an inline `style.aspectRatio` from the real image dimensions. Imgs without a map entry are left untouched; empty map short-circuits to return the input string unchanged; the function is idempotent. Created `test/blur-hash-swap.ts` with 6 tests (swap, decode-size, aspect-ratio, leave-untouched, empty-map, idempotent) — all 14 assertions pass. Registered in `test/browser-tests.ts`.
+- Files changed: src/client/blur-hash-swap.ts (new), test/blur-hash-swap.ts (new), test/browser-tests.ts, specs/prd.json, progress.log
+- **Learnings for future iterations:**
+  - tapzero does not have `t.notOk`; use `t.equal(x, null, msg)` for null-checks and `t.ok(x !== null, msg)` for presence checks.
+  - `doc.body.innerHTML` after `replaceChild` round-trips the HTML correctly for the idempotency check — when no `<img>` in the input matches the map, the function returns the original string (no parse/serialize overhead).
+  - Inline `style.aspectRatio` written via `element.style.aspectRatio = 'W / H'` survives `innerHTML` serialization in Chromium as `style="aspect-ratio: W / H;"`.
+---

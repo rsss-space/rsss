@@ -217,7 +217,7 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 3.1. Client code may use DOMParser; runs after DOMPurify."
     },
     {

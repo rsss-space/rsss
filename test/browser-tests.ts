@@ -58,6 +58,7 @@ import './payment-method-modal.js'
 import './article-fetch-job.js'
 import './article-prefetch-eligible.js'
 import './full-content-images.js'
+import './blur-hash-swap.js'
 
 test('all done', () => {
     if (window) {
