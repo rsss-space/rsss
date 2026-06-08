@@ -95,3 +95,12 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The body-items endpoint (US-010) expects `{ url, blurhash, width, height }` (not `image_width`/`image_height`) — the field names differ from the `BlurhashCacheEntry` interface.
   - Using KV cache-hit in routing tests keeps the tests focused: skip image fetch/encode entirely so only the DO request URL and body are asserted.
 ---
+
+## 2026-06-07 - US-012
+- What was implemented: Added `BLURHASH_QUEUE:{ send:(message:unknown) => Promise<void> }` to `ArticleFetchConsumerEnv` in `src/server/article-fetch-consumer.ts`. Imported `extractImageUrls` from `./extract-image-urls.js`. Added `MAX_BODY_BLUR_IMAGES = 30` constant. After `writeFullContent`, when `'html' in result && result.html`, extracts image URLs, caps at 30, and sends one `{ imageUrl, itemId, objectId, target: 'body' }` job per image to `BLURHASH_QUEUE`. Removed the TODO placeholder comment. Extended `test/article-fetch-consumer.ts`: added `BLURHASH_QUEUE` with a `queued` capture array to `fakeEnv`, passed `queued` into all existing tests, added "enqueues body blur jobs on success" (2 image URLs → 2 queued jobs, fields asserted) and "does not enqueue blur jobs on failure" (0 queued). All 18 consumer tests pass.
+- Files changed: src/server/article-fetch-consumer.ts, test/article-fetch-consumer.ts, specs/prd.json, progress.log
+- **Learnings for future iterations:**
+  - Blur enqueue happens AFTER `writeFullContent` so a DO write failure (throw) skips enqueue — queue retry will re-fetch and re-enqueue, which is fine since blurhash jobs are idempotent via KV caching.
+  - `'html' in result` is the correct TypeScript narrowing for the `FetchFullArticleResult` discriminated union — avoids needing to check `status === 'succeeded'` explicitly.
+  - The node-platform fakeEnv pattern: capture queued messages in a `queued:unknown[]` array passed as the second argument; existing callers that don't care about blur can pass `[]`.
+---
