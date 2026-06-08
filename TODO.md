@@ -14,3 +14,11 @@
 
 * [ ] I enabled all the "Local Storage" options, but the cache settings below
   are still disabled ![screenshot of disabled cache settings](image-3.png).
+
+---
+
+## CF Usage
+
+Why so many requests in `rsss_RsssUserDO`?
+
+![Screenshot of CF](image-4.png)
