@@ -1,11 +1,9 @@
 import { isArticleFetchJob } from './article-fetch-job.js'
 import type { ArticleFetchJob } from './article-fetch-job.js'
 import { fetchFullArticle, type FetchFullArticleResult } from './article-fetch.js'
-import { extractImageUrls } from './extract-image-urls.js'
+import { enqueueBodyBlurJobs } from './blurhash-body-enqueue.js'
 
 export type { ArticleFetchJob }
-
-const MAX_BODY_BLUR_IMAGES = 30
 
 export interface ArticleFetchConsumerDeps {
     fetchArticle:(link:string) => Promise<FetchFullArticleResult>
@@ -70,15 +68,12 @@ async function handleArticleFetchMessage (
     await writeFullContent(env, job, result)
 
     if ('html' in result && result.html) {
-        const urls = extractImageUrls(result.html).slice(0, MAX_BODY_BLUR_IMAGES)
-        for (const imageUrl of urls) {
-            await env.BLURHASH_QUEUE.send({
-                imageUrl,
-                itemId: job.itemId,
-                objectId: job.objectId,
-                target: 'body'
-            })
-        }
+        await enqueueBodyBlurJobs(
+            env.BLURHASH_QUEUE,
+            result.html,
+            job.itemId,
+            job.objectId
+        )
     }
 
     message.ack()
