@@ -87,3 +87,11 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The DO 404 pattern: `this.sql.exec(...).one() as T | null` then `if (!row) return c.json({ error: ... }, 404)` — consistent with other DO handlers.
   - Browser tests for pure utility functions (no DO) are simpler to set up than node-platform tests; register via import in browser-tests.ts rather than adding a new esbuild command.
 ---
+
+## 2026-06-07 - US-011
+- What was implemented: Updated `writeItemBlurhash` in `src/server/blurhash-consumer.ts` to route by `job.target`: when `target === 'body'`, POSTs `{ url, blurhash, width, height }` to `/internal/blurhash/body-items/:id`; otherwise POSTs the `BlurhashCacheEntry` to `/internal/blurhash/items/:id`. Created `test/blurhash-target-routing.ts` with 2 node-platform tests (thumbnail path and body path, both using KV cache-hit to avoid image encoding). Registered the test in `test/run-all-tests.mjs` after the `extract-image-urls` entry.
+- Files changed: src/server/blurhash-consumer.ts, test/blurhash-target-routing.ts (new), test/run-all-tests.mjs, specs/prd.json
+- **Learnings for future iterations:**
+  - The body-items endpoint (US-010) expects `{ url, blurhash, width, height }` (not `image_width`/`image_height`) — the field names differ from the `BlurhashCacheEntry` interface.
+  - Using KV cache-hit in routing tests keeps the tests focused: skip image fetch/encode entirely so only the DO request URL and body are asserted.
+---

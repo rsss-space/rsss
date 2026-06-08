@@ -107,16 +107,25 @@ async function writeItemBlurhash (
 ):Promise<void> {
     const id = env.USER_DO.idFromString(job.objectId)
     const stub = env.USER_DO.get(id)
-    const response = await stub.fetch(new Request(
-        `http://do/internal/blurhash/items/${job.itemId}`,
-        {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json'
-            },
-            body: JSON.stringify(entry)
-        }
-    ))
+
+    const isBody = job.target === 'body'
+    const path = isBody ?
+        `http://do/internal/blurhash/body-items/${job.itemId}` :
+        `http://do/internal/blurhash/items/${job.itemId}`
+    const body = isBody ?
+        JSON.stringify({
+            url: job.imageUrl,
+            blurhash: entry.blurhash,
+            width: entry.image_width,
+            height: entry.image_height
+        }) :
+        JSON.stringify(entry)
+
+    const response = await stub.fetch(new Request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body
+    }))
 
     if (!response.ok) {
         throw new Error(`BlurHash item update failed: ${response.status}`)
