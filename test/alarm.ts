@@ -530,6 +530,47 @@ test(
 )
 
 test(
+    'alarm stops for an account idle just over 3 days',
+    async t => {
+        const feeds = [createFeed(1)]
+        const fetched:number[] = []
+        const stored = new Map<string, unknown>()
+        const alarmTimes:number[] = []
+        // 4 days idle: under the old 30-day threshold (would have kept
+        // polling) but over the new 3-day threshold.
+        stored.set('poll:account:last_active_at', {
+            lastActiveAt: Date.now() - 4 * 24 * 60 * 60 * 1000
+        })
+
+        const userDo = createAlarmDo(
+            feeds,
+            async (feed) => {
+                fetched.push(feed.id)
+            },
+            async (time) => {
+                alarmTimes.push(time)
+            },
+            {
+                async get<T> (key:string) {
+                    return stored.get(key) as T|undefined
+                },
+                async put (key:string, value:unknown) {
+                    stored.set(key, value)
+                },
+                async delete (key:string) {
+                    stored.delete(key)
+                }
+            }
+        )
+
+        await userDo.alarm()
+
+        t.equal(fetched.length, 0, '4-days-idle: no feed fetches')
+        t.equal(alarmTimes.length, 0, '4-days-idle: alarm stops re-arming')
+    }
+)
+
+test(
     'alarm resumes polling once last_active_at advances to now',
     async t => {
         const feeds = [createFeed(1), createFeed(2)]
