@@ -79,6 +79,7 @@ export const TABLES_SQL = `
         full_content TEXT,
         full_content_fetched_at TEXT,
         full_content_status TEXT,
+        full_content_images TEXT,
         FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE,
         UNIQUE(feed_id, guid)
     );

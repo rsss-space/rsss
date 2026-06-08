@@ -54,3 +54,11 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The dynamic import destructuring must use object-curly-newline style (multi-line braces) to satisfy the eslint `object-curly-newline` rule enforced in this project.
   - `batch.queue` is the queue name string on `MessageBatch`; `startsWith('article-fetch-jobs')` covers both dev and prod queue names.
 ---
+
+## 2026-06-07 - US-007
+- What was implemented: Added `full_content_images TEXT` column to the items table schema, DO migration v7, ITEM_COLUMNS, client ensureItemFullContentColumns, upsertItem, and Item type.
+- Files changed: src/shared/schema.ts, src/server/durable-objects/index.ts, src/client/db/pull-sync.ts, src/client/db/types.ts, specs/prd.json, test/pull-sync.ts
+- **Learnings for future iterations:**
+  - Adding a new column follows the same four-file pattern: schema.ts CREATE TABLE, DO migration + ITEM_COLUMNS, pull-sync.ts ensureItemFullContentColumns + upsertItem (both bodySetClause branches, INSERT list, VALUES placeholder, bind array), types.ts Item interface.
+  - The DO migration version must be bumped whenever a new PRAGMA-guarded ALTER TABLE migration is added; the migration runner checks `migration_v !== USER_DO_MIGRATION_VERSION` and re-runs all migrations on mismatch (they are idempotent).
+---

@@ -1122,6 +1122,42 @@ test(
     }
 )
 
+test('full sync round-trips full_content_images column', async (t) => {
+    storeContent.value = true
+    const db = await openLocalDb('did:test:pull-fullcontent-images')
+    try {
+        const syncData = {
+            feeds: [FEED],
+            items: [{
+                ...ITEM,
+                full_content_images: JSON.stringify([
+                    'https://cdn.example.com/img1.jpg',
+                    'https://cdn.example.com/img2.jpg'
+                ])
+            }],
+            syncedAt: '2026-01-02 00:00:00',
+            latestUpdatedAt: '2026-01-01 00:00:00',
+            isFullSync: true
+        }
+        await pullSync(db, makeFetch(syncData))
+
+        const item = queryOne<{ full_content_images:string|null }>(
+            db,
+            'SELECT full_content_images FROM items WHERE id = 10'
+        )
+        t.equal(
+            item?.full_content_images,
+            JSON.stringify([
+                'https://cdn.example.com/img1.jpg',
+                'https://cdn.example.com/img2.jpg'
+            ]),
+            'full_content_images JSON is mirrored locally'
+        )
+    } finally {
+        db.close()
+    }
+})
+
 test(
     'AC4.4 no-new-images: force-off feed caches no new images',
     async (t) => {

@@ -116,7 +116,7 @@ const MANUAL_REFRESH_STORAGE_PREFIX = 'manual_refresh:'
 const ALARM_REFRESH_CURSOR_KEY = 'alarm_refresh_cursor'
 const PENDING_DELETION_KEY = 'pending_deletion'
 const MIGRATION_STATE_KEY = 'schema_migration'
-const USER_DO_MIGRATION_VERSION = 6
+const USER_DO_MIGRATION_VERSION = 7
 const FEEDS_UPDATED_AT_BUMP_KEY = 'feeds_updated_at_bump_for_last_pulled_at'
 const SYNC_PAGE_LIMIT = 500
 const FETCH_FULL_THROTTLE_PREFIX = 'fetch_full:'
@@ -140,7 +140,8 @@ const ITEM_COLUMNS = `
     items.image_width, items.image_height, items.is_read,
     items.is_starred, items.created_at, items.updated_at,
     items.full_content, items.full_content_fetched_at,
-    items.full_content_status
+    items.full_content_status,
+    items.full_content_images
 `
 const ITEM_SYNC_COLUMNS = `
     ${ITEM_COLUMNS},
@@ -418,6 +419,7 @@ export class RsssUserDO extends DurableObject<Env> {
             this.migrateAddItemImageMetadata()
             this.migrateAddLastPulledAt()
             this.migrateAddItemFullContent()
+            this.migrateAddFullContentImages()
             await this.ctx.storage.put(MIGRATION_STATE_KEY, {
                 migration_v: USER_DO_MIGRATION_VERSION
             })
@@ -519,6 +521,18 @@ export class RsssUserDO extends DurableObject<Env> {
         if (!has('full_content_status')) {
             this.sql.exec(
                 'ALTER TABLE items ADD COLUMN full_content_status TEXT'
+            )
+        }
+    }
+
+    private migrateAddFullContentImages () {
+        const cols = this.sql.exec('PRAGMA table_info(items)').toArray()
+        const has = (name:string) => cols.some(
+            (col:unknown) => (col as { name:string }).name === name
+        )
+        if (!has('full_content_images')) {
+            this.sql.exec(
+                'ALTER TABLE items ADD COLUMN full_content_images TEXT'
             )
         }
     }
