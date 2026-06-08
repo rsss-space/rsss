@@ -124,7 +124,7 @@
         "Typecheck and lint pass"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 2.2."
     },
     {

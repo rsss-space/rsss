@@ -62,3 +62,10 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - Adding a new column follows the same four-file pattern: schema.ts CREATE TABLE, DO migration + ITEM_COLUMNS, pull-sync.ts ensureItemFullContentColumns + upsertItem (both bodySetClause branches, INSERT list, VALUES placeholder, bind array), types.ts Item interface.
   - The DO migration version must be bumped whenever a new PRAGMA-guarded ALTER TABLE migration is added; the migration runner checks `migration_v !== USER_DO_MIGRATION_VERSION` and re-runs all migrations on mismatch (they are idempotent).
 ---
+
+## 2026-06-07 - US-008
+- What was implemented: Added `target?:'thumbnail'|'body'` to the `BlurhashJob` interface in `src/server/blurhash.ts`. The `isBlurhashJob` guard in `blurhash-consumer.ts` was intentionally left unchanged (target stays optional and unchecked).
+- Files changed: src/server/blurhash.ts, specs/prd.json
+- **Learnings for future iterations:**
+  - For optional discriminator fields on job types, add them to the interface but leave guards unchanged so existing job messages without the field continue to route correctly (absent = legacy/thumbnail behavior).
+---
