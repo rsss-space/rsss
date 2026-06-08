@@ -247,7 +247,7 @@
         "Verify in browser using dev-browser skill: blurred placeholder shows at the correct box size then resolves to the image, hashless imgs still show the 037 gray box, and there is no layout jump"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 3.3. Reuse existing --color-placeholder variable."
     },
     {

@@ -92,6 +92,14 @@
             background-color: var(--color-placeholder);
         }
 
+        & blur-hash {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            margin: 1rem 0;
+            background-color: var(--color-placeholder);
+        }
+
         & pre,
         & code {
             background: var(--color-bg);
