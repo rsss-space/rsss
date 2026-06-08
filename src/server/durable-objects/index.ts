@@ -2817,23 +2817,23 @@ export class RsssUserDO extends DurableObject<Env> {
 
         this.sweepStuckResolvingFeeds()
 
-        await this.scheduleNextFeedRefresh()
-
-        // Inactivity gate (FR-008, SC-005): accounts that have not
-        // been active beyond the threshold incur zero polling cost
-        // until the next sign-in/page-load advances last_active_at.
-        // The next alarm has already been re-armed above, so we keep
-        // ticking on cadence and resume work as soon as the account
-        // becomes active again.
+        // Inactivity gate (FR-008, SC-005): once an account has been
+        // idle past the threshold, STOP the polling alarm so the DO
+        // goes silent and incurs zero Durable Object request cost.
+        // It is re-armed on the user's next request (constructor +
+        // maybeKickCatchUp -> ensureFeedRefreshArmed). A pending
+        // (not-yet-due) deletion must keep the alarm ticking so it
+        // executes when due, so only silence the alarm when no
+        // deletion is pending.
         const activity = await this.readAccountActivity()
-        if (
-            activity &&
+        const idlePastThreshold = activity != null &&
             Date.now() - activity.lastActiveAt >
                 ACCOUNT_INACTIVITY_THRESHOLD_MS
-        ) {
+        if (idlePastThreshold && pending == null) {
             return
         }
 
+        await this.scheduleNextFeedRefresh()
         await this.refreshFeedBatches()
     }
 

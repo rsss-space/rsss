@@ -436,16 +436,16 @@ test(
 )
 
 test(
-    'alarm short-circuits when account is inactive past threshold',
+    'alarm stops re-arming when account is idle past threshold',
     async t => {
         const feeds = [createFeed(1), createFeed(2), createFeed(3)]
         const fetched:number[] = []
         const stored = new Map<string, unknown>()
         const alarmTimes:number[] = []
-        // Seed last_active_at to 31 days ago.
-        const thirtyOneDaysAgo = Date.now() - 31 * 24 * 60 * 60 * 1000
+        // Seed last_active_at well past the inactivity threshold.
+        const longAgo = Date.now() - 31 * 24 * 60 * 60 * 1000
         stored.set('poll:account:last_active_at', {
-            lastActiveAt: thirtyOneDaysAgo
+            lastActiveAt: longAgo
         })
 
         const userDo = createAlarmDo(
@@ -474,12 +474,57 @@ test(
         t.equal(
             fetched.length,
             0,
-            'inactive account: zero feed fetches during alarm tick (SC-005)'
+            'idle account: zero feed fetches during alarm tick'
         )
         t.equal(
             alarmTimes.length,
+            0,
+            'idle account: alarm is NOT re-armed (DO goes silent)'
+        )
+    }
+)
+
+test(
+    'alarm stays armed for an idle account with a pending deletion',
+    async t => {
+        const feeds = [createFeed(1)]
+        const stored = new Map<string, unknown>()
+        const alarmTimes:number[] = []
+        // Idle past threshold...
+        stored.set('poll:account:last_active_at', {
+            lastActiveAt: Date.now() - 31 * 24 * 60 * 60 * 1000
+        })
+        // ...but a deletion is scheduled for the future.
+        stored.set('pending_deletion', {
+            scheduledFor: Date.now() + 60_000,
+            did: 'did:plc:alice'
+        })
+
+        const userDo = createAlarmDo(
+            feeds,
+            async () => {},
+            async (time) => {
+                alarmTimes.push(time)
+            },
+            {
+                async get<T> (key:string) {
+                    return stored.get(key) as T|undefined
+                },
+                async put (key:string, value:unknown) {
+                    stored.set(key, value)
+                },
+                async delete (key:string) {
+                    stored.delete(key)
+                }
+            }
+        )
+
+        await userDo.alarm()
+
+        t.equal(
+            alarmTimes.length,
             1,
-            'alarm re-arms normally for the next cadence'
+            'pending deletion keeps the alarm ticking so it fires when due'
         )
     }
 )
