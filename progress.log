@@ -46,3 +46,11 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The DO method queries `content, description, full_content` per item individually from SQLite (not a bulk query) to keep the loop readable. For large batches a JOIN would be faster but new items typically arrive in single digits.
   - `this.ctx.id.toString()` gives the DO objectId needed by ArticleFetchJob.
 ---
+
+## 2026-06-07 - US-006
+- What was implemented: Modified `worker.queue` in `src/server/index.ts` to branch on `batch.queue.startsWith('article-fetch-jobs')`. When true, dynamically imports `article-fetch-consumer.js` and calls `handleArticleFetchQueueBatch` with `createArticleFetchConsumerDeps()`. The else branch keeps the existing blurhash routing via `blurhash-runtime.js`.
+- Files changed: src/server/index.ts, specs/prd.json
+- **Learnings for future iterations:**
+  - The dynamic import destructuring must use object-curly-newline style (multi-line braces) to satisfy the eslint `object-curly-newline` rule enforced in this project.
+  - `batch.queue` is the queue name string on `MessageBatch`; `startsWith('article-fetch-jobs')` covers both dev and prod queue names.
+---

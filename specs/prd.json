@@ -95,7 +95,7 @@
         "npm test passes (exit 0), including the new node + browser unit tests"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 1.6. src/server/index.ts worker.queue ~2060-2071."
     },
     {

@@ -2060,14 +2060,26 @@ app.all('*', (c) => {
 
 const worker = Object.assign(app, {
     async queue (batch:MessageBatch<unknown>, env:Env):Promise<void> {
-        const runtime = await import(
-            './blurhash-runtime.js'
-        ) as typeof BlurhashRuntime
-        await handleBlurhashQueueBatch(
-            batch,
-            env,
-            runtime.createBlurhashConsumerDeps()
-        )
+        if (batch.queue.startsWith('article-fetch-jobs')) {
+            const {
+                handleArticleFetchQueueBatch,
+                createArticleFetchConsumerDeps
+            } = await import('./article-fetch-consumer.js')
+            await handleArticleFetchQueueBatch(
+                batch,
+                env,
+                createArticleFetchConsumerDeps()
+            )
+        } else {
+            const runtime = await import(
+                './blurhash-runtime.js'
+            ) as typeof BlurhashRuntime
+            await handleBlurhashQueueBatch(
+                batch,
+                env,
+                runtime.createBlurhashConsumerDeps()
+            )
+        }
     }
 })
 
