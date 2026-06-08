@@ -232,7 +232,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 3.2. Replaces the article-HTML block ~lines 62-69."
     },
     {

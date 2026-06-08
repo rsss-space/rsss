@@ -121,3 +121,12 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - `doc.body.innerHTML` after `replaceChild` round-trips the HTML correctly for the idempotency check — when no `<img>` in the input matches the map, the function returns the original string (no parse/serialize overhead).
   - Inline `style.aspectRatio` written via `element.style.aspectRatio = 'W / H'` survives `innerHTML` serialization in Chromium as `style="aspect-ratio: W / H;"`.
 ---
+
+## 2026-06-07 - US-015
+- What was implemented: Wired `addBlurHashPlaceholders` into the article reader. Added imports for `BlurHash` (from `@substrate-system/blur-hash`), `addBlurHashPlaceholders` (from `../blur-hash-swap.js`), and `parseImageMap` (from `../../server/full-content-images.js`) to `src/client/routes/item-reader.ts`. Called `BlurHash.define()` at module scope. Added `imagesJson = item.full_content_images ?? null` before the `articleHtml` useMemo; updated the memo to call `addBlurHashPlaceholders(sanitizeHtml(...), parseImageMap(imagesJson))` with `imagesJson` added to memo deps. Added 3 tests to `test/item-reader-render-state.ts` covering `full_content_images` null, corrupt JSON, and valid JSON parse behaviour. All 887 browser tests and full test suite pass.
+- Files changed: src/client/routes/item-reader.ts, test/item-reader-render-state.ts, specs/prd.json, progress.log
+- **Learnings for future iterations:**
+  - `parseImageMap` from `src/server/full-content-images.ts` is pure TypeScript with no Worker-specific APIs, so it can be imported by client-side modules without any alias or stub.
+  - `BlurHash.define()` is a safe no-op if called multiple times (idempotent custom element registration guard in the substrate-system package); calling it in item-reader.ts does not conflict with item-row.ts calling it too.
+  - The `useMemo` deps array should include `imagesJson` (a `string|null`) rather than the parsed map object, since a new object reference each render would defeat the memo.
+---

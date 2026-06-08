@@ -7,6 +7,7 @@
  * updating this test.
  */
 import { test } from '@substrate-system/tapzero'
+import { parseImageMap } from '../src/server/full-content-images.js'
 
 interface ItemLike {
     full_content?:string|null
@@ -97,4 +98,29 @@ test('all failed_* variants trigger the notice', t => {
     t.equal(isFailedStatus('succeeded'), false, 'succeeded does not')
     t.equal(isFailedStatus(null), false, 'null does not')
     t.equal(isFailedStatus(undefined), false, 'undefined does not')
+})
+
+test('full_content_images: null → empty image map', t => {
+    const map = parseImageMap(null)
+    t.deepEqual(map, {}, 'null yields empty map')
+})
+
+test('full_content_images: corrupt JSON → empty image map', t => {
+    const map = parseImageMap('{corrupt')
+    t.deepEqual(map, {}, 'corrupt JSON yields empty map')
+})
+
+test('full_content_images: valid JSON → parsed map entry', t => {
+    const entry = {
+        blurhash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
+        width: 400,
+        height: 300
+    }
+    const json = JSON.stringify({ 'https://example.com/img.jpg': entry })
+    const map = parseImageMap(json)
+    t.deepEqual(
+        map['https://example.com/img.jpg'],
+        entry,
+        'entry present in parsed map'
+    )
 })
