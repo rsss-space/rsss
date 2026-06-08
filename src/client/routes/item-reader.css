@@ -100,6 +100,18 @@
             background-color: var(--color-placeholder);
         }
 
+        /*
+         * The overlaid <img> sits on the canvas via `top: -100%`, which
+         * assumes it directly follows the canvas in flow. The
+         * `.article-body img` rule above adds `margin: 1rem 0`, shifting
+         * it 1rem down and exposing a strip of placeholder background at
+         * the top. The margin belongs on the <blur-hash> wrapper, not the
+         * image it overlays.
+         */
+        & blur-hash img {
+            margin: 0;
+        }
+
         & pre,
         & code {
             background: var(--color-bg);
