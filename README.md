@@ -396,7 +396,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-06-01-029-feed-cache-settings.md .
+/ed3d-plan-and-execute:execute-implementation-plan /Users/nick/code/rsss/docs/implementation-plans/2026-06-07-039-blurhash-on-demand-fetch/ /Users/nick/code/rsss/
 ```
 
 --------------------------------------------------------------
