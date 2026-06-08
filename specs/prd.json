@@ -201,7 +201,7 @@
         "npm run test:browser passes (item-row / feed-reader-render-state unchanged)"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 3.0."
     },
     {

@@ -104,3 +104,11 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - `'html' in result` is the correct TypeScript narrowing for the `FetchFullArticleResult` discriminated union — avoids needing to check `status === 'succeeded'` explicitly.
   - The node-platform fakeEnv pattern: capture queued messages in a `queued:unknown[]` array passed as the second argument; existing callers that don't care about blur can pass `[]`.
 ---
+
+## 2026-06-07 - US-013
+- What was implemented: Created `src/client/blurhash-decode-size.ts` exporting `BLURHASH_DECODE_MAX` and `blurhashDecodeSize`, moved verbatim from `item-row.ts`. Updated `src/client/components/item-row.ts` to import from the new shared module and re-export both symbols so existing importers continue to work unchanged.
+- Files changed: src/client/blurhash-decode-size.ts (new), src/client/components/item-row.ts, specs/prd.json, progress.log
+- **Learnings for future iterations:**
+  - Re-exporting with `export { X, Y }` after importing keeps the old public surface of item-row intact for any code that imported those symbols from there directly.
+  - The comment block explaining WHY the decode max is 32 belongs on the shared module (the canonical home), not on the re-export site.
+---
