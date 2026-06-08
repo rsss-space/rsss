@@ -42,6 +42,7 @@ export interface Item {
     full_content?:string|null
     full_content_fetched_at?:string|null
     full_content_status?:FullContentStatus|null
+    full_content_images?:string|null
 }
 
 export interface ItemsResponse {

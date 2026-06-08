@@ -1,9 +1,12 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
-import { useCallback, useEffect } from 'preact/hooks'
+import { useCallback, useEffect, useMemo } from 'preact/hooks'
 import { useComputed } from '@preact/signals'
+import { BlurHash } from '@substrate-system/blur-hash'
 import { NotFound } from '../not-found.js'
-import { formatDate, sanitizeHtml } from '../util.js'
+import { formatDate, sanitizeHtml, addImageLoadingHints } from '../util.js'
+import { addBlurHashPlaceholders } from '../blur-hash-swap.js'
+import { parseImageMap } from '../../server/full-content-images.js'
 import {
     type Item,
     type AppState,
@@ -24,6 +27,8 @@ import { noticeForStatus } from './item-reader-notice.js'
 import { ArticleNotice } from '../components/article-notice.js'
 import Debug from '@substrate-system/debug'
 const debug = Debug('rsss:view')
+
+BlurHash.define()
 
 export const ItemReader:FunctionComponent<{
     state:AppState;
@@ -59,11 +64,17 @@ export const ItemReader:FunctionComponent<{
     const itemId = item.id
     const isStarred = !!item.is_starred
     const isRead = !!item.is_read
-    const articleHtml = sanitizeHtml(
-        item.full_content ||
+    const rawHtml = item.full_content ||
         item.content ||
         item.description ||
         ''
+    const imagesJson = item.full_content_images ?? null
+    const articleHtml = useMemo(
+        () => addBlurHashPlaceholders(
+            sanitizeHtml(addImageLoadingHints(rawHtml)),
+            parseImageMap(imagesJson)
+        ),
+        [rawHtml, imagesJson]
     )
     const contentUnavailable = (
         !articleHtml &&

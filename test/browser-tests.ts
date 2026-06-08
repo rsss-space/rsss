@@ -36,6 +36,7 @@ import './cache-status-coalesce.js'
 import './settings-stale-async-writes.js'
 import './sync-billing-recovery.js'
 import './article-detect.js'
+import './article-images.js'
 import './publisher-link.js'
 import './article-extract.js'
 import './article-fetch.js'
@@ -54,6 +55,10 @@ import './local-first-settings.js'
 import './lazy-html.js'
 import './initial-feed.js'
 import './payment-method-modal.js'
+import './article-fetch-job.js'
+import './article-prefetch-eligible.js'
+import './full-content-images.js'
+import './blur-hash-swap.js'
 
 test('all done', () => {
     if (window) {
