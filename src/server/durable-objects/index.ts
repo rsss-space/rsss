@@ -32,6 +32,7 @@ import {
 } from '../blurhash.js'
 import { isPrefetchEligible } from '../article-prefetch-eligible.js'
 import { type ArticleFetchJob } from '../article-fetch-job.js'
+import { mergeFullContentImage } from '../full-content-images.js'
 
 export interface Env {
     USER:DurableObjectNamespace<RsssUserDO>
@@ -727,6 +728,57 @@ export class RsssUserDO extends DurableObject<Env> {
                     id
                 )
             }
+            this.bumpFeedVersion()
+
+            return new Response(null, { status: 204 })
+        })
+
+        app.post('/internal/blurhash/body-items/:id', async (c) => {
+            const id = Number(c.req.param('id'))
+            if (!Number.isInteger(id) || id < 1) {
+                return c.json({ error: 'Invalid item id' }, 400)
+            }
+
+            const body = await c.req.json<{
+                url?:unknown
+                blurhash?:unknown
+                width?:unknown
+                height?:unknown
+            }>()
+
+            if (
+                typeof body.url !== 'string' ||
+                typeof body.blurhash !== 'string' ||
+                typeof body.width !== 'number' ||
+                typeof body.height !== 'number'
+            ) {
+                return c.json({ error: 'Invalid body image metadata' }, 400)
+            }
+
+            const row = this.sql.exec(
+                'SELECT full_content_images FROM items WHERE id = ?',
+                id
+            ).one() as { full_content_images:string|null } | null
+
+            if (!row) {
+                return c.json({ error: 'Item not found' }, 404)
+            }
+
+            const merged = mergeFullContentImage(
+                row.full_content_images,
+                body.url,
+                {
+                    blurhash: body.blurhash,
+                    width: body.width,
+                    height: body.height
+                }
+            )
+
+            this.sql.exec(
+                'UPDATE items SET full_content_images = ? WHERE id = ?',
+                merged,
+                id
+            )
             this.bumpFeedVersion()
 
             return new Response(null, { status: 204 })

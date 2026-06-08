@@ -78,3 +78,12 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The IMG_SRC_RE regex must reset `lastIndex = 0` before each call since it uses the `g` flag on a module-level variable; otherwise it retains position across invocations.
   - Match groups: `match[1]` = double-quoted, `match[2]` = single-quoted, `match[3]` = unquoted — use `??` chain for all three.
 ---
+
+## 2026-06-07 - US-010
+- What was implemented: Created src/server/full-content-images.ts exporting `BodyImageEntry`, `FullContentImageMap`, `parseImageMap`, and `mergeFullContentImage`. `parseImageMap` tolerates null/undefined/corrupt JSON by returning `{}`. `mergeFullContentImage` calls `parseImageMap`, sets the url key, and returns `JSON.stringify`. Created test/full-content-images.ts (3 browser tests): merge into null, merge without clobbering, corrupt-prior-json tolerance. Registered via `import './full-content-images.js'` in test/browser-tests.ts. Added `app.post('/internal/blurhash/body-items/:id')` to the DO after the `/internal/full-content/items/:id` route: validates id, url/blurhash/width/height, 404s on missing item, reads existing `full_content_images`, merges via `mergeFullContentImage`, updates the column, bumps feed version, returns 204. Added `import { mergeFullContentImage } from '../full-content-images.js'` to the DO file.
+- Files changed: src/server/full-content-images.ts (new), test/full-content-images.ts (new), test/browser-tests.ts, src/server/durable-objects/index.ts, specs/prd.json
+- **Learnings for future iterations:**
+  - `parseImageMap` must guard against non-object parsed values (arrays, primitives) since `JSON.parse('[]')` is valid JSON but not a map — check `!Array.isArray(parsed)`.
+  - The DO 404 pattern: `this.sql.exec(...).one() as T | null` then `if (!row) return c.json({ error: ... }, 404)` — consistent with other DO handlers.
+  - Browser tests for pure utility functions (no DO) are simpler to set up than node-platform tests; register via import in browser-tests.ts rather than adding a new esbuild command.
+---

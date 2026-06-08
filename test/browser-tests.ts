@@ -57,6 +57,7 @@ import './initial-feed.js'
 import './payment-method-modal.js'
 import './article-fetch-job.js'
 import './article-prefetch-eligible.js'
+import './full-content-images.js'
 
 test('all done', () => {
     if (window) {
