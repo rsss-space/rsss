@@ -2798,6 +2798,7 @@ export class RsssUserDO extends DurableObject<Env> {
             lastAnySuccessAt < now - FEED_REFRESH_INTERVAL_MS
         )
         await this.writeAccountActivity(now)
+        await this.ensureFeedRefreshArmed()
         if (trigger) {
             this.ctx.waitUntil(this.refreshFeedBatches())
         }
@@ -2881,6 +2882,21 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Wipe DO state (alarm, cursor, pending deletion, etc.)
         await this.ctx.storage.deleteAll()
+    }
+
+    /**
+     * Ensure a periodic feed-refresh alarm is armed. Called from the
+     * per-request activity hook (maybeKickCatchUp) so a returning user
+     * whose alarm was stopped by the inactivity gate resumes polling.
+     * Idempotent: a no-op when an alarm is already scheduled.
+     */
+    private async ensureFeedRefreshArmed ():Promise<void> {
+        const existing = await this.ctx.storage.getAlarm()
+        if (existing == null) {
+            await this.ctx.storage.setAlarm(
+                Date.now() + FEED_REFRESH_INTERVAL_MS
+            )
+        }
     }
 
     private async scheduleNextFeedRefresh ():Promise<void> {
