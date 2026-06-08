@@ -244,10 +244,6 @@ export const FeedReader:FunctionComponent<{
                             >
                                 Unread only
                             <//>
-
-                            <label for="unread-check">
-                                Show only unread articles.
-                            </label>
                         </div>
                         ${renderPagination('pagination-header')}
                         <button
