@@ -32,6 +32,22 @@
         align-items: center;
     }
 
+    & .reader-source-link {
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--color-primary);
+        font-weight: 500;
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
     & .article-header {
         margin-bottom: 2rem;
 
@@ -73,6 +89,27 @@
             max-width: 100%;
             height: auto;
             margin: 1rem 0;
+            background-color: var(--color-placeholder);
+        }
+
+        & blur-hash {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            margin: 1rem 0;
+            background-color: var(--color-placeholder);
+        }
+
+        /*
+         * The overlaid <img> sits on the canvas via `top: -100%`, which
+         * assumes it directly follows the canvas in flow. The
+         * `.article-body img` rule above adds `margin: 1rem 0`, shifting
+         * it 1rem down and exposing a strip of placeholder background at
+         * the top. The margin belongs on the <blur-hash> wrapper, not the
+         * image it overlays.
+         */
+        & blur-hash img {
+            margin: 0;
         }
 
         & pre,

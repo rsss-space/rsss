@@ -8,6 +8,7 @@ export interface BlurhashJob {
     imageUrl:string
     itemId:number
     objectId:string
+    target?:'thumbnail'|'body'
 }
 
 export async function blurhashCacheKey (imageUrl:string):Promise<string> {

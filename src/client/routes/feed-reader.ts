@@ -179,6 +179,44 @@ export const FeedReader:FunctionComponent<{
         itemsTotal.value
     )
 
+    const renderPagination = (variant = ''):unknown => {
+        if (itemsTotal.value === 0) return null
+        const cls = 'pagination' + (variant ? ' ' + variant : '')
+        return html`
+            <div class=${cls}>
+                <button
+                    class="btn btn-small"
+                    onClick=${handlePrevPage}
+                    disabled=${!hasPrev}
+                >
+                    Previous
+                </button>
+                <span class="pagination-info">
+                    ${pageStart}--${pageEnd}
+                    ${' of '}${itemsTotal.value}
+                </span>
+                <button
+                    class="btn btn-small"
+                    onClick=${handleNextPage}
+                    disabled=${!hasNext}
+                >
+                    Next
+                </button>
+
+                <select
+                    class="page-size-select"
+                    value=${pageSize.value}
+                    onChange=${handlePageSizeChange}
+                >
+                    <option value="20">20</option>
+                    <option value="40">40</option>
+                    <option value="60">60</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        `
+    }
+
     // Get the feed title for display
     const feedTitle = selectedFeed?.title || feedUrl || 'All Feeds'
 
@@ -206,11 +244,8 @@ export const FeedReader:FunctionComponent<{
                             >
                                 Unread only
                             <//>
-
-                            <label for="unread-check">
-                                Show only unread articles.
-                            </label>
                         </div>
+                        ${renderPagination('pagination-header')}
                         <button
                             class="btn btn-small"
                             onClick=${handleMarkAllRead}
@@ -240,39 +275,7 @@ export const FeedReader:FunctionComponent<{
                             renderEmptyState()}
                     </ul>
 
-                    ${itemsTotal.value > 0 && html`
-                        <div class="pagination">
-                            <button
-                                class="btn btn-small"
-                                onClick=${handlePrevPage}
-                                disabled=${!hasPrev}
-                            >
-                                Previous
-                            </button>
-                            <span class="pagination-info">
-                                ${pageStart}--${pageEnd}
-                                ${' of '}${itemsTotal.value}
-                            </span>
-                            <button
-                                class="btn btn-small"
-                                onClick=${handleNextPage}
-                                disabled=${!hasNext}
-                            >
-                                Next
-                            </button>
-
-                            <select
-                                class="page-size-select"
-                                value=${pageSize.value}
-                                onChange=${handlePageSizeChange}
-                            >
-                                <option value="20">20</option>
-                                <option value="40">40</option>
-                                <option value="60">60</option>
-                                <option value="100">100</option>
-                            </select>
-                        </div>
-                    `}
+                    ${renderPagination()}
                 </main>
             </div>
         </div>

@@ -138,6 +138,12 @@ export async function ensureItemFullContentColumns (
             'ALTER TABLE items ADD COLUMN full_content_status TEXT'
         )
     }
+    if (!has('full_content_images')) {
+        await execDb(
+            db,
+            'ALTER TABLE items ADD COLUMN full_content_images TEXT'
+        )
+    }
     for (const [name, type] of itemImageMetadataColumns) {
         if (!has(name)) {
             await execDb(
@@ -208,7 +214,8 @@ export async function upsertItem (
                 content = excluded.content,
                 full_content = excluded.full_content,
                 full_content_fetched_at = excluded.full_content_fetched_at,
-                full_content_status = excluded.full_content_status` :
+                full_content_status = excluded.full_content_status,
+                full_content_images = excluded.full_content_images` :
         `description = COALESCE(description, excluded.description),
                 content = COALESCE(content, excluded.content),
                 full_content = COALESCE(full_content, excluded.full_content),
@@ -219,7 +226,8 @@ export async function upsertItem (
                 full_content_status = COALESCE(
                     full_content_status,
                     excluded.full_content_status
-                )`
+                ),
+                full_content_images = excluded.full_content_images`
 
     await execDb(db, {
         sql: `INSERT INTO items
@@ -227,9 +235,10 @@ export async function upsertItem (
              author, pub_date, thumbnail_url, og_image_url, blurhash,
              image_width, image_height, is_read, is_starred, created_at,
              updated_at,
-             full_content, full_content_fetched_at, full_content_status)
+             full_content, full_content_fetched_at, full_content_status,
+             full_content_images)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?)
+                    ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 feed_id = excluded.feed_id,
                 guid = excluded.guid,
@@ -267,7 +276,8 @@ export async function upsertItem (
             item.updated_at as string,
             fullContent,
             (item.full_content_fetched_at as string|null) ?? null,
-            (item.full_content_status as string|null) ?? null
+            (item.full_content_status as string|null) ?? null,
+            (item.full_content_images as string|null) ?? null
         ]
     })
 }

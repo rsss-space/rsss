@@ -14,13 +14,10 @@ a.btn, button.btn, .btn-link {
     transition: all 0.2s;
     transform: translateY(1px);
 
-    &:focus {
-        outline: 1px solid;
-    }
-
-    &:hover {
+    &:focus, &:hover, &:focus-visible {
         outline: 1px solid;
         transform: translateY(0);
+        background-color: white;
     }
 
     &:active {

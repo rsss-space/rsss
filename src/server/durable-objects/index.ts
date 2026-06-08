@@ -9,6 +9,7 @@ import {
     DEAD_LETTER_OUTBOX_SQL,
     USER_STATE_SQL,
     ALL_FULL_CONTENT_STATUSES,
+    type FullContentStatus,
     isSuccessStatus,
     FETCH_FULL_MIN_INTERVAL_MS
 } from '../../shared/schema.js'
@@ -29,12 +30,20 @@ import {
     parseBlurhashCacheEntry,
     type BlurhashJob
 } from '../blurhash.js'
+import { isPrefetchEligible } from '../article-prefetch-eligible.js'
+import { type ArticleFetchJob } from '../article-fetch-job.js'
+import {
+    mergeFullContentImage,
+    parseImageMap
+} from '../full-content-images.js'
+import { enqueueBodyBlurJobs } from '../blurhash-body-enqueue.js'
 
 export interface Env {
     USER:DurableObjectNamespace<RsssUserDO>
     SESSIONS:KVNamespace
     BLURHASH_KV:KVNamespace
     BLURHASH_QUEUE:Queue
+    ARTICLE_FETCH_QUEUE:Queue
     ASSETS:Fetcher
     AUTUMN_SECRET_KEY?:string
     AUTUMN_DISABLED?:string
@@ -112,7 +121,7 @@ const MANUAL_REFRESH_STORAGE_PREFIX = 'manual_refresh:'
 const ALARM_REFRESH_CURSOR_KEY = 'alarm_refresh_cursor'
 const PENDING_DELETION_KEY = 'pending_deletion'
 const MIGRATION_STATE_KEY = 'schema_migration'
-const USER_DO_MIGRATION_VERSION = 6
+const USER_DO_MIGRATION_VERSION = 7
 const FEEDS_UPDATED_AT_BUMP_KEY = 'feeds_updated_at_bump_for_last_pulled_at'
 const SYNC_PAGE_LIMIT = 500
 const FETCH_FULL_THROTTLE_PREFIX = 'fetch_full:'
@@ -136,12 +145,21 @@ const ITEM_COLUMNS = `
     items.image_width, items.image_height, items.is_read,
     items.is_starred, items.created_at, items.updated_at,
     items.full_content, items.full_content_fetched_at,
-    items.full_content_status
+    items.full_content_status,
+    items.full_content_images
 `
 const ITEM_SYNC_COLUMNS = `
     ${ITEM_COLUMNS},
     feeds.title AS feed_title
 `
+
+// True when the stored body blur map already holds at least one entry.
+// Reuses parseImageMap so a null/whitespace/malformed/`{}` value counts as
+// empty and lazy-fill proceeds; any real entry makes lazy-fill skip.
+function hasBodyBlurMap (value:unknown):boolean {
+    if (typeof value !== 'string') return false
+    return Object.keys(parseImageMap(value)).length > 0
+}
 
 function errorMessage (err:unknown):string {
     return err instanceof Error ? err.message : String(err)
@@ -414,6 +432,7 @@ export class RsssUserDO extends DurableObject<Env> {
             this.migrateAddItemImageMetadata()
             this.migrateAddLastPulledAt()
             this.migrateAddItemFullContent()
+            this.migrateAddFullContentImages()
             await this.ctx.storage.put(MIGRATION_STATE_KEY, {
                 migration_v: USER_DO_MIGRATION_VERSION
             })
@@ -515,6 +534,18 @@ export class RsssUserDO extends DurableObject<Env> {
         if (!has('full_content_status')) {
             this.sql.exec(
                 'ALTER TABLE items ADD COLUMN full_content_status TEXT'
+            )
+        }
+    }
+
+    private migrateAddFullContentImages () {
+        const cols = this.sql.exec('PRAGMA table_info(items)').toArray()
+        const has = (name:string) => cols.some(
+            (col:unknown) => (col as { name:string }).name === name
+        )
+        if (!has('full_content_images')) {
+            this.sql.exec(
+                'ALTER TABLE items ADD COLUMN full_content_images TEXT'
             )
         }
     }
@@ -656,6 +687,108 @@ export class RsssUserDO extends DurableObject<Env> {
                 body.blurhash,
                 body.image_width,
                 body.image_height,
+                id
+            )
+            this.bumpFeedVersion()
+
+            return new Response(null, { status: 204 })
+        })
+
+        app.post('/internal/full-content/items/:id', async (c) => {
+            const id = Number(c.req.param('id'))
+            if (!Number.isInteger(id) || id < 1) {
+                return c.json({ error: 'Invalid item id' }, 400)
+            }
+
+            const body = await c.req.json<{
+                html?:unknown
+                fetchedAt?:unknown
+                status?:unknown
+            }>()
+
+            if (
+                typeof body.status !== 'string' ||
+                !ALL_FULL_CONTENT_STATUSES.includes(
+                    body.status as FullContentStatus
+                )
+            ) {
+                return c.json({ error: 'Invalid status' }, 400)
+            }
+
+            if (
+                typeof body.html === 'string' &&
+                body.html.length > 0
+            ) {
+                const fetchedAt = typeof body.fetchedAt === 'string' ?
+                    body.fetchedAt :
+                    new Date().toISOString()
+                this.sql.exec(
+                    'UPDATE items SET full_content = ?, ' +
+                    'full_content_fetched_at = ?, ' +
+                    'full_content_status = ? WHERE id = ?',
+                    body.html,
+                    fetchedAt,
+                    body.status,
+                    id
+                )
+            } else {
+                this.sql.exec(
+                    'UPDATE items SET ' +
+                    "full_content_fetched_at = datetime('now'), " +
+                    'full_content_status = ? WHERE id = ?',
+                    body.status,
+                    id
+                )
+            }
+            this.bumpFeedVersion()
+
+            return new Response(null, { status: 204 })
+        })
+
+        app.post('/internal/blurhash/body-items/:id', async (c) => {
+            const id = Number(c.req.param('id'))
+            if (!Number.isInteger(id) || id < 1) {
+                return c.json({ error: 'Invalid item id' }, 400)
+            }
+
+            const body = await c.req.json<{
+                url?:unknown
+                blurhash?:unknown
+                width?:unknown
+                height?:unknown
+            }>()
+
+            if (
+                typeof body.url !== 'string' ||
+                typeof body.blurhash !== 'string' ||
+                typeof body.width !== 'number' ||
+                typeof body.height !== 'number'
+            ) {
+                return c.json({ error: 'Invalid body image metadata' }, 400)
+            }
+
+            const row = this.sql.exec(
+                'SELECT full_content_images FROM items WHERE id = ?',
+                id
+            ).one() as { full_content_images:string|null } | null
+
+            if (!row) {
+                return c.json({ error: 'Item not found' }, 404)
+            }
+
+            const merged = mergeFullContentImage(
+                row.full_content_images,
+                body.url,
+                {
+                    blurhash: body.blurhash,
+                    width: body.width,
+                    height: body.height
+                }
+            )
+
+            this.sql.exec(
+                'UPDATE items SET full_content_images = ? WHERE id = ?',
+                merged,
                 id
             )
             this.bumpFeedVersion()
@@ -1406,6 +1539,30 @@ export class RsssUserDO extends DurableObject<Env> {
                 typeof item.full_content === 'string' &&
                 item.full_content.length > 0
             ) {
+                // Lazy-fill: a previously-fetched body whose blur map is
+                // still empty enqueues body blur jobs from the stored HTML
+                // on this open. Best-effort — never fail the cache-hit
+                // response. Self-limiting: once the consumer writes any map
+                // entry back, later opens see a non-empty map and skip.
+                const fullContent = item.full_content
+                const env:Env|undefined = this.env
+                if (
+                    env?.BLURHASH_QUEUE &&
+                    !hasBodyBlurMap(item.full_content_images)
+                ) {
+                    try {
+                        await enqueueBodyBlurJobs(
+                            env.BLURHASH_QUEUE,
+                            fullContent,
+                            id,
+                            this.ctx.id.toString()
+                        )
+                    } catch (err) {
+                        console.error(
+                            'body blur enqueue failed (lazy):', err
+                        )
+                    }
+                }
                 return c.json({ item })
             }
 
@@ -1439,6 +1596,27 @@ export class RsssUserDO extends DurableObject<Env> {
                     result.status,
                     id
                 )
+
+                // Fresh fetch: enqueue body blur jobs for the newly-stored
+                // HTML. Best-effort — a queue failure must never fail the
+                // fetch-full response.
+                if (result.html) {
+                    const env:Env|undefined = this.env
+                    if (env?.BLURHASH_QUEUE) {
+                        try {
+                            await enqueueBodyBlurJobs(
+                                env.BLURHASH_QUEUE,
+                                result.html,
+                                id,
+                                this.ctx.id.toString()
+                            )
+                        } catch (err) {
+                            console.error(
+                                'body blur enqueue failed (fetch):', err
+                            )
+                        }
+                    }
+                }
             } else {
                 // Preserve any prior full_content on failure.
                 this.sql.exec(
@@ -1762,6 +1940,7 @@ export class RsssUserDO extends DurableObject<Env> {
             }
 
             await this.updateNewItemThumbnails(newItems)
+            await this.enqueueArticleFetches(newItems)
 
             if (newItems.length > 0) {
                 this.bumpFeedVersion()
@@ -1931,6 +2110,47 @@ export class RsssUserDO extends DurableObject<Env> {
             if (result.status === 'rejected') {
                 console.error('Error updating item image:', result.reason)
             }
+        }
+    }
+
+    private async enqueueArticleFetches (
+        items:NewFeedItem[]
+    ):Promise<void> {
+        const env:Env|undefined = this.env
+        if (!env?.ARTICLE_FETCH_QUEUE) return
+        if (items.length === 0) return
+
+        const objectId = this.ctx.id.toString()
+
+        for (const item of items) {
+            if (!item.link) continue
+
+            const row = this.sql.exec(
+                `SELECT content, description, full_content
+                    FROM items WHERE id = ?`,
+                item.id
+            ).one() as {
+                content:string|null
+                description:string|null
+                full_content:string|null
+            } | null
+
+            if (!row) continue
+
+            const eligible = isPrefetchEligible({
+                link: item.link,
+                content: row.content,
+                description: row.description,
+                full_content: row.full_content
+            })
+
+            if (!eligible) continue
+
+            await env.ARTICLE_FETCH_QUEUE.send({
+                itemId: item.id,
+                link: item.link,
+                objectId
+            } satisfies ArticleFetchJob)
         }
     }
 
