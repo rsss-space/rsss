@@ -131,6 +131,13 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The `useMemo` deps array should include `imagesJson` (a `string|null`) rather than the parsed map object, since a new object reference each render would defeat the memo.
 ---
 
+## 2026-06-07 - US-017
+- What was implemented: Full verification pass. Fixed one typecheck error in `src/server/article-fetch-consumer.ts`: `ArticleFetchConsumerEnv.BLURHASH_QUEUE.send` return type changed from `Promise<void>` to `Promise<unknown>` so the actual Workers `Queue` type (which returns `Promise<QueueSendResponse>`) is assignable. `npm test && npm run lint` pass (exit 0). `npx tsc --noEmit` passes. Scope diff confirms only Phases 1-3 files are changed.
+- Files changed: src/server/article-fetch-consumer.ts, specs/prd.json, progress.log
+- **Learnings for future iterations:**
+  - When writing a minimal interface for an injectable dependency (e.g. `{ send: ... => Promise<void> }`), use `Promise<unknown>` not `Promise<void>` so the real Workers `Queue` type (which returns `Promise<QueueSendResponse>`) remains assignable.
+---
+
 ## 2026-06-07 - US-016
 - What was implemented: Added `& blur-hash` CSS rule inside `.article-body` in `src/client/routes/item-reader.css`, directly after the existing `& img` rule. The rule sets `display: block`, `max-width: 100%`, `height: auto`, `margin: 1rem 0`, `background-color: var(--color-placeholder)` — matching the img rule minus aspect-ratio (which is set inline by the blur-hash swap transform). Build and lint pass.
 - Files changed: src/client/routes/item-reader.css, specs/prd.json, progress.log

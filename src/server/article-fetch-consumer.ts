@@ -18,7 +18,7 @@ export interface ArticleFetchConsumerEnv {
             Promise<Response> }
     }
     BLURHASH_QUEUE:{
-        send:(message:unknown) => Promise<void>
+        send:(message:unknown) => Promise<unknown>
     }
 }
 
