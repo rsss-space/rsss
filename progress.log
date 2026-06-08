@@ -27,3 +27,12 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - The DO's createSql mock must handle `UPDATE user_state SET feed_version` for bumpFeedVersion; the SQL mock pattern in test/fetch-full-endpoint.ts does NOT handle it (since that endpoint does not call bumpFeedVersion), so new tests for routes that call bumpFeedVersion need to add it to the mock.
   - Node-platform test registration: add an esbuild entry to run-all-tests.mjs under the "node-platform tests" section, mirroring the fetch-full-endpoint.ts pattern.
 ---
+
+## 2026-06-07 - US-004
+- What was implemented: Created src/server/article-fetch-consumer.ts exporting `handleArticleFetchQueueBatch(batch, env, deps)` and `createArticleFetchConsumerDeps()`. The consumer validates each message with `isArticleFetchJob`, acks invalid jobs immediately, calls `deps.fetchArticle(link)` for valid jobs, POSTs the result JSON to `/internal/full-content/items/:id` on the USER_DO stub (throws if not ok), then acks on success. A TODO comment marks the placeholder for body-blur enqueue (US-012). Created test/article-fetch-consumer.ts (3 tests, node-platform): one DO write on success, invalid job ack, failure status forwarded and acked. Registered in test/run-all-tests.mjs.
+- Files changed: src/server/article-fetch-consumer.ts (new), test/article-fetch-consumer.ts (new), test/run-all-tests.mjs, specs/prd.json
+- **Learnings for future iterations:**
+  - The consumer pattern exactly mirrors blurhash-consumer.ts: QueueMessageLike/QueueBatchLike interfaces, invalid body → immediate ack, transient failures (non-ok DO response) → throw (queue retry), permanent failures → ack.
+  - `createArticleFetchConsumerDeps()` just wraps `fetchFullArticle` from article-fetch.ts; the deps interface keeps tests hermetic.
+  - The TODO comment for US-012 is in `handleArticleFetchMessage`, just before the `writeFullContent` call.
+---

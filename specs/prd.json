@@ -64,7 +64,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 1.4. Phase-1 consumer leaves a comment placeholder for the body-blur enqueue added in US-012."
     },
     {
