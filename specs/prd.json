@@ -81,7 +81,7 @@
         "Typecheck and lint pass"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Plan Task 1.5. Verify isSummaryOnly param shape in src/shared/article-detect.ts. Call site ~line 1764 in DO."
     },
     {

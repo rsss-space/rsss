@@ -30,6 +30,8 @@ import {
     parseBlurhashCacheEntry,
     type BlurhashJob
 } from '../blurhash.js'
+import { isPrefetchEligible } from '../article-prefetch-eligible.js'
+import { type ArticleFetchJob } from '../article-fetch-job.js'
 
 export interface Env {
     USER:DurableObjectNamespace<RsssUserDO>
@@ -1815,6 +1817,7 @@ export class RsssUserDO extends DurableObject<Env> {
             }
 
             await this.updateNewItemThumbnails(newItems)
+            await this.enqueueArticleFetches(newItems)
 
             if (newItems.length > 0) {
                 this.bumpFeedVersion()
@@ -1984,6 +1987,47 @@ export class RsssUserDO extends DurableObject<Env> {
             if (result.status === 'rejected') {
                 console.error('Error updating item image:', result.reason)
             }
+        }
+    }
+
+    private async enqueueArticleFetches (
+        items:NewFeedItem[]
+    ):Promise<void> {
+        const env:Env|undefined = this.env
+        if (!env?.ARTICLE_FETCH_QUEUE) return
+        if (items.length === 0) return
+
+        const objectId = this.ctx.id.toString()
+
+        for (const item of items) {
+            if (!item.link) continue
+
+            const row = this.sql.exec(
+                `SELECT content, description, full_content
+                    FROM items WHERE id = ?`,
+                item.id
+            ).one() as {
+                content:string|null
+                description:string|null
+                full_content:string|null
+            } | null
+
+            if (!row) continue
+
+            const eligible = isPrefetchEligible({
+                link: item.link,
+                content: row.content,
+                description: row.description,
+                full_content: row.full_content
+            })
+
+            if (!eligible) continue
+
+            await env.ARTICLE_FETCH_QUEUE.send({
+                itemId: item.id,
+                link: item.link,
+                objectId
+            } satisfies ArticleFetchJob)
         }
     }
 

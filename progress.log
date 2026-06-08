@@ -36,3 +36,13 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
   - `createArticleFetchConsumerDeps()` just wraps `fetchFullArticle` from article-fetch.ts; the deps interface keeps tests hermetic.
   - The TODO comment for US-012 is in `handleArticleFetchMessage`, just before the `writeFullContent` call.
 ---
+
+
+## 2026-06-07 - US-005
+- What was implemented: Created src/server/article-prefetch-eligible.ts exporting `isPrefetchEligible(item)` which returns false when `full_content` is present, otherwise delegates to `isSummaryOnly`. Created test/article-prefetch-eligible.ts (4 browser tests) covering: eligible summary-only, not-eligible (no link), not-eligible (long body), not-eligible (has full_content). Registered the test in test/browser-tests.ts. Added a private `enqueueArticleFetches(items)` method to the DO that guards on `env.ARTICLE_FETCH_QUEUE`, queries `content/description/full_content` per item from SQLite, checks `isPrefetchEligible`, and sends an `ArticleFetchJob` for eligible items. Called right after `await this.updateNewItemThumbnails(newItems)`. Added imports for `isPrefetchEligible` and `ArticleFetchJob` to the DO file.
+- Files changed: src/server/article-prefetch-eligible.ts (new), test/article-prefetch-eligible.ts (new), test/browser-tests.ts, src/server/durable-objects/index.ts, specs/prd.json
+- **Learnings for future iterations:**
+  - `isPrefetchEligible` is a thin wrapper: short-circuit on `full_content` truthy, then delegate to `isSummaryOnly` from shared/article-detect.ts. No need to duplicate the threshold logic.
+  - The DO method queries `content, description, full_content` per item individually from SQLite (not a bulk query) to keep the loop readable. For large batches a JOIN would be faster but new items typically arrive in single digits.
+  - `this.ctx.id.toString()` gives the DO objectId needed by ArticleFetchJob.
+---
