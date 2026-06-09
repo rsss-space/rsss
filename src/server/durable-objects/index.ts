@@ -37,6 +37,9 @@ import {
     parseImageMap
 } from '../full-content-images.js'
 import { enqueueBodyBlurJobs } from '../blurhash-body-enqueue.js'
+import type {
+    OAuthCredentialRecord
+} from '../auth/oauth.js'
 
 export interface Env {
     USER:DurableObjectNamespace<RsssUserDO>
@@ -125,6 +128,7 @@ const USER_DO_MIGRATION_VERSION = 7
 const FEEDS_UPDATED_AT_BUMP_KEY = 'feeds_updated_at_bump_for_last_pulled_at'
 const SYNC_PAGE_LIMIT = 500
 const FETCH_FULL_THROTTLE_PREFIX = 'fetch_full:'
+const OAUTH_CREDENTIALS_KEY = 'oauth:credentials'
 const MAX_PARSED_FEED_ITEMS = 1000
 const MAX_FEED_TITLE_LENGTH = 8 * 1024
 const MAX_FEED_DESCRIPTION_LENGTH = 64 * 1024
@@ -170,6 +174,37 @@ function isDuplicateInsertError (err:unknown):boolean {
 
     return message.includes('sqlite_constraint_unique') ||
         message.includes('unique constraint failed')
+}
+
+function isObjectRecord (value:unknown):value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+}
+
+function isOAuthCredentialRecord (
+    value:unknown
+):value is OAuthCredentialRecord {
+    if (!isObjectRecord(value)) return false
+    if (typeof value.did !== 'string') return false
+    if (typeof value.accessToken !== 'string') return false
+    if (typeof value.refreshToken !== 'string') return false
+    if (typeof value.tokenEndpoint !== 'string') return false
+    if (typeof value.pdsEndpoint !== 'string') return false
+    if (typeof value.updatedAt !== 'string') return false
+    if (!isObjectRecord(value.dpopPrivateKeyJwk)) return false
+    if (
+        value.tokenType !== undefined &&
+        typeof value.tokenType !== 'string'
+    ) {
+        return false
+    }
+    if (
+        value.accessTokenExpiresAt !== undefined &&
+        typeof value.accessTokenExpiresAt !== 'number'
+    ) {
+        return false
+    }
+
+    return true
 }
 
 interface MigrationState {
@@ -660,6 +695,17 @@ export class RsssUserDO extends DurableObject<Env> {
         // Health check
         app.get('/health', (c) => {
             return c.json({ status: 'ok', service: 'do' })
+        })
+
+        app.put('/internal/oauth/credentials', async (c) => {
+            const body = await c.req.json<unknown>()
+            if (!isOAuthCredentialRecord(body)) {
+                return c.json({ error: 'Invalid OAuth credentials' }, 400)
+            }
+
+            await this.ctx.storage.put(OAUTH_CREDENTIALS_KEY, body)
+
+            return new Response(null, { status: 204 })
         })
 
         app.post('/internal/blurhash/items/:id', async (c) => {

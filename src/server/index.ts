@@ -9,6 +9,7 @@ import {
     verifySessionCookie,
     destroySessionCookie,
     AT_PROTOCOL_OAUTH_SCOPE,
+    type OAuthCredentialRecord,
     type OAuthSession,
     type OAuthState
 } from './auth/oauth.js'
@@ -731,13 +732,14 @@ app.post('/api/auth/callback', async (c) => {
             c.env.OAUTH_CLIENT_ID
         )
 
-        const session = await exchangeCode(
+        const exchange = await exchangeCode(
             body.code,
             storedState,
             clientId,
             redirectUri,
             body.iss
         )
+        const { session, credentials } = exchange
 
         // Delete the used state
         await c.env.SESSIONS.delete(stateKey)
@@ -747,6 +749,8 @@ app.post('/api/auth/callback', async (c) => {
             `user:${session.did}`,
             session.handle
         )
+
+        await persistOAuthCredentials(c.env, credentials)
 
         // Create session cookie
         const sessionCookie = await createSessionCookie(
@@ -911,6 +915,23 @@ function getRsssUserDO (
     // Use the DID as the DO name for consistent routing
     const id = env.USER_DO.idFromName(did)
     return env.USER_DO.get(id)
+}
+
+async function persistOAuthCredentials (
+    env:Env,
+    credentials:OAuthCredentialRecord
+):Promise<void> {
+    const stub = getRsssUserDO(env, credentials.did)
+    const response = await stub.fetch(
+        new Request('http://do/internal/oauth/credentials', {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(credentials)
+        })
+    )
+    if (!response.ok) {
+        throw new Error('Could not persist OAuth credentials')
+    }
 }
 
 /**

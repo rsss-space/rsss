@@ -13,6 +13,10 @@
   `src/server/auth/oauth.ts`; use that constant for authorization requests,
   loopback client IDs, and `/oauth/client-metadata.json` so the scope
   surfaces cannot drift.
+- OAuth token exchange returns a browser-safe `session` plus server-only
+  `credentials`. The callback persists credentials to the user's Durable
+  Object through `PUT /internal/oauth/credentials`; the DO stores the record
+  under `oauth:credentials` with `ctx.storage.put`.
 
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
@@ -227,4 +231,36 @@ Thread: https://ampcode.com/threads/
     alias and often `--external:stripe` when bundled through esbuild.
   - Keep the re-consent comment next to the authorization request scope,
     since that is the behavior users hit on their next login.
+---
+
+## 2026-06-09 13:40 PDT - US-004
+Thread: https://ampcode.com/threads/
+- What was implemented: Persisted OAuth access tokens, refresh tokens,
+  token endpoint, PDS endpoint, and DPoP private JWK per DID in the user's
+  Durable Object after a successful OAuth exchange. Kept the browser session
+  response token-free and added focused tests for callback persistence and
+  the internal DO storage route.
+- Files changed: src/server/auth/oauth.ts, src/server/index.ts,
+  src/server/durable-objects/index.ts,
+  test/oauth-credential-persistence.ts, test/run-all-tests.mjs,
+  specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/oauth-credential-persistence.ts
+  --bundle --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx esbuild
+  ./test/oauth-scopes.ts --bundle --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx tsc --noEmit`;
+  `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Keep token material out of `OAuthSession`; browser-visible auth state
+    should remain only DID, handle, and optional avatar.
+  - The callback persists credentials through the existing internal DO
+    `fetch(new Request(...))` pattern used by other server-to-DO flows.
+  - SQLite-backed Durable Objects can use `ctx.storage.put` for private
+    per-object key/value records without adding a SQL migration.
 ---
