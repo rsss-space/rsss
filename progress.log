@@ -27,6 +27,11 @@
   through `persistCredentials` so callers can write through the user's DO;
   the helper returns a typed `reauth_required` result instead of throwing
   token-related auth failures.
+- Server-side PDS record writes live in
+  `src/server/auth/pds-write-client.ts`. Pass the persisted
+  `OAuthCredentialRecord`, inject `persistCredentials`, and let the helper
+  sign DPoP proofs, retry one PDS nonce challenge, refresh on auth failure,
+  and report sanitized `atproto` errors without token material.
 
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
@@ -329,4 +334,33 @@ Thread: https://ampcode.com/threads/
     with that nonce once, then treat continued failure as re-auth required.
   - Injecting `persistCredentials` keeps refresh usable by future PDS-write
     helpers without importing the Worker router or Durable Object stub.
+---
+
+## 2026-06-09 14:02 PDT - US-007
+Thread: https://ampcode.com/threads/
+- What was implemented: Added a server-side AT Protocol PDS write client
+  with `putRecord`, `createRecord`, and `deleteRecord`. Requests are
+  DPoP-bound with the stored private JWK and access-token hash, retry one
+  server nonce challenge, refresh expired tokens through the existing
+  OAuth refresh helper, replay writes with rotated credentials, and return
+  typed `reauth_required` or `pds_write_failed` results. Added focused
+  tests for signing, nonce retry, refresh replay, and sanitized error
+  reporting, then registered the test in the full harness.
+- Files changed: src/server/auth/pds-write-client.ts,
+  test/pds-write-client.ts, test/run-all-tests.mjs, specs/prd.json,
+  progress.log
+- Verification: `npx esbuild ./test/pds-write-client.ts --bundle
+  --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npm run lint`;
+  `npx tsc --noEmit`; `npm test`
+- **Learnings for future iterations:**
+  - Use `pds-write-client.ts` for all authenticated repo writes instead of
+    hand-rolling PDS fetches in feature endpoints.
+  - PDS write tests can stay hermetic by injecting `fetch`,
+    `persistCredentials`, `now`, and `reportError`.
+  - Error reporting context should include operation, collection, status,
+    and server error strings, but never OAuth access or refresh tokens.
 ---
