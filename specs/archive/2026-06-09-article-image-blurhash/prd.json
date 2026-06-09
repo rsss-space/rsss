@@ -1,0 +1,268 @@
+{
+  "project": "RSSS",
+  "branchName": "ralph/article-image-blurhash",
+  "description": "Blur-Hash Placeholders for Article Images \u2014 compute blur hashes ahead of time for images inside article bodies (by eagerly pre-fetching summary-only article bodies at poll time) and render them as <blur-hash> placeholders, falling back to the 037 gray box. A new article-fetch-jobs queue is enqueued during DO polling for summary-only new items; its consumer fetches the body, stores it via a new internal DO endpoint, then enqueues body-image blur jobs on the existing BLURHASH_QUEUE (extended with target:'body'). Blur results merge into a new items.full_content_images JSON column, synced to the client, which swaps <img> to <blur-hash> after DOMPurify. See specs/038-article-image-blurhash/plan.md.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add article-fetch-jobs queue binding + Env type",
+      "description": "As a developer, I need a new article-fetch-jobs queue wired into wrangler config and the Env type so the DO can enqueue body pre-fetch jobs.",
+      "acceptanceCriteria": [
+        "In wrangler.jsonc root queues block, add an ARTICLE_FETCH_QUEUE producer for queue article-fetch-jobs and a consumer (max_batch_size 10, max_batch_timeout 30, max_retries 3, dead_letter_queue article-fetch-dlq)",
+        "Mirror the producer/consumer in the staging env queues block using article-fetch-jobs-staging and article-fetch-dlq-staging; if the production env block declares its own queues block, mirror the root form there too",
+        "Add ARTICLE_FETCH_QUEUE:Queue; to the Env interface in src/server/index.ts after BLURHASH_QUEUE:Queue;",
+        "If src/server/durable-objects/index.ts declares a local Env with BLURHASH_QUEUE, add ARTICLE_FETCH_QUEUE:Queue; there as well",
+        "Typecheck passes (npx tsc --noEmit)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Plan Task 1.1. wrangler.jsonc + src/server/index.ts:57-77 + DO local Env."
+    },
+    {
+      "id": "US-002",
+      "title": "Add ArticleFetchJob type + isArticleFetchJob guard (TDD)",
+      "description": "As a developer, I need a typed ArticleFetchJob and a runtime guard so the queue consumer can validate message bodies.",
+      "acceptanceCriteria": [
+        "Create src/server/article-fetch-job.ts exporting interface ArticleFetchJob { itemId:number; link:string; objectId:string } and function isArticleFetchJob(value:unknown):value is ArticleFetchJob",
+        "Guard rejects null, empty object, non-number/non-integer itemId, non-string link, and missing objectId",
+        "Create test/article-fetch-job.ts covering valid + invalid jobs (written failing first per TDD)",
+        "Register the test by adding import './article-fetch-job.js' to test/browser-tests.ts",
+        "New test passes: esbuild ./test/article-fetch-job.ts --bundle | tapout",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Plan Task 1.2."
+    },
+    {
+      "id": "US-003",
+      "title": "DO internal endpoint /internal/full-content/items/:id (store)",
+      "description": "As the article-fetch consumer, I need an internal DO endpoint that stores a pre-fetched article body so the fetched HTML persists per item.",
+      "acceptanceCriteria": [
+        "In src/server/durable-objects/index.ts, add app.post('/internal/full-content/items/:id') immediately after the /internal/blurhash/items/:id handler",
+        "Handler validates the id (integer >= 1) and the status against ALL_FULL_CONTENT_STATUSES, returning 400 on invalid input",
+        "On non-empty html it updates full_content, full_content_fetched_at, full_content_status; on failure/no html it updates only full_content_fetched_at + full_content_status (preserving prior full_content)",
+        "Handler calls this.bumpFeedVersion() and returns a 204",
+        "ALL_FULL_CONTENT_STATUSES and FullContentStatus are imported from ../shared/schema.js (add to existing import if missing)",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Plan Task 1.3. DO route near existing /internal/blurhash/items/:id (~line 664). Server code must not use DOMParser."
+    },
+    {
+      "id": "US-004",
+      "title": "Article-fetch queue consumer (fetch + store)",
+      "description": "As the worker, I need a consumer for article-fetch-jobs that fetches each article body and stores it via the internal DO endpoint.",
+      "acceptanceCriteria": [
+        "Create src/server/article-fetch-consumer.ts exporting handleArticleFetchQueueBatch(batch, env, deps) and createArticleFetchConsumerDeps()",
+        "Consumer validates each message with isArticleFetchJob; invalid jobs are acked (not retried forever)",
+        "Valid jobs call deps.fetchArticle(link) then POST the result to /internal/full-content/items/:id on the USER_DO stub, throwing if the response is not ok, and ack on success",
+        "Create test/article-fetch-consumer.ts (node-platform) asserting one DO write to the full-content endpoint, the message acked, and invalid jobs acked",
+        "Register the node test in test/run-all-tests.mjs (esbuild ... --platform=node --format=esm | node --input-type=module | tap-spec)",
+        "New test passes via that node-platform command",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Plan Task 1.4. Phase-1 consumer leaves a comment placeholder for the body-blur enqueue added in US-012."
+    },
+    {
+      "id": "US-005",
+      "title": "Enqueue article fetches for summary-only new items (TDD predicate)",
+      "description": "As the DO poller, I need to enqueue body pre-fetch jobs only for summary-only new items that lack stored full content.",
+      "acceptanceCriteria": [
+        "Create src/server/article-prefetch-eligible.ts exporting isPrefetchEligible(item) which returns false when full_content is present and otherwise reuses isSummaryOnly({ link, content, description })",
+        "Create test/article-prefetch-eligible.ts covering eligible (summary-only), not-eligible (no link, long feed body, already has full_content); written failing first",
+        "Register the test by adding import './article-prefetch-eligible.js' to test/browser-tests.ts",
+        "Add a private enqueueArticleFetches(items) method to the DO (guards on env.ARTICLE_FETCH_QUEUE, queries content/description/full_content per item, enqueues an ArticleFetchJob for eligible items) and call it right after await this.updateNewItemThumbnails(newItems)",
+        "Add imports for isPrefetchEligible and the ArticleFetchJob type in the DO file",
+        "New predicate test passes: esbuild ./test/article-prefetch-eligible.ts --bundle | tapout",
+        "Typecheck and lint pass"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Plan Task 1.5. Verify isSummaryOnly param shape in src/shared/article-detect.ts. Call site ~line 1764 in DO."
+    },
+    {
+      "id": "US-006",
+      "title": "Route queue batches by queue name",
+      "description": "As the worker, I need the queue handler to dispatch article-fetch batches to the new consumer and everything else to the blurhash consumer.",
+      "acceptanceCriteria": [
+        "In src/server/index.ts worker.queue, branch on batch.queue.startsWith('article-fetch-jobs') to dynamically import and call handleArticleFetchQueueBatch with createArticleFetchConsumerDeps()",
+        "The default branch keeps routing to handleBlurhashQueueBatch via the blurhash-runtime dynamic import",
+        "Typecheck and lint pass",
+        "npm test passes (exit 0), including the new node + browser unit tests"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Plan Task 1.6. src/server/index.ts worker.queue ~2060-2071."
+    },
+    {
+      "id": "US-007",
+      "title": "Add full_content_images column (schema + DO migration v7 + client)",
+      "description": "As the system, I need a new full_content_images JSON column persisted on the DO, migrated on the client, synced, and typed.",
+      "acceptanceCriteria": [
+        "Add full_content_images TEXT to the items CREATE TABLE in src/shared/schema.ts (after full_content_status TEXT,)",
+        "In src/server/durable-objects/index.ts bump USER_DO_MIGRATION_VERSION from 6 to 7, add a migrateAddFullContentImages() method (PRAGMA-guarded ALTER TABLE) and call it in the migration runner after migrateAddItemFullContent()",
+        "Add items.full_content_images to the ITEM_COLUMNS constant so the sync SELECT returns it",
+        "In src/client/db/pull-sync.ts add the column to ensureItemFullContentColumns and to upsertItem (INSERT column list, VALUES placeholder, ON CONFLICT DO UPDATE SET full_content_images = excluded.full_content_images, and the bind array)",
+        "Add full_content_images?:string|null to the Item type in src/client/db/types.ts",
+        "Typecheck and lint pass"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Plan Task 2.1."
+    },
+    {
+      "id": "US-008",
+      "title": "Extend BlurhashJob with optional target field",
+      "description": "As the blur pipeline, I need BlurhashJob to carry an optional target so body-image jobs can be distinguished from thumbnail jobs.",
+      "acceptanceCriteria": [
+        "In src/server/blurhash.ts add target?:'thumbnail'|'body' to the BlurhashJob interface",
+        "Do not tighten the isBlurhashJob guard in blurhash-consumer.ts; target stays optional and absent/'thumbnail' keeps existing behavior",
+        "Typecheck and lint pass"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Plan Task 2.2."
+    },
+    {
+      "id": "US-009",
+      "title": "Server-side extractImageUrls(html) (TDD, regex)",
+      "description": "As the article-fetch consumer, I need a Workers-safe regex extractor that returns absolute http(s) image URLs from article HTML.",
+      "acceptanceCriteria": [
+        "Create src/server/extract-image-urls.ts exporting extractImageUrls(html:string):string[] using regex only (no DOMParser)",
+        "It keeps only absolute http(s) srcs, dedupes, skips data: and relative srcs, and returns [] for no images or empty input",
+        "Create test/extract-image-urls.ts (node-platform) covering found, dedupe, skip non-http, and none; written failing first",
+        "Register the node test in test/run-all-tests.mjs",
+        "New test passes via the node-platform tap-spec command",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Plan Task 2.3. Match article-extract.ts regex style; Workers runtime has no DOMParser."
+    },
+    {
+      "id": "US-010",
+      "title": "DO endpoint /internal/blurhash/body-items/:id + merge helper",
+      "description": "As the blur consumer, I need an internal DO endpoint that merges a single body-image blurhash into the item's full_content_images map.",
+      "acceptanceCriteria": [
+        "Create src/server/full-content-images.ts exporting parseImageMap and mergeFullContentImage (tolerates corrupt prior JSON by resetting to a fresh map) plus BodyImageEntry/FullContentImageMap types",
+        "Create test/full-content-images.ts covering merge into null, merge without clobbering, and corrupt-prior-json tolerance; written failing first, registered via import in test/browser-tests.ts",
+        "Add app.post('/internal/blurhash/body-items/:id') to the DO after the /internal/full-content/items/:id route; it validates url/blurhash/width/height, 404s on missing item, merges via mergeFullContentImage, updates full_content_images, bumps feed version, returns 204",
+        "Import mergeFullContentImage from ../full-content-images.js in the DO file",
+        "New merge test passes: esbuild ./test/full-content-images.ts --bundle | tapout",
+        "Typecheck and lint pass"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Plan Task 2.4."
+    },
+    {
+      "id": "US-011",
+      "title": "Route blur write-back by target (thumbnail vs body)",
+      "description": "As the blur consumer, I need writeItemBlurhash to post body-target results to the body-items endpoint and thumbnail results to the items endpoint.",
+      "acceptanceCriteria": [
+        "Update writeItemBlurhash in src/server/blurhash-consumer.ts: when job.target === 'body' POST { url, blurhash, width, height } to /internal/blurhash/body-items/:id; otherwise POST the entry to /internal/blurhash/items/:id; throw if response is not ok",
+        "Create test/blurhash-target-routing.ts (node-platform) driving handleBlurhashQueueBatch with a KV cache-hit and fake USER_DO, asserting thumbnail path vs body path",
+        "Register the node test in test/run-all-tests.mjs",
+        "New routing test passes (both thumbnail and body cases)",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Plan Task 2.5."
+    },
+    {
+      "id": "US-012",
+      "title": "Article-fetch consumer enqueues body blur jobs",
+      "description": "As the article-fetch consumer, after storing a fetched body I need to enqueue one body-target blur job per body image (capped).",
+      "acceptanceCriteria": [
+        "Add BLURHASH_QUEUE:{ send:(message:unknown) => Promise<void> } to ArticleFetchConsumerEnv and import extractImageUrls in src/server/article-fetch-consumer.ts",
+        "On a successful fetch ('html' in result), extract image URLs, cap at MAX_BODY_BLUR_IMAGES (30), and send one BLURHASH_QUEUE job per image with { imageUrl, itemId, objectId, target:'body' }",
+        "No blur jobs are enqueued when the fetch failed",
+        "Extend test/article-fetch-consumer.ts with the enqueue-on-success and no-enqueue-on-failure cases, and add BLURHASH_QUEUE to the existing fakeEnv",
+        "All four consumer tests pass via the node-platform tap-spec command",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Plan Task 2.6. Replaces the Phase-1 comment placeholder in handleMessage."
+    },
+    {
+      "id": "US-013",
+      "title": "Extract blurhashDecodeSize into a shared client module",
+      "description": "As the client, I need the decode-size math in its own module so the body swap can reuse it without importing the item-row Preact component.",
+      "acceptanceCriteria": [
+        "Create src/client/blurhash-decode-size.ts exporting BLURHASH_DECODE_MAX and blurhashDecodeSize, moved verbatim from item-row.ts",
+        "Update src/client/components/item-row.ts to delete the local definitions and instead import then re-export BLURHASH_DECODE_MAX and blurhashDecodeSize so existing importers keep working",
+        "Typecheck and lint pass",
+        "npm run test:browser passes (item-row / feed-reader-render-state unchanged)"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Plan Task 3.0."
+    },
+    {
+      "id": "US-014",
+      "title": "addBlurHashPlaceholders(html, map) client transform (TDD, DOMParser)",
+      "description": "As the reader, I need a transform that swaps <img> elements with a known body-image hash to <blur-hash> placeholders after sanitization.",
+      "acceptanceCriteria": [
+        "Create src/client/blur-hash-swap.ts exporting addBlurHashPlaceholders(html, imageMap) which replaces eligible <img> with <blur-hash>, copying src and alt and setting placeholder, width/height (from blurhashDecodeSize), loading=lazy, and inline aspect-ratio from real dims",
+        "Imgs without a hash are left untouched; an empty map returns the input unchanged; the transform is idempotent",
+        "Create test/blur-hash-swap.ts (browser, DOMParser) covering swap, leave-untouched, empty-map, idempotent, and decode-size/aspect-ratio; written failing first",
+        "Register the test by adding import './blur-hash-swap.js' to test/browser-tests.ts",
+        "All five swap tests pass: esbuild ./test/blur-hash-swap.ts --bundle | tapout",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "Plan Task 3.1. Client code may use DOMParser; runs after DOMPurify."
+    },
+    {
+      "id": "US-015",
+      "title": "Wire the blur-hash swap into the article reader",
+      "description": "As a reader, I want article bodies to render blur-hash placeholders for pre-computed body images.",
+      "acceptanceCriteria": [
+        "In src/client/routes/item-reader.ts import BlurHash from @substrate-system/blur-hash and addBlurHashPlaceholders, and call BlurHash.define() once at module scope",
+        "Parse item.full_content_images JSON (tolerating parse errors) and extend the articleHtml useMemo to call addBlurHashPlaceholders on the sanitized HTML, with imagesJson added to the memo deps",
+        "Typecheck and lint pass",
+        "npm run test:browser passes (item-reader-render-state and the swap tests)",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "Plan Task 3.2. Replaces the article-HTML block ~lines 62-69."
+    },
+    {
+      "id": "US-016",
+      "title": "Style .article-body blur-hash placeholders",
+      "description": "As a reader, I want body blur-hash placeholders sized correctly with the gray fallback while the blur paints.",
+      "acceptanceCriteria": [
+        "In src/client/routes/item-reader.css, inside the .article-body nested block directly after the existing & img rule, add a & blur-hash rule: display block, max-width 100%, height auto, margin 1rem 0, background-color var(--color-placeholder)",
+        "Do not change unrelated CSS; aspect-ratio is set inline by the swap transform",
+        "npm run build passes (Vite + lightningcss, no CSS errors)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill: blurred placeholder shows at the correct box size then resolves to the image, hashless imgs still show the 037 gray box, and there is no layout jump"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "Plan Task 3.3. Reuse existing --color-placeholder variable."
+    },
+    {
+      "id": "US-017",
+      "title": "Full verification + scope check",
+      "description": "As a maintainer, I want the full suite, typecheck, and a scope diff to confirm the feature is complete and contained.",
+      "acceptanceCriteria": [
+        "npm test && npm run lint pass (exit 0), including every new unit test",
+        "npx tsc --noEmit passes",
+        "git diff --stat 037-article-image-placeholders...HEAD shows only the files touched by Phases 1-3 (wrangler.jsonc, new src/server/* and src/client/* modules, DO/index/schema/pull-sync edits, the CSS, new test/* files, test/browser-tests.ts, test/run-all-tests.mjs)",
+        "No eslint config changes and no unrelated changes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "Plan Task 4."
+    }
+  ]
+}

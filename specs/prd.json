@@ -1,268 +1,323 @@
 {
   "project": "RSSS",
-  "branchName": "ralph/article-image-blurhash",
-  "description": "Blur-Hash Placeholders for Article Images \u2014 compute blur hashes ahead of time for images inside article bodies (by eagerly pre-fetching summary-only article bodies at poll time) and render them as <blur-hash> placeholders, falling back to the 037 gray box. A new article-fetch-jobs queue is enqueued during DO polling for summary-only new items; its consumer fetches the body, stores it via a new internal DO endpoint, then enqueues body-image blur jobs on the existing BLURHASH_QUEUE (extended with target:'body'). Blur results merge into a new items.full_content_images JSON column, synced to the client, which swaps <img> to <blur-hash> after DOMPurify. See specs/038-article-image-blurhash/plan.md.",
+  "branchName": "ralph/atproto-social",
+  "description": "Publish Subscriptions & Social Graph on AT Protocol - turn rsss into an AT-Protocol-native social reader. Reverse the current token-discard OAuth design so the server can write to the user's PDS using granular per-collection scopes (never transition:generic). Publish RSS subscriptions per-feed with explicit consent as space.rsss.feed.subscription records, maintain an rsss-native follow graph (space.rsss.graph.follow) that is independent of Bluesky follows, and recommend follows by intersecting the user's public Bluesky follows with the set of known rsss users. Reverse/aggregation reads use the hosted microcosm Constellation + Slingshot services (configurable base URLs). rsss activity never touches app.bsky.* and never appears in the Bluesky timeline. See tasks/prd-atproto-social.md.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Add article-fetch-jobs queue binding + Env type",
-      "description": "As a developer, I need a new article-fetch-jobs queue wired into wrangler config and the Env type so the DO can enqueue body pre-fetch jobs.",
+      "title": "Define rsss lexicons and derived TypeScript types",
+      "description": "As a developer, I need formal lexicon definitions so client and server agree on the shape of records written to user repos.",
       "acceptanceCriteria": [
-        "In wrangler.jsonc root queues block, add an ARTICLE_FETCH_QUEUE producer for queue article-fetch-jobs and a consumer (max_batch_size 10, max_batch_timeout 30, max_retries 3, dead_letter_queue article-fetch-dlq)",
-        "Mirror the producer/consumer in the staging env queues block using article-fetch-jobs-staging and article-fetch-dlq-staging; if the production env block declares its own queues block, mirror the root form there too",
-        "Add ARTICLE_FETCH_QUEUE:Queue; to the Env interface in src/server/index.ts after BLURHASH_QUEUE:Queue;",
-        "If src/server/durable-objects/index.ts declares a local Env with BLURHASH_QUEUE, add ARTICLE_FETCH_QUEUE:Queue; there as well",
-        "Typecheck passes (npx tsc --noEmit)"
+        "Add lexicon JSON for space.rsss.feed.subscription (record) with fields: feedUrl (uri, required), title (string), siteUrl (uri, optional), createdAt (datetime, required)",
+        "Add lexicon JSON for space.rsss.graph.follow (record) with fields: subject (did, required), createdAt (datetime, required)",
+        "Lexicons live in a shared location importable by both client and server (e.g. src/shared/lexicons/)",
+        "Export TypeScript types for both records derived from the lexicons, with no hand-duplicated record shapes",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Plan Task 1.1. wrangler.jsonc + src/server/index.ts:57-77 + DO local Env."
+      "passes": false,
+      "notes": "PRD US-001 / FR-1. NSID namespace space.rsss.* (reverse DNS of rsss.space). Shared code dir is src/shared/ (e.g. src/shared/schema.ts)."
     },
     {
       "id": "US-002",
-      "title": "Add ArticleFetchJob type + isArticleFetchJob guard (TDD)",
-      "description": "As a developer, I need a typed ArticleFetchJob and a runtime guard so the queue consumer can validate message bodies.",
+      "title": "Deterministic subscription rkey helper (TDD)",
+      "description": "As a developer, I need a stable record key derived from a feed URL so subscription writes are 1:1 with feeds and idempotent.",
       "acceptanceCriteria": [
-        "Create src/server/article-fetch-job.ts exporting interface ArticleFetchJob { itemId:number; link:string; objectId:string } and function isArticleFetchJob(value:unknown):value is ArticleFetchJob",
-        "Guard rejects null, empty object, non-number/non-integer itemId, non-string link, and missing objectId",
-        "Create test/article-fetch-job.ts covering valid + invalid jobs (written failing first per TDD)",
-        "Register the test by adding import './article-fetch-job.js' to test/browser-tests.ts",
-        "New test passes: esbuild ./test/article-fetch-job.ts --bundle | tapout",
-        "Typecheck passes"
+        "Add a pure helper that canonicalizes a feed URL and derives a deterministic record key valid for the AT Protocol record-key charset",
+        "The same feed URL always yields the same rkey; different URLs yield different rkeys",
+        "Write failing tests first (TDD) covering canonicalization, rkey stability, and charset validity",
+        "Tests pass",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Plan Task 1.2."
+      "passes": false,
+      "notes": "PRD FR-9 / Technical Considerations (deterministic rkeys). Pure logic in src/shared/. Consumed by US-009 (publish)."
     },
     {
       "id": "US-003",
-      "title": "DO internal endpoint /internal/full-content/items/:id (store)",
-      "description": "As the article-fetch consumer, I need an internal DO endpoint that stores a pre-fetched article body so the fetched HTML persists per item.",
+      "title": "Request granular OAuth scopes at login (not transition:generic)",
+      "description": "As a user, I want to grant rsss only the specific permissions it needs, so logging in cannot let rsss touch the rest of my repo or my Bluesky posts.",
       "acceptanceCriteria": [
-        "In src/server/durable-objects/index.ts, add app.post('/internal/full-content/items/:id') immediately after the /internal/blurhash/items/:id handler",
-        "Handler validates the id (integer >= 1) and the status against ALL_FULL_CONTENT_STATUSES, returning 400 on invalid input",
-        "On non-empty html it updates full_content, full_content_fetched_at, full_content_status; on failure/no html it updates only full_content_fetched_at + full_content_status (preserving prior full_content)",
-        "Handler calls this.bumpFeedVersion() and returns a 204",
-        "ALL_FULL_CONTENT_STATUSES and FullContentStatus are imported from ../shared/schema.js (add to existing import if missing)",
+        "OAuth authorization request scope is exactly: atproto repo:space.rsss.feed.subscription repo:space.rsss.graph.follow",
+        "The request does NOT include transition:generic or any app.bsky.* scope",
+        "The client metadata document advertises the same scope set",
+        "A code comment documents that existing logged-in users must re-consent on next login because the scope set changed",
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Plan Task 1.3. DO route near existing /internal/blurhash/items/:id (~line 664). Server code must not use DOMParser."
+      "passes": false,
+      "notes": "PRD US-002 / FR-2. src/server/auth/oauth.ts currently sets scope: 'atproto' (~line 340). Also update the served client-metadata document."
     },
     {
       "id": "US-004",
-      "title": "Article-fetch queue consumer (fetch + store)",
-      "description": "As the worker, I need a consumer for article-fetch-jobs that fetches each article body and stores it via the internal DO endpoint.",
+      "title": "Persist OAuth tokens and DPoP key pair per DID on exchange",
+      "description": "As a developer, I need to retain the user's tokens and DPoP key so the server can write to their PDS later, reversing the current discard-everything design.",
       "acceptanceCriteria": [
-        "Create src/server/article-fetch-consumer.ts exporting handleArticleFetchQueueBatch(batch, env, deps) and createArticleFetchConsumerDeps()",
-        "Consumer validates each message with isArticleFetchJob; invalid jobs are acked (not retried forever)",
-        "Valid jobs call deps.fetchArticle(link) then POST the result to /internal/full-content/items/:id on the USER_DO stub, throwing if the response is not ok, and ack on success",
-        "Create test/article-fetch-consumer.ts (node-platform) asserting one DO write to the full-content endpoint, the message acked, and invalid jobs acked",
-        "Register the node test in test/run-all-tests.mjs (esbuild ... --platform=node --format=esm | node --input-type=module | tap-spec)",
-        "New test passes via that node-platform command",
-        "Typecheck passes"
+        "On successful OAuth exchange, persist access token, refresh token, token endpoint, PDS service endpoint, and the DPoP private key (as JWK) in the user's Durable Object, scoped to that DID",
+        "Tokens and keys are stored server-side only and are never included in any response sent to the browser",
+        "No tokens or DPoP keys are ever logged",
+        "Update the token-discard comment in src/server/auth/oauth.ts to reflect that we now call the PDS, including the security rationale",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Plan Task 1.4. Phase-1 consumer leaves a comment placeholder for the body-blur enqueue added in US-012."
+      "passes": false,
+      "notes": "PRD US-003 / FR-3, FR-4. oauth.ts already has restoreDPoPKeyPair + token-discard comments (lines ~7, ~530). User DO is src/server/durable-objects/index.ts."
     },
     {
       "id": "US-005",
-      "title": "Enqueue article fetches for summary-only new items (TDD predicate)",
-      "description": "As the DO poller, I need to enqueue body pre-fetch jobs only for summary-only new items that lack stored full content.",
+      "title": "DPoP proof JWT helper (TDD)",
+      "description": "As a developer, I need to generate DPoP proof JWTs bound to the stored key so PDS requests are authenticated on the Workers runtime.",
       "acceptanceCriteria": [
-        "Create src/server/article-prefetch-eligible.ts exporting isPrefetchEligible(item) which returns false when full_content is present and otherwise reuses isSummaryOnly({ link, content, description })",
-        "Create test/article-prefetch-eligible.ts covering eligible (summary-only), not-eligible (no link, long feed body, already has full_content); written failing first",
-        "Register the test by adding import './article-prefetch-eligible.js' to test/browser-tests.ts",
-        "Add a private enqueueArticleFetches(items) method to the DO (guards on env.ARTICLE_FETCH_QUEUE, queries content/description/full_content per item, enqueues an ArticleFetchJob for eligible items) and call it right after await this.updateNewItemThumbnails(newItems)",
-        "Add imports for isPrefetchEligible and the ArticleFetchJob type in the DO file",
-        "New predicate test passes: esbuild ./test/article-prefetch-eligible.ts --bundle | tapout",
-        "Typecheck and lint pass"
+        "Add a helper that builds a signed DPoP proof JWT for a given HTTP method, URL, optional server nonce, and access-token hash, using the stored DPoP JWK",
+        "The proof carries correct htm, htu, jti, iat (and nonce/ath when provided) claims and the public JWK in the header",
+        "Write failing tests first (TDD) verifying claim structure and that the signature verifies with the public key",
+        "Tests pass",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Plan Task 1.5. Verify isSummaryOnly param shape in src/shared/article-detect.ts. Call site ~line 1764 in DO."
+      "passes": false,
+      "notes": "PRD US-003/US-004 / FR-3. Reuses key material persisted in US-004. Must use WebCrypto (Cloudflare Workers runtime)."
     },
     {
       "id": "US-006",
-      "title": "Route queue batches by queue name",
-      "description": "As the worker, I need the queue handler to dispatch article-fetch batches to the new consumer and everything else to the blurhash consumer.",
+      "title": "Token refresh routine (DPoP-bound)",
+      "description": "As a developer, I need to refresh an expired access token using the refresh token plus a DPoP proof and persist the rotated tokens.",
       "acceptanceCriteria": [
-        "In src/server/index.ts worker.queue, branch on batch.queue.startsWith('article-fetch-jobs') to dynamically import and call handleArticleFetchQueueBatch with createArticleFetchConsumerDeps()",
-        "The default branch keeps routing to handleBlurhashQueueBatch via the blurhash-runtime dynamic import",
-        "Typecheck and lint pass",
-        "npm test passes (exit 0), including the new node + browser unit tests"
+        "A refresh routine exchanges an expired access token at the token endpoint using the refresh token and a DPoP proof (US-005 helper)",
+        "It handles the use_dpop_nonce challenge by retrying once with the server-provided nonce",
+        "Rotated access and refresh tokens are persisted back to the DO (US-004 storage)",
+        "On unrecoverable failure it returns a typed error indicating re-auth is required",
+        "No token material is logged",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Plan Task 1.6. src/server/index.ts worker.queue ~2060-2071."
+      "passes": false,
+      "notes": "PRD US-003 / FR-3, FR-15. Depends on US-004 storage and US-005 DPoP helper."
     },
     {
       "id": "US-007",
-      "title": "Add full_content_images column (schema + DO migration v7 + client)",
-      "description": "As the system, I need a new full_content_images JSON column persisted on the DO, migrated on the client, synced, and typed.",
+      "title": "PDS write client (putRecord / createRecord / deleteRecord)",
+      "description": "As a developer, I need a server-side helper that performs DPoP-signed record writes against a user's PDS, refreshing tokens transparently on 401.",
       "acceptanceCriteria": [
-        "Add full_content_images TEXT to the items CREATE TABLE in src/shared/schema.ts (after full_content_status TEXT,)",
-        "In src/server/durable-objects/index.ts bump USER_DO_MIGRATION_VERSION from 6 to 7, add a migrateAddFullContentImages() method (PRAGMA-guarded ALTER TABLE) and call it in the migration runner after migrateAddItemFullContent()",
-        "Add items.full_content_images to the ITEM_COLUMNS constant so the sync SELECT returns it",
-        "In src/client/db/pull-sync.ts add the column to ensureItemFullContentColumns and to upsertItem (INSERT column list, VALUES placeholder, ON CONFLICT DO UPDATE SET full_content_images = excluded.full_content_images, and the bind array)",
-        "Add full_content_images?:string|null to the Item type in src/client/db/types.ts",
-        "Typecheck and lint pass"
+        "Helper supports com.atproto.repo.putRecord, com.atproto.repo.createRecord, and com.atproto.repo.deleteRecord with DPoP proofs bound to the stored key (US-005)",
+        "On a 401 / use_dpop_nonce / expired-token response it refreshes (US-006) or retries with the server nonce once, then replays the write",
+        "On unrecoverable auth failure it returns a typed reconnect-your-account error the caller can map to UX",
+        "Errors are reported via the existing reportError path without leaking token material",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Plan Task 2.1."
+      "passes": false,
+      "notes": "PRD US-004 / FR-6, FR-11, FR-15. Decide @atproto/api vs extend hand-rolled code (must run on Workers). Reuse/extend src/server/middleware/rate-limit.ts for backoff."
     },
     {
       "id": "US-008",
-      "title": "Extend BlurhashJob with optional target field",
-      "description": "As the blur pipeline, I need BlurhashJob to carry an optional target so body-image jobs can be distinguished from thumbnail jobs.",
+      "title": "Track per-feed publish state in the user DO",
+      "description": "As a developer, I need to know which feeds a user has published so the UI can reflect it and writes stay idempotent.",
       "acceptanceCriteria": [
-        "In src/server/blurhash.ts add target?:'thumbnail'|'body' to the BlurhashJob interface",
-        "Do not tighten the isBlurhashJob guard in blurhash-consumer.ts; target stays optional and absent/'thumbnail' keeps existing behavior",
-        "Typecheck and lint pass"
+        "Add per-feed publish columns to the user DO feeds table: published (bool), rkey, publishedAt, last publish error (nullable)",
+        "Add a guarded migration following the existing migrateAddXxx pattern (bump USER_DO_MIGRATION_VERSION) that does not break existing data or sync",
+        "Publish state is exposed to the client through the existing server-authoritative sync path, not a new ad-hoc channel",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "Plan Task 2.2."
+      "passes": false,
+      "notes": "PRD US-A1 / FR-10. DO migrations live in src/server/durable-objects/index.ts (migrateAddItemImageMetadata etc; USER_DO_MIGRATION_VERSION). Record/shared types in src/shared/schema.ts."
     },
     {
       "id": "US-009",
-      "title": "Server-side extractImageUrls(html) (TDD, regex)",
-      "description": "As the article-fetch consumer, I need a Workers-safe regex extractor that returns absolute http(s) image URLs from article HTML.",
+      "title": "Publish a subscription record on toggle-on",
+      "description": "As a user, when I enable sharing for a feed, that feed appears as a record in my PDS repo.",
       "acceptanceCriteria": [
-        "Create src/server/extract-image-urls.ts exporting extractImageUrls(html:string):string[] using regex only (no DOMParser)",
-        "It keeps only absolute http(s) srcs, dedupes, skips data: and relative srcs, and returns [] for no images or empty input",
-        "Create test/extract-image-urls.ts (node-platform) covering found, dedupe, skip non-http, and none; written failing first",
-        "Register the node test in test/run-all-tests.mjs",
-        "New test passes via the node-platform tap-spec command",
-        "Typecheck passes"
+        "A server endpoint writes a space.rsss.feed.subscription record via putRecord (US-007) using the deterministic rkey (US-002)",
+        "Re-publishing the same feed updates in place rather than duplicating (idempotent on rkey)",
+        "On success, published / rkey / publishedAt are persisted (US-008) and synced",
+        "On failure, state stays unpublished and a re-auth-required error routes the user to reconnect",
+        "Tests pass (publish path and idempotency)",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Plan Task 2.3. Match article-extract.ts regex style; Workers runtime has no DOMParser."
+      "passes": false,
+      "notes": "PRD US-A3 / FR-5, FR-6, FR-7, FR-9. Per-feed opt-in only; never write a record without an explicit per-feed action."
     },
     {
       "id": "US-010",
-      "title": "DO endpoint /internal/blurhash/body-items/:id + merge helper",
-      "description": "As the blur consumer, I need an internal DO endpoint that merges a single body-image blurhash into the item's full_content_images map.",
+      "title": "Unpublish on toggle-off or unsubscribe",
+      "description": "As a user, when I disable sharing or unsubscribe from a feed, its record is removed from my PDS repo.",
       "acceptanceCriteria": [
-        "Create src/server/full-content-images.ts exporting parseImageMap and mergeFullContentImage (tolerates corrupt prior JSON by resetting to a fresh map) plus BodyImageEntry/FullContentImageMap types",
-        "Create test/full-content-images.ts covering merge into null, merge without clobbering, and corrupt-prior-json tolerance; written failing first, registered via import in test/browser-tests.ts",
-        "Add app.post('/internal/blurhash/body-items/:id') to the DO after the /internal/full-content/items/:id route; it validates url/blurhash/width/height, 404s on missing item, merges via mergeFullContentImage, updates full_content_images, bumps feed version, returns 204",
-        "Import mergeFullContentImage from ../full-content-images.js in the DO file",
-        "New merge test passes: esbuild ./test/full-content-images.ts --bundle | tapout",
-        "Typecheck and lint pass"
+        "Toggling off calls deleteRecord (US-007) for that feed's rkey and clears publish state",
+        "Unsubscribing from a feed that was published also deletes its record, leaving no orphaned records",
+        "Deleting an already-absent record is treated as success (idempotent)",
+        "Tests pass (idempotent delete and unsubscribe cleanup)",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Plan Task 2.4."
+      "passes": false,
+      "notes": "PRD US-A4 / FR-6, FR-7, FR-8. Hook into the existing unsubscribe path in the user DO."
     },
     {
       "id": "US-011",
-      "title": "Route blur write-back by target (thumbnail vs body)",
-      "description": "As the blur consumer, I need writeItemBlurhash to post body-target results to the body-items endpoint and thumbnail results to the items endpoint.",
+      "title": "Reconcile published state with the repo",
+      "description": "As a user, I want the share indicators to reflect what is actually in my repo even if a write previously failed or I used another client.",
       "acceptanceCriteria": [
-        "Update writeItemBlurhash in src/server/blurhash-consumer.ts: when job.target === 'body' POST { url, blurhash, width, height } to /internal/blurhash/body-items/:id; otherwise POST the entry to /internal/blurhash/items/:id; throw if response is not ok",
-        "Create test/blurhash-target-routing.ts (node-platform) driving handleBlurhashQueueBatch with a KV cache-hit and fake USER_DO, asserting thumbnail path vs body path",
-        "Register the node test in test/run-all-tests.mjs",
-        "New routing test passes (both thumbnail and body cases)",
-        "Typecheck passes"
+        "A reconcile routine lists space.rsss.feed.subscription records via public com.atproto.repo.listRecords and aligns local publish state to it",
+        "Drift (record exists but state says unpublished, or vice versa) is corrected without losing the user's intent where it is unambiguous",
+        "Reconcile runs on a sensible trigger (e.g. opening the feeds view after reconnect) and is rate-limited",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": "Plan Task 2.5."
+      "passes": false,
+      "notes": "PRD US-A5 / FR-16. listRecords against the user's own repo is public (no auth). Reuse/extend src/server/middleware/rate-limit.ts."
     },
     {
       "id": "US-012",
-      "title": "Article-fetch consumer enqueues body blur jobs",
-      "description": "As the article-fetch consumer, after storing a fetched body I need to enqueue one body-target blur job per body image (capped).",
+      "title": "Share on Bluesky toggle per feed (UI)",
+      "description": "As a user, I want a clear per-feed control to publish or unpublish that single subscription, so nothing is shared without a deliberate action.",
       "acceptanceCriteria": [
-        "Add BLURHASH_QUEUE:{ send:(message:unknown) => Promise<void> } to ArticleFetchConsumerEnv and import extractImageUrls in src/server/article-fetch-consumer.ts",
-        "On a successful fetch ('html' in result), extract image URLs, cap at MAX_BODY_BLUR_IMAGES (30), and send one BLURHASH_QUEUE job per image with { imageUrl, itemId, objectId, target:'body' }",
-        "No blur jobs are enqueued when the fetch failed",
-        "Extend test/article-fetch-consumer.ts with the enqueue-on-success and no-enqueue-on-failure cases, and add BLURHASH_QUEUE to the existing fakeEnv",
-        "All four consumer tests pass via the node-platform tap-spec command",
-        "Typecheck passes"
+        "Each feed in the feeds view has a toggle/affordance labelled for sharing to Bluesky",
+        "The toggle reflects current published state on load (on = published)",
+        "Toggling shows an in-progress state and a published/failed result",
+        "In-place state changes use @preact/signals with sequential signal writes wrapped in batch; any navigation uses <a href>, never onClick that sets the URL",
+        "Verify in browser using dev-browser skill",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 12,
-      "passes": true,
-      "notes": "Plan Task 2.6. Replaces the Phase-1 comment placeholder in handleMessage."
+      "passes": false,
+      "notes": "PRD US-A2. UI in src/client/routes/feeds.ts + feeds.css. Reuse @substrate-system/check-box/button. Memory: links not buttons for navigation."
     },
     {
       "id": "US-013",
-      "title": "Extract blurhashDecodeSize into a shared client module",
-      "description": "As the client, I need the decode-size math in its own module so the body swap can reuse it without importing the item-row Preact component.",
+      "title": "Consent and privacy copy for publishing",
+      "description": "As a user, I want to understand that publishing puts my subscription on the public AT Protocol network before I do it.",
       "acceptanceCriteria": [
-        "Create src/client/blurhash-decode-size.ts exporting BLURHASH_DECODE_MAX and blurhashDecodeSize, moved verbatim from item-row.ts",
-        "Update src/client/components/item-row.ts to delete the local definitions and instead import then re-export BLURHASH_DECODE_MAX and blurhashDecodeSize so existing importers keep working",
-        "Typecheck and lint pass",
-        "npm run test:browser passes (item-row / feed-reader-render-state unchanged)"
+        "First publish (or a nearby info affordance) explains: records are written to your own PDS, are public on the AT Protocol network, do not appear in your Bluesky timeline, and can be removed",
+        "Copy follows UX-writing conventions; no font size below 1rem; colors use existing CSS variables",
+        "CSS changes are scoped to this feature only",
+        "Verify in browser using dev-browser skill",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 13,
-      "passes": true,
-      "notes": "Plan Task 3.0."
+      "passes": false,
+      "notes": "PRD US-A6. Reuse @substrate-system/dialog. Colors from _variables.css / _vars.css. Do not touch unrelated CSS."
     },
     {
       "id": "US-014",
-      "title": "addBlurHashPlaceholders(html, map) client transform (TDD, DOMParser)",
-      "description": "As the reader, I need a transform that swaps <img> elements with a known body-image hash to <blur-hash> placeholders after sanitization.",
+      "title": "Known-rsss-user registry",
+      "description": "As a developer, I need a registry of DIDs that use rsss so the app can offer follows and discovery.",
       "acceptanceCriteria": [
-        "Create src/client/blur-hash-swap.ts exporting addBlurHashPlaceholders(html, imageMap) which replaces eligible <img> with <blur-hash>, copying src and alt and setting placeholder, width/height (from blurhashDecodeSize), loading=lazy, and inline aspect-ratio from real dims",
-        "Imgs without a hash are left untouched; an empty map returns the input unchanged; the transform is idempotent",
-        "Create test/blur-hash-swap.ts (browser, DOMParser) covering swap, leave-untouched, empty-map, idempotent, and decode-size/aspect-ratio; written failing first",
-        "Register the test by adding import './blur-hash-swap.js' to test/browser-tests.ts",
-        "All five swap tests pass: esbuild ./test/blur-hash-swap.ts --bundle | tapout",
-        "Typecheck passes"
+        "On successful login, the user's (did, handle) and optional avatar is recorded in a small login-derived registry",
+        "Registry lookups can answer is DID X an rsss user? and which of this set of DIDs are rsss users?",
+        "No PII beyond DID/handle/avatar is stored in the registry",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 14,
-      "passes": true,
-      "notes": "Plan Task 3.1. Client code may use DOMParser; runs after DOMPurify."
+      "passes": false,
+      "notes": "PRD US-B1 / FR-12. Store in a singleton DO SQLite or D1 (Open Question: pick per existing deployment/migration tooling). Authoritative source for our own user base."
     },
     {
       "id": "US-015",
-      "title": "Wire the blur-hash swap into the article reader",
-      "description": "As a reader, I want article bodies to render blur-hash placeholders for pre-computed body images.",
+      "title": "Configurable microcosm services client (Constellation + Slingshot)",
+      "description": "As a developer, I need a client for the hosted Constellation and Slingshot services with configurable base URLs so a self-hosted microcosm-rs can be swapped in without code changes.",
       "acceptanceCriteria": [
-        "In src/client/routes/item-reader.ts import BlurHash from @substrate-system/blur-hash and addBlurHashPlaceholders, and call BlurHash.define() once at module scope",
-        "Parse item.full_content_images JSON (tolerating parse errors) and extend the articleHtml useMemo to call addBlurHashPlaceholders on the sanitized HTML, with imagesJson added to the memo deps",
-        "Typecheck and lint pass",
-        "npm run test:browser passes (item-reader-render-state and the swap tests)",
-        "Verify in browser using dev-browser skill"
+        "Base URLs for Constellation and Slingshot are read from config (env / wrangler.jsonc vars), defaulting to constellation.microcosm.blue and slingshot.microcosm.blue",
+        "Client exposes Constellation getBacklinks / getDistinct / getBacklinksCount (collection space.rsss.graph.follow, path .subject) and Slingshot record + identity reads",
+        "Every request sends a descriptive User-Agent identifying rsss",
+        "Requests degrade gracefully (typed error or empty result) when a service is unavailable",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 15,
-      "passes": true,
-      "notes": "Plan Task 3.2. Replaces the article-HTML block ~lines 62-69."
+      "passes": false,
+      "notes": "PRD US-B3/US-B4 / FR-17, Technical Considerations. Read-only index/caches; PDS records remain canonical. Tolerate indexing latency."
     },
     {
       "id": "US-016",
-      "title": "Style .article-body blur-hash placeholders",
-      "description": "As a reader, I want body blur-hash placeholders sized correctly with the gray fallback while the blur paints.",
+      "title": "Follow / unfollow an rsss user (server endpoint)",
+      "description": "As a user, I want to follow another rsss user so I can see their published subscriptions, without affecting my Bluesky follows.",
       "acceptanceCriteria": [
-        "In src/client/routes/item-reader.css, inside the .article-body nested block directly after the existing & img rule, add a & blur-hash rule: display block, max-width 100%, height auto, margin 1rem 0, background-color var(--color-placeholder)",
-        "Do not change unrelated CSS; aspect-ratio is set inline by the swap transform",
-        "npm run build passes (Vite + lightningcss, no CSS errors)",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill: blurred placeholder shows at the correct box size then resolves to the image, hashless imgs still show the 037 gray box, and there is no layout jump"
+        "Endpoint writes a space.rsss.graph.follow record (subject = target DID, TID rkey) via createRecord (US-007); unfollow deletes it",
+        "The write does NOT create or modify any app.bsky.graph.follow record",
+        "Follow is idempotent (re-follow does not duplicate); the server may optimistically reflect a new follow in DO state before Constellation indexes it",
+        "Tests pass (idempotency and no app.bsky write)",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 16,
-      "passes": true,
-      "notes": "Plan Task 3.3. Reuse existing --color-placeholder variable."
+      "passes": false,
+      "notes": "PRD US-B2 / FR-8, FR-11. Followers are served by Constellation (US-018), not a home-grown edge index. The follow button UI is added in US-017 and US-021."
     },
     {
       "id": "US-017",
-      "title": "Full verification + scope check",
-      "description": "As a maintainer, I want the full suite, typecheck, and a scope diff to confirm the feature is complete and contained.",
+      "title": "Profile route - view an rsss user's published subscriptions",
+      "description": "As a user, I want to view another user's shared subscriptions so I can decide whether to follow or subscribe to the same feeds.",
       "acceptanceCriteria": [
-        "npm test && npm run lint pass (exit 0), including every new unit test",
-        "npx tsc --noEmit passes",
-        "git diff --stat 037-article-image-placeholders...HEAD shows only the files touched by Phases 1-3 (wrangler.jsonc, new src/server/* and src/client/* modules, DO/index/schema/pull-sync edits, the CSS, new test/* files, test/browser-tests.ts, test/run-all-tests.mjs)",
-        "No eslint config changes and no unrelated changes"
+        "A new profile route reads the target's space.rsss.feed.subscription records via Slingshot (US-015), falling back to public listRecords against the target PDS",
+        "Each listed feed offers a one-action subscribe-for-myself affordance",
+        "A follow/unfollow button (US-016) reflects current follow state",
+        "Handles/DIDs resolve to a display name + avatar; empty and error states are handled",
+        "Verify in browser using dev-browser skill",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 17,
-      "passes": true,
-      "notes": "Plan Task 4."
+      "passes": false,
+      "notes": "PRD US-B3 / FR-13. New route under src/client/routes/. Reads are public (no auth or scope required)."
+    },
+    {
+      "id": "US-018",
+      "title": "Following / followers route",
+      "description": "As a user, I want to see who I follow on rsss and who follows me.",
+      "acceptanceCriteria": [
+        "Following lists the subjects of my space.rsss.graph.follow records",
+        "Followers is answered via Constellation backlinks targeting my DID (getBacklinks/getDistinct, collection space.rsss.graph.follow, path .subject); counts use getBacklinksCount",
+        "UI tolerates Constellation indexing latency (eventual consistency) and degrades gracefully if the service is unavailable",
+        "Counts and lists paginate or cap sensibly for large graphs",
+        "Verify in browser using dev-browser skill",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "PRD US-B4 / FR-12, FR-17. Uses the US-015 Constellation client."
+    },
+    {
+      "id": "US-019",
+      "title": "Read the user's public Bluesky follows",
+      "description": "As a developer, I need the user's existing public Bluesky follows to compute recommendations, using only public data.",
+      "acceptanceCriteria": [
+        "Server fetches the user's follows via the public appview app.bsky.graph.getFollows by DID, paginating as needed",
+        "No app.bsky.* OAuth scope is requested and no write to the Bluesky graph occurs",
+        "Results are cached briefly to avoid hammering the appview",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "PRD US-C1 / FR-14. Public unauthenticated read; needs neither the user's tokens nor any scope."
+    },
+    {
+      "id": "US-020",
+      "title": "Compute recommendations",
+      "description": "As a user, I want suggestions of people I already follow on Bluesky who also use rsss.",
+      "acceptanceCriteria": [
+        "Recommendations = the user's Bluesky follows (US-019) intersected with the rsss registry (US-014), minus people the user already follows on rsss",
+        "Each result includes handle, display name, avatar, and optionally a count of their shared feeds",
+        "Tests pass (intersection and exclusion logic)",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "PRD US-C2 / FR-14."
+    },
+    {
+      "id": "US-021",
+      "title": "Recommended-follows UI",
+      "description": "As a user, I want to act on recommendations easily.",
+      "acceptanceCriteria": [
+        "A discovery surface lists recommended rsss users with a follow action (reuses US-016)",
+        "Clear empty state (none of your Bluesky follows use rsss yet)",
+        "Messaging makes clear rsss is not reading your posts or writing to your Bluesky graph",
+        "Colors use existing variables; CSS scoped to this feature",
+        "Verify in browser using dev-browser skill",
+        "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "PRD US-C3."
     }
   ]
 }
