@@ -9,6 +9,10 @@
 - Deterministic AT Protocol subscription rkeys live in
   `src/shared/subscription-rkey.ts`. Canonicalize the feed URL before hashing,
   and keep callers async because the helper uses WebCrypto `crypto.subtle`.
+- AT Protocol OAuth scopes live in `AT_PROTOCOL_OAUTH_SCOPE` from
+  `src/server/auth/oauth.ts`; use that constant for authorization requests,
+  loopback client IDs, and `/oauth/client-metadata.json` so the scope
+  surfaces cannot drift.
 
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
@@ -195,4 +199,32 @@ Thread: https://ampcode.com/threads/
     params, and rely on `URL.href` for scheme/host/default-port normalization.
   - The rkey helper is async because shared client/server code uses WebCrypto
     rather than Node-only hashing APIs.
+---
+
+## 2026-06-09 13:29 PDT - US-003
+Thread: https://ampcode.com/threads/
+- What was implemented: Added the shared `AT_PROTOCOL_OAUTH_SCOPE` constant
+  and used it for the OAuth authorization request, localhost loopback
+  client ID, and served client metadata. Added focused tests that assert the
+  scope is exactly `atproto repo:space.rsss.feed.subscription
+  repo:space.rsss.graph.follow` and excludes `transition:generic` and
+  `app.bsky.*` scopes.
+- Files changed: src/server/auth/oauth.ts, src/server/index.ts,
+  test/oauth-scopes.ts, test/run-all-tests.mjs, specs/prd.json,
+  progress.log
+- Verification: `npx esbuild ./test/oauth-scopes.ts --bundle
+  --platform=node --format=esm --external:./src/server/blurhash-runtime.js
+  --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npm run lint`;
+  `npx tsc --noEmit`; `npm test`
+- **Learnings for future iterations:**
+  - The OAuth scope has three surfaces: the PAR/authorization parameters in
+    `startOAuthFlow`, the localhost loopback `client_id` in
+    `resolveOAuthClient`, and `/oauth/client-metadata.json`.
+  - Server route tests that import `src/server/index.ts` need the Sentry
+    alias and often `--external:stripe` when bundled through esbuild.
+  - Keep the re-consent comment next to the authorization request scope,
+    since that is the behavior users hit on their next login.
 ---

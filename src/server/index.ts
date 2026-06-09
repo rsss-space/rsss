@@ -8,6 +8,7 @@ import {
     createSessionCookie,
     verifySessionCookie,
     destroySessionCookie,
+    AT_PROTOCOL_OAUTH_SCOPE,
     type OAuthSession,
     type OAuthState
 } from './auth/oauth.js'
@@ -528,7 +529,7 @@ function resolveOAuthClient (
     const redirectUri = `http://127.0.0.1:${url.port}/oauth/callback`
     const params = new URLSearchParams({
         redirect_uri: redirectUri,
-        scope: 'atproto'
+        scope: AT_PROTOCOL_OAUTH_SCOPE
     })
     return {
         clientId: `http://localhost?${params.toString()}`,
@@ -552,7 +553,7 @@ app.get('/oauth/client-metadata.json', (c) => {
         redirect_uris: [
             `${baseUrl}/oauth/callback`
         ],
-        scope: 'atproto',
+        scope: AT_PROTOCOL_OAUTH_SCOPE,
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         token_endpoint_auth_method: 'none',

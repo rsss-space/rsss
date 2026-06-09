@@ -3,6 +3,10 @@
  */
 import { reportError } from '../lib/report-error.js'
 
+export const AT_PROTOCOL_OAUTH_SCOPE =
+    'atproto repo:space.rsss.feed.subscription ' +
+    'repo:space.rsss.graph.follow'
+
 // DPoP key pair used during the PAR + token exchange. The pair is
 // discarded once the exchange completes because we never call the
 // AT Protocol on behalf of the user -- OAuth is used purely to
@@ -337,7 +341,9 @@ export async function startOAuthFlow (
         client_id: clientId,
         redirect_uri: redirectUri,
         state: nonce,
-        scope: 'atproto',
+        // Existing sessions were granted only `atproto`; users must
+        // re-consent on their next login for these repo-specific scopes.
+        scope: AT_PROTOCOL_OAUTH_SCOPE,
         code_challenge: codeChallenge,
         code_challenge_method: 'S256',
         login_hint: did
