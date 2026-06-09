@@ -22,6 +22,11 @@
   base64url-encoded SHA-256 access-token hash as `accessTokenHash`; the
   helper strips query and fragment from `htu` and only exposes public JWK
   members in the JWT header.
+- AT Protocol token refresh lives in
+  `src/server/auth/token-refresh.ts`. Keep credential persistence injected
+  through `persistCredentials` so callers can write through the user's DO;
+  the helper returns a typed `reauth_required` result instead of throwing
+  token-related auth failures.
 
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
@@ -296,4 +301,32 @@ Thread: https://ampcode.com/threads/
     raw access token.
   - DPoP `htu` must omit query and fragment. The helper normalizes this
     with `new URL(...)` before signing.
+---
+
+## 2026-06-09 13:56 PDT - US-006
+Thread: https://ampcode.com/threads/
+- What was implemented: Added a DPoP-bound OAuth token refresh helper that
+  exchanges the stored refresh token at the authorization server token
+  endpoint, retries once when the server returns `use_dpop_nonce` with a
+  `DPoP-Nonce` header, persists rotated access/refresh tokens through an
+  injected callback, and returns a typed `reauth_required` result for
+  unrecoverable auth failures.
+- Files changed: src/server/auth/token-refresh.ts,
+  test/oauth-token-refresh.ts, test/run-all-tests.mjs, specs/prd.json,
+  progress.log
+- Verification: `npx esbuild ./test/oauth-token-refresh.ts --bundle
+  --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx tsc --noEmit`;
+  `npm run lint`
+- **Learnings for future iterations:**
+  - Token endpoint DPoP proofs do not include `ath`; reserve `ath` for PDS
+    requests that send `Authorization: DPoP <access-token>`.
+  - The AT Protocol token endpoint reports auth-server nonce challenges as
+    JSON `{ error: "use_dpop_nonce" }` plus the `DPoP-Nonce` header; retry
+    with that nonce once, then treat continued failure as re-auth required.
+  - Injecting `persistCredentials` keeps refresh usable by future PDS-write
+    helpers without importing the Worker router or Durable Object stub.
 ---
