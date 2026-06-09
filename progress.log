@@ -1,5 +1,12 @@
 # Ralph Progress Log — ralph/article-image-blurhash
 
+## Codebase Patterns
+
+- Shared AT Protocol lexicons live under `src/shared/lexicons/`.
+  Export literal lexicon objects with `as const satisfies LexiconDoc`, then
+  derive record TypeScript types from the lexicon's `record.properties` and
+  `record.required` data instead of duplicating field shapes by hand.
+
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
 
@@ -144,4 +151,25 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
 - **Learnings for future iterations:**
   - Pure CSS tasks have no meaningful unit tests to write; verification is through `npm run build` (lightningcss) and visual browser inspection.
   - `blur-hash` is a custom element tag name so it needs no class selector — `& blur-hash { ... }` as a nested rule inside `.article-body` is the correct form.
+---
+
+## 2026-06-09 13:21 PDT - US-001
+Thread: https://ampcode.com/threads/
+- What was implemented: Added shared AT Protocol lexicon definitions for
+  `space.rsss.feed.subscription` and `space.rsss.graph.follow`, plus
+  derived TypeScript record types based on each lexicon's literal
+  `record.properties` and `record.required` data. Added focused browser
+  tests for the lexicon shape and derived type surface, and registered the
+  test in the consolidated browser bundle.
+- Files changed: src/shared/lexicons/index.ts, test/atproto-lexicons.ts,
+  test/browser-tests.ts, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/atproto-lexicons.ts --bundle |
+  npx tapout`; `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Lexicon records should stay in `src/shared/lexicons/` so both client
+    and server code can import the same definitions.
+  - Keep lexicon objects literal with `as const satisfies LexiconDoc`; this
+    preserves required-field tuples for type derivation.
+  - `tapout` is available through `npx tapout` in direct shell commands; npm
+    scripts provide it on PATH automatically.
 ---
