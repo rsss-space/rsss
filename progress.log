@@ -17,6 +17,11 @@
   `credentials`. The callback persists credentials to the user's Durable
   Object through `PUT /internal/oauth/credentials`; the DO stores the record
   under `oauth:credentials` with `ctx.storage.put`.
+- Server-side PDS requests should use `src/server/auth/dpop-proof.ts` for
+  later DPoP proof JWTs from persisted private JWKs. Pass an already
+  base64url-encoded SHA-256 access-token hash as `accessTokenHash`; the
+  helper strips query and fragment from `htu` and only exposes public JWK
+  members in the JWT header.
 
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
@@ -263,4 +268,32 @@ Thread: https://ampcode.com/threads/
     `fetch(new Request(...))` pattern used by other server-to-DO flows.
   - SQLite-backed Durable Objects can use `ctx.storage.put` for private
     per-object key/value records without adding a SQL migration.
+---
+
+## 2026-06-09 13:47 PDT - US-005
+Thread: https://ampcode.com/threads/
+- What was implemented: Added `src/server/auth/dpop-proof.ts` with a
+  WebCrypto DPoP proof JWT helper for persisted private JWKs and an
+  access-token SHA-256 hash helper. Added focused tests that verify the
+  header, request claims, optional `ath` and `nonce` claims, query/fragment
+  stripping from `htu`, public-only header JWK, and ES256 signature
+  verification with the header public key.
+- Files changed: src/server/auth/dpop-proof.ts, test/dpop-proof.ts,
+  test/run-all-tests.mjs, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/dpop-proof.ts --bundle
+  --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx tsc --noEmit`;
+  `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Later PDS write/refresh code should call `createDPoPProofJwt` with the
+    private JWK stored by US-004, not the exchange-time in-memory
+    `DPoPKeyPair`.
+  - `accessTokenHash` is the already base64url-encoded SHA-256 token hash
+    for the `ath` claim; use `createAccessTokenHash` when starting from a
+    raw access token.
+  - DPoP `htu` must omit query and fragment. The helper normalizes this
+    with `new URL(...)` before signing.
 ---
