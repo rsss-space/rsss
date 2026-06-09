@@ -32,6 +32,14 @@
   `OAuthCredentialRecord`, inject `persistCredentials`, and let the helper
   sign DPoP proofs, retry one PDS nonce challenge, refresh on auth failure,
   and report sanitized `atproto` errors without token material.
+- Adding feed table columns follows the same cross-store pattern as item
+  columns: update `TABLES_SQL`, add a guarded RsssUserDO migration and bump
+  `USER_DO_MIGRATION_VERSION`, project the column through
+  `FEED_SYNC_COLUMNS`, add local OPFS compatibility in
+  `ensureFeedTerminalStateColumns`, and persist the field in both
+  `pull-sync.ts` and `push-sync.ts` feed upserts. Keep newly projected
+  client `Feed` fields optional when existing bootstrap/test payloads may be
+  partial.
 
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
@@ -363,4 +371,35 @@ Thread: https://ampcode.com/threads/
     `persistCredentials`, `now`, and `reportError`.
   - Error reporting context should include operation, collection, status,
     and server error strings, but never OAuth access or refresh tokens.
+---
+
+## 2026-06-09 14:13 PDT - US-008
+Thread: https://ampcode.com/threads/
+- What was implemented: Added per-feed publish state columns for AT
+  Protocol subscription sharing: `published`, `published_rkey`,
+  `published_at`, and `publish_error`. The shared schema now creates the
+  columns, the User DO has a guarded v8 migration, `/sync` projects the
+  fields, and local-first OPFS pull/push feed upserts preserve them.
+  Added focused tests for fresh schema, migration, server sync projection,
+  and local pull-sync storage.
+- Files changed: src/shared/schema.ts,
+  src/server/durable-objects/index.ts, src/client/db/local-db.ts,
+  src/client/db/pull-sync.ts, src/client/db/push-sync.ts,
+  src/client/db/types.ts, test/_test-fixtures.ts, test/do-migrations.ts,
+  test/do-handlers.ts, test/pull-sync.ts, specs/prd.json, progress.log
+- Verification: `npm run test:pull-sync`; `printf "import
+  './test/_test-fixtures.js'; import './test/do-migrations.js';" |
+  npx esbuild --bundle
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts |
+  npx tapout`; `printf "import './test/_test-fixtures.js'; import
+  './test/do-handlers.js';" | npx esbuild --bundle
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts |
+  npx tapout`; `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Feed publish state is part of the normal server-authoritative sync
+    payload; do not add a side channel for UI state.
+  - Constructor-based DO tests need `ctx.setWebSocketAutoResponse` and a
+    `WebSocketRequestResponsePair` shim when running outside Workers.
+  - Tapout uses a fixed local browser server port, so run tapout bundles
+    sequentially rather than in parallel.
 ---

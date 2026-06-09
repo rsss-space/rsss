@@ -244,6 +244,54 @@ test('full sync upserts feeds and items', async (t) => {
     }
 })
 
+test('full sync round-trips feed publish state columns', async (t) => {
+    storeContent.value = true
+    const db = await openLocalDb('did:test:pull-feed-publish-state')
+    try {
+        const syncData = {
+            feeds: [{
+                ...FEED,
+                last_pulled_at: null,
+                published: 1,
+                published_rkey: 'feed.abc123',
+                published_at: '2026-06-09 13:00:00',
+                publish_error: null
+            }],
+            items: [],
+            syncedAt: '2026-06-09 13:01:00',
+            latestUpdatedAt: '2026-06-09 13:00:00',
+            isFullSync: true
+        }
+        await pullSync(db, makeFetch(syncData))
+
+        const feed = queryOne<{
+            published:number
+            published_rkey:string|null
+            published_at:string|null
+            publish_error:string|null
+        }>(
+            db,
+            `SELECT published, published_rkey, published_at, publish_error
+             FROM feeds WHERE id = 1`
+        )
+
+        t.equal(feed?.published, 1, 'published flag is stored')
+        t.equal(
+            feed?.published_rkey,
+            'feed.abc123',
+            'published_rkey is stored'
+        )
+        t.equal(
+            feed?.published_at,
+            '2026-06-09 13:00:00',
+            'published_at is stored'
+        )
+        t.equal(feed?.publish_error, null, 'publish_error is stored')
+    } finally {
+        db.close()
+    }
+})
+
 test('full sync round-trips item full_content columns', async (t) => {
     storeContent.value = true
     const db = await openLocalDb('did:test:pull-fullcontent')

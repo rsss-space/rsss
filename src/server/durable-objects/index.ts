@@ -124,7 +124,7 @@ const MANUAL_REFRESH_STORAGE_PREFIX = 'manual_refresh:'
 const ALARM_REFRESH_CURSOR_KEY = 'alarm_refresh_cursor'
 const PENDING_DELETION_KEY = 'pending_deletion'
 const MIGRATION_STATE_KEY = 'schema_migration'
-const USER_DO_MIGRATION_VERSION = 7
+const USER_DO_MIGRATION_VERSION = 8
 const FEEDS_UPDATED_AT_BUMP_KEY = 'feeds_updated_at_bump_for_last_pulled_at'
 const SYNC_PAGE_LIMIT = 500
 const FETCH_FULL_THROTTLE_PREFIX = 'fetch_full:'
@@ -140,7 +140,8 @@ export const POST_HYBRID_WAIT_MS = 3000
 export const RESOLVE_TIMEOUT_ERROR = 'Initial fetch did not complete'
 const FEED_SYNC_COLUMNS = `
     id, url, title, description, site_url, last_fetched, last_pulled_at,
-    last_error, last_status, created_at, updated_at
+    last_error, last_status, published, published_rkey, published_at,
+    publish_error, created_at, updated_at
 `
 const ITEM_COLUMNS = `
     items.id, items.feed_id, items.guid, items.title, items.link,
@@ -469,6 +470,7 @@ export class RsssUserDO extends DurableObject<Env> {
             this.migrateAddItemThumbnail()
             this.migrateAddItemImageMetadata()
             this.migrateAddLastPulledAt()
+            this.migrateAddFeedPublishState()
             this.migrateAddItemFullContent()
             this.migrateAddFullContentImages()
             await this.ctx.storage.put(MIGRATION_STATE_KEY, {
@@ -628,6 +630,27 @@ export class RsssUserDO extends DurableObject<Env> {
                     AND pub_date IS NOT NULL
                 )
             `)
+        }
+    }
+
+    private migrateAddFeedPublishState () {
+        const cols = this.sql.exec('PRAGMA table_info(feeds)').toArray()
+        const has = (name:string) => cols.some(
+            (col:unknown) => (col as { name:string }).name === name
+        )
+        const columns = [
+            ['published', 'INTEGER NOT NULL DEFAULT 0'],
+            ['published_rkey', 'TEXT'],
+            ['published_at', 'TEXT'],
+            ['publish_error', 'TEXT']
+        ]
+
+        for (const [name, type] of columns) {
+            if (!has(name)) {
+                this.sql.exec(
+                    `ALTER TABLE feeds ADD COLUMN ${name} ${type}`
+                )
+            }
         }
     }
 

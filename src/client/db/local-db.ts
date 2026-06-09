@@ -122,6 +122,21 @@ export async function ensureFeedTerminalStateColumns (
     if (!has('last_status')) {
         await execDb(db, 'ALTER TABLE feeds ADD COLUMN last_status INTEGER')
     }
+    if (!has('published')) {
+        await execDb(
+            db,
+            'ALTER TABLE feeds ADD COLUMN published INTEGER NOT NULL DEFAULT 0'
+        )
+    }
+    if (!has('published_rkey')) {
+        await execDb(db, 'ALTER TABLE feeds ADD COLUMN published_rkey TEXT')
+    }
+    if (!has('published_at')) {
+        await execDb(db, 'ALTER TABLE feeds ADD COLUMN published_at TEXT')
+    }
+    if (!has('publish_error')) {
+        await execDb(db, 'ALTER TABLE feeds ADD COLUMN publish_error TEXT')
+    }
     feedTerminalStateColumnsReady.add(db)
 }
 

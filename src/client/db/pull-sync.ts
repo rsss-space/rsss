@@ -164,8 +164,9 @@ async function upsertFeed (
         sql: `INSERT INTO feeds
             (id, url, title, description, site_url, last_fetched,
              last_pulled_at, last_error, last_status,
+             published, published_rkey, published_at, publish_error,
              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 url = excluded.url,
                 title = excluded.title,
@@ -175,6 +176,10 @@ async function upsertFeed (
                 last_pulled_at = excluded.last_pulled_at,
                 last_error = excluded.last_error,
                 last_status = excluded.last_status,
+                published = excluded.published,
+                published_rkey = excluded.published_rkey,
+                published_at = excluded.published_at,
+                publish_error = excluded.publish_error,
                 updated_at = excluded.updated_at`,
         bind: [
             feed.id as number,
@@ -186,6 +191,10 @@ async function upsertFeed (
             (feed.last_pulled_at as string|null) ?? null,
             (feed.last_error as string|null) ?? null,
             (feed.last_status as number|null) ?? null,
+            (feed.published as number) ?? 0,
+            (feed.published_rkey as string|null) ?? null,
+            (feed.published_at as string|null) ?? null,
+            (feed.publish_error as string|null) ?? null,
             feed.created_at as string,
             feed.updated_at as string
         ]

@@ -8,6 +8,13 @@ interface FeedRow {
     description:string|null
     site_url:string|null
     last_fetched:string|null
+    last_pulled_at:string|null
+    last_error:string|null
+    last_status:number|null
+    published:number
+    published_rkey:string|null
+    published_at:string|null
+    publish_error:string|null
     created_at:string
     updated_at:string
 }
@@ -61,6 +68,13 @@ function feedRow (id:number, url:string, title:string|null):FeedRow {
         description: null,
         site_url: null,
         last_fetched: null,
+        last_pulled_at: null,
+        last_error: null,
+        last_status: null,
+        published: 0,
+        published_rkey: null,
+        published_at: null,
+        publish_error: null,
         created_at: '2026-04-26 00:00:00',
         updated_at: '2026-04-26 00:00:00'
     }
@@ -125,6 +139,7 @@ function createSql (options:{
         feeds,
         calls: [] as string[],
         itemQueries: [] as string[],
+        feedSyncQueries: [] as string[],
         blurhashUpdates: [] as unknown[][],
         feedVersionBumps: 0,
         setPendingCountRows (rows:PendingCountRow[]) {
@@ -137,7 +152,16 @@ function createSql (options:{
             }
 
             if (
-                query.includes('FROM items JOIN feeds') &&
+                query.includes('FROM items') &&
+                query.includes('JOIN feeds') &&
+                query.includes('ORDER BY items.updated_at ASC')
+            ) {
+                return result(items)
+            }
+
+            if (
+                query.includes('FROM items') &&
+                query.includes('JOIN feeds') &&
                 query.includes('ORDER BY items.pub_date DESC')
             ) {
                 this.calls.push('items')
@@ -149,6 +173,22 @@ function createSql (options:{
                 return result([...feeds].sort((a, b) => {
                     return (a.title || '').localeCompare(b.title || '')
                 }))
+            }
+
+            if (
+                query.includes('FROM feeds') &&
+                query.includes('ORDER BY updated_at ASC, id ASC')
+            ) {
+                this.feedSyncQueries.push(query)
+                return result(feeds)
+            }
+
+            if (query.includes('SELECT MAX(updated_at) as latest FROM feeds')) {
+                return result([{ latest: feeds[0]?.updated_at ?? null }])
+            }
+
+            if (query.includes('SELECT MAX(updated_at) as latest FROM items')) {
+                return result([{ latest: items[0]?.updated_at ?? null }])
             }
 
             if (query.includes('SELECT id FROM feeds WHERE url = ?')) {
@@ -470,6 +510,39 @@ test(
         t.ok(query.includes('LIMIT 50'), 'query limits to first page')
     }
 )
+
+test('RsssUserDO sync projects feed publish state columns', async t => {
+    const { app, sql } = createDoHarness({
+        feeds: [{
+            ...feedRow(9, 'https://published.example/feed.xml', 'Shared'),
+            published: 1,
+            published_rkey: 'feed.abc123',
+            published_at: '2026-06-09 13:00:00',
+            publish_error: null
+        }],
+        items: []
+    })
+
+    const response = await app.request('/sync')
+    const body = await response.json() as { feeds:FeedRow[] }
+
+    t.equal(response.status, 200, 'sync returns 200')
+    t.equal(
+        body.feeds[0]?.published,
+        1,
+        'published state is included in sync payload'
+    )
+    t.equal(
+        body.feeds[0]?.published_rkey,
+        'feed.abc123',
+        'published rkey is included in sync payload'
+    )
+    const query = sql.feedSyncQueries[0] ?? ''
+    t.ok(query.includes('published'), 'sync selects published')
+    t.ok(query.includes('published_rkey'), 'sync selects published_rkey')
+    t.ok(query.includes('published_at'), 'sync selects published_at')
+    t.ok(query.includes('publish_error'), 'sync selects publish_error')
+})
 
 test('RsssUserDO manual feed refresh is rate limited per feed', async t => {
     const { app, refreshed, storage } = createDoHarness()

@@ -120,7 +120,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A1 / FR-10. DO migrations live in src/server/durable-objects/index.ts (migrateAddItemImageMetadata etc; USER_DO_MIGRATION_VERSION). Record/shared types in src/shared/schema.ts."
     },
     {

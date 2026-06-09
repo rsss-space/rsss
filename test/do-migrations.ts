@@ -37,7 +37,11 @@ function createConstructorContext (storedVersion:number | null) {
                             { name: 'updated_at' },
                             { name: 'last_error' },
                             { name: 'last_status' },
-                            { name: 'last_pulled_at' }
+                            { name: 'last_pulled_at' },
+                            { name: 'published' },
+                            { name: 'published_rkey' },
+                            { name: 'published_at' },
+                            { name: 'publish_error' }
                         ])
                     }
                     if (query.includes('PRAGMA table_info(items)')) {
@@ -62,6 +66,7 @@ function createConstructorContext (storedVersion:number | null) {
             getAlarm: async () => Date.now(),
             setAlarm: async () => {}
         },
+        setWebSocketAutoResponse: () => {},
         blockConcurrencyWhile: (fn:() => Promise<void>) => {
             barrier = fn()
         }
@@ -77,7 +82,7 @@ function createConstructorContext (storedVersion:number | null) {
 
 test('RsssUserDO skips migration introspection when version is current',
     async t => {
-        const currentMigrationVersion = 6
+        const currentMigrationVersion = 8
         const setup = createConstructorContext(currentMigrationVersion)
 
         const userDo = new RsssUserDO(setup.ctx, {} as never)
@@ -117,12 +122,12 @@ test('RsssUserDO reruns migrations when stored version is stale', async t => {
     t.ok(userDo, 'Durable Object constructed successfully')
     t.equal(
         introspectionQueries.length,
-        7,
+        9,
         'stale migration version runs all column checks'
     )
     t.deepEqual(
         setup.writes,
-        [{ migration_v: 6 }],
+        [{ migration_v: 8 }],
         'current migration version is persisted'
     )
 })
@@ -167,6 +172,22 @@ test('fresh item schema includes nullable image metadata columns', t => {
         t.ok(
             TABLES_SQL.includes(column),
             `items table includes ${column}`
+        )
+    }
+})
+
+test('fresh feed schema includes publish state columns', t => {
+    const expectedColumns = [
+        'published INTEGER NOT NULL DEFAULT 0',
+        'published_rkey TEXT',
+        'published_at TEXT',
+        'publish_error TEXT'
+    ]
+
+    for (const column of expectedColumns) {
+        t.ok(
+            TABLES_SQL.includes(column),
+            `feeds table includes ${column}`
         )
     }
 })
@@ -312,6 +333,44 @@ test('RsssUserDO migrates missing item image metadata columns', async t => {
         t.ok(
             setup.statements.some(query => query.includes(migration)),
             `${migration} is run for existing item tables`
+        )
+    }
+})
+
+test('RsssUserDO migrates missing feed publish state columns', async t => {
+    const setup = createConstructorContext(7)
+    const originalExec = setup.ctx.storage.sql.exec.bind(
+        setup.ctx.storage.sql
+    )
+
+    setup.ctx.storage.sql.exec = ((query:string) => {
+        if (query.includes('PRAGMA table_info(feeds)')) {
+            return result([
+                { name: 'updated_at' },
+                { name: 'last_error' },
+                { name: 'last_status' },
+                { name: 'last_pulled_at' }
+            ])
+        }
+
+        return originalExec(query)
+    }) as typeof setup.ctx.storage.sql.exec
+
+    const userDo = new RsssUserDO(setup.ctx, {} as never)
+    await setup.ready()
+
+    const expectedMigrations = [
+        'ALTER TABLE feeds ADD COLUMN published INTEGER NOT NULL DEFAULT 0',
+        'ALTER TABLE feeds ADD COLUMN published_rkey TEXT',
+        'ALTER TABLE feeds ADD COLUMN published_at TEXT',
+        'ALTER TABLE feeds ADD COLUMN publish_error TEXT'
+    ]
+
+    t.ok(userDo, 'Durable Object constructed successfully')
+    for (const migration of expectedMigrations) {
+        t.ok(
+            setup.statements.some(query => query.includes(migration)),
+            `${migration} is run for existing feed tables`
         )
     }
 })

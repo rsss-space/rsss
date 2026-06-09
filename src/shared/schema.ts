@@ -53,6 +53,10 @@ export const TABLES_SQL = `
         last_pulled_at TEXT,
         last_error TEXT,
         last_status INTEGER,
+        published INTEGER NOT NULL DEFAULT 0,
+        published_rkey TEXT,
+        published_at TEXT,
+        publish_error TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
     );
