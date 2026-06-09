@@ -6,6 +6,9 @@
   Export literal lexicon objects with `as const satisfies LexiconDoc`, then
   derive record TypeScript types from the lexicon's `record.properties` and
   `record.required` data instead of duplicating field shapes by hand.
+- Deterministic AT Protocol subscription rkeys live in
+  `src/shared/subscription-rkey.ts`. Canonicalize the feed URL before hashing,
+  and keep callers async because the helper uses WebCrypto `crypto.subtle`.
 
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
@@ -172,4 +175,24 @@ Thread: https://ampcode.com/threads/
     preserves required-field tuples for type derivation.
   - `tapout` is available through `npx tapout` in direct shell commands; npm
     scripts provide it on PATH automatically.
+---
+
+## 2026-06-09 13:25 PDT - US-002
+Thread: https://ampcode.com/threads/
+- What was implemented: Added a shared deterministic subscription rkey helper
+  for AT Protocol feed subscription records. The helper canonicalizes feed
+  URLs, hashes the canonical URL with SHA-256, returns a lower-case
+  `feed.<hex>` rkey, and exposes a baseline AT Protocol record-key validator.
+- Files changed: src/shared/subscription-rkey.ts, test/subscription-rkey.ts,
+  test/browser-tests.ts, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/subscription-rkey.ts --bundle |
+  npx tapout`; `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - AT Protocol record keys allow only ASCII alphanumerics plus `.-_:~`,
+    must be 1-512 chars, and cannot be `.` or `..`; lower-case keys are
+    recommended.
+  - URL canonicalization should strip hashes and credentials, sort query
+    params, and rely on `URL.href` for scheme/host/default-port normalization.
+  - The rkey helper is async because shared client/server code uses WebCrypto
+    rather than Node-only hashing APIs.
 ---

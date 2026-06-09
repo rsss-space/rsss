@@ -60,6 +60,7 @@ import './article-prefetch-eligible.js'
 import './full-content-images.js'
 import './blur-hash-swap.js'
 import './atproto-lexicons.js'
+import './subscription-rkey.js'
 
 test('all done', () => {
     if (window) {
