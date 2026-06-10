@@ -80,6 +80,8 @@ export interface Env {
     ADMIN_TOKEN?:string;
     APP_ORIGIN?:string;
     NODE_ENV:string;
+    CONSTELLATION_URL?:string;
+    SLINGSHOT_URL?:string;
     SENTRY_DSN?:string;
 }
 

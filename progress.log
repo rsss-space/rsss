@@ -587,3 +587,37 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Registry DO migration must be added to ALL three places in
     wrangler.jsonc: top-level, env.staging, and env.production.
 ---
+
+## 2026-06-10 - US-015
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `src/server/microcosm-client.ts` with
+  `createConstellationClient` and `createSlingshotClient` factories.
+  Constellation exposes `getBacklinks`, `getBacklinksCount`, and
+  `getDistinct` for the `space.rsss.graph.follow` collection; Slingshot
+  exposes `getRecord` and `resolveIdentity`. Both clients accept an
+  optional `baseUrl` (defaulting to constellation.microcosm.blue and
+  slingshot.microcosm.blue respectively) and an optional `fetch` dep for
+  testing. Every request sends `RSSS_USER_AGENT`. All methods return a
+  `MicrocosmServiceError` typed error on network failure or non-2xx
+  response rather than throwing. Added `CONSTELLATION_URL` and
+  `SLINGSHOT_URL` optional vars to the `Env` interface in
+  `src/server/index.ts`.
+- Files changed: src/server/microcosm-client.ts (new),
+  src/server/index.ts, test/microcosm-client.ts (new),
+  test/run-microcosm-client.mjs (new), specs/prd.json, progress.log
+- Verification: `node test/run-microcosm-client.mjs` (40/40 passing);
+  `npx tsc --noEmit`; `npm run lint`; `npm test` (full suite, no regressions)
+- **Learnings for future iterations:**
+  - Microcosm Constellation endpoints follow xrpc-style paths:
+    `blue.microcosm.constellation.getBacklinks`,
+    `blue.microcosm.constellation.getBacklinksCount`,
+    `blue.microcosm.constellation.getDistinct`.
+  - Slingshot proxies standard AT Protocol xrpc endpoints:
+    `com.atproto.repo.getRecord`, `com.atproto.identity.resolveIdentity`.
+  - The `createConstellationClient` and `createSlingshotClient` factories
+    accept `{ baseUrl?, fetch? }` — inject `fetch` in tests; set `baseUrl`
+    from `env.CONSTELLATION_URL` / `env.SLINGSHOT_URL` in route handlers.
+  - All error paths return `{ code: 'service_unavailable', ... }` instead
+    of throwing; callers can distinguish success from failure with
+    `'code' in result`.
+---

@@ -225,7 +225,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-B3/US-B4 / FR-17, Technical Considerations. Read-only index/caches; PDS records remain canonical. Tolerate indexing latency."
     },
     {
