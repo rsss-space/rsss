@@ -8,6 +8,7 @@ import {
     TRIGGERS_SQL,
     DEAD_LETTER_OUTBOX_SQL,
     USER_STATE_SQL,
+    GRAPH_FOLLOWS_SQL,
     ALL_FULL_CONTENT_STATUSES,
     type FullContentStatus,
     isSuccessStatus,
@@ -24,10 +25,16 @@ import {
     fetchOgImage,
     validateFeedUrl
 } from '../feed-fetch.js'
-import { deleteRecord, putRecord } from '../auth/pds-write-client.js'
+import {
+    deleteRecord,
+    putRecord,
+    createRecord
+} from '../auth/pds-write-client.js'
 import {
     feedSubscriptionLexicon,
-    type FeedSubscriptionRecord
+    graphFollowLexicon,
+    type FeedSubscriptionRecord,
+    type GraphFollowRecord
 } from '../../shared/lexicons/index.js'
 import { subscriptionRkeyForFeedUrl } from
     '../../shared/subscription-rkey.js'
@@ -525,6 +532,7 @@ export class RsssUserDO extends DurableObject<Env> {
         this.sql.exec(TRIGGERS_SQL)
         this.sql.exec(DEAD_LETTER_OUTBOX_SQL)
         this.sql.exec(USER_STATE_SQL)
+        this.sql.exec(GRAPH_FOLLOWS_SQL)
     }
 
     /**
@@ -1106,6 +1114,107 @@ export class RsssUserDO extends DurableObject<Env> {
         ).one() as Record<string, unknown> | null
 
         return { ok: true, feed: updated }
+    }
+
+    private async followUser (targetDid:string):Promise<
+        | { ok:true; alreadyFollowing:boolean }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        const existing = this.sql.exec(
+            'SELECT rkey FROM graph_follows WHERE subject_did = ?',
+            targetDid
+        ).one() as { rkey:string } | null
+
+        if (existing) {
+            return { ok: true, alreadyFollowing: true }
+        }
+
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return { ok: false, status: 401, error: 'reauth_required' }
+        }
+
+        const record:GraphFollowRecord = {
+            subject: targetDid,
+            createdAt: new Date().toISOString()
+        }
+
+        const result = await createRecord(credentials, {
+            collection: graphFollowLexicon.id,
+            record
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        const body = result.body as Record<string, unknown>
+        const uri = typeof body.uri === 'string' ? body.uri : ''
+        const rkey = uri.split('/').pop() ?? ''
+
+        this.sql.exec(
+            `INSERT INTO graph_follows (subject_did, rkey)
+             VALUES (?, ?)`,
+            targetDid,
+            rkey
+        )
+
+        return { ok: true, alreadyFollowing: false }
+    }
+
+    private async unfollowUser (targetDid:string):Promise<
+        | { ok:true }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        const existing = this.sql.exec(
+            'SELECT rkey FROM graph_follows WHERE subject_did = ?',
+            targetDid
+        ).one() as { rkey:string } | null
+
+        if (!existing) {
+            return { ok: true }
+        }
+
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return { ok: false, status: 401, error: 'reauth_required' }
+        }
+
+        const result = await deleteRecord(credentials, {
+            collection: graphFollowLexicon.id,
+            rkey: existing.rkey
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        this.sql.exec(
+            'DELETE FROM graph_follows WHERE subject_did = ?',
+            targetDid
+        )
+
+        return { ok: true }
     }
 
     private createRouter (): Hono {
@@ -2208,6 +2317,37 @@ export class RsssUserDO extends DurableObject<Env> {
 
         app.delete('/internal/account/deletion', async (c) => {
             await this.ctx.storage.delete(PENDING_DELETION_KEY)
+            return c.json({ ok: true })
+        })
+
+        app.post('/graph/follow', async (c) => {
+            const body = await c.req.json<{
+                targetDid?:unknown
+            }>().catch(() => ({ targetDid: undefined }))
+            const targetDid = body.targetDid
+            if (typeof targetDid !== 'string' || !targetDid) {
+                return c.json({ error: 'invalid_body' }, 400)
+            }
+
+            const result = await this.followUser(targetDid)
+            if (!result.ok) {
+                return c.json({ error: result.error }, result.status)
+            }
+
+            return c.json({ ok: true }, result.alreadyFollowing ? 200 : 201)
+        })
+
+        app.delete('/graph/follow/:targetDid', async (c) => {
+            const targetDid = c.req.param('targetDid')
+            if (!targetDid) {
+                return c.json({ error: 'invalid_target' }, 400)
+            }
+
+            const result = await this.unfollowUser(targetDid)
+            if (!result.ok) {
+                return c.json({ error: result.error }, result.status)
+            }
+
             return c.json({ ok: true })
         })
 

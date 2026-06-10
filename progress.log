@@ -621,3 +621,34 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     of throwing; callers can distinguish success from failure with
     `'code' in result`.
 ---
+
+## 2026-06-10 - US-016
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added follow/unfollow endpoints to the
+  RsssUserDO. A new `graph_follows` SQLite table (subject_did UNIQUE,
+  rkey) persists follow rkeys for idempotency and unfollow support.
+  Two new private methods — `followUser` and `unfollowUser` — use
+  `createRecord` / `deleteRecord` from the PDS write client to write /
+  delete `space.rsss.graph.follow` records on the user's own PDS.
+  Two new DO routes are registered: `POST /graph/follow` (body:
+  `{ targetDid }`) and `DELETE /graph/follow/:targetDid`. Re-follow
+  returns 200 (no PDS write); unfollow of an unknown DID returns 200
+  (no PDS write). The implementation never touches `app.bsky.graph.follow`.
+- Files changed: src/shared/schema.ts (added GRAPH_FOLLOWS_SQL),
+  src/server/durable-objects/index.ts (import, table init, methods,
+  routes), test/graph-follow.ts (new, 27 tests),
+  test/run-graph-follow.mjs (new), specs/prd.json, progress.log
+- Verification: node test/run-graph-follow.mjs (27/27 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, no regressions)
+- **Learnings for future iterations:**
+  - `graph_follows` table uses UNIQUE on subject_did for DB-level
+    idempotency; route handler checks existence first to skip PDS call.
+  - `createRecord` without `rkey` lets the PDS assign a TID; the
+    returned `uri` (`at://did/.../rkey`) carries the rkey — extract
+    with `uri.split('/').pop()`.
+  - `GRAPH_FOLLOWS_SQL` uses `CREATE TABLE IF NOT EXISTS` so it is
+    safe to call repeatedly in `initDatabase`.
+  - Test harness for graph_follows mirrors the do-handlers.ts pattern:
+    mock sql.exec via query-string matching; bypass initDatabase by
+    directly assigning `userDo.sql`.
+---

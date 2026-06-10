@@ -141,5 +141,14 @@ export const USER_STATE_SQL = `
     INSERT OR IGNORE INTO user_state (id, feed_version) VALUES (1, 0);
 `
 
+export const GRAPH_FOLLOWS_SQL = `
+    CREATE TABLE IF NOT EXISTS graph_follows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_did TEXT NOT NULL UNIQUE,
+        rkey TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+    );
+`
+
 /** Full schema: tables + indexes + triggers. Suitable for fresh databases. */
 export const SCHEMA_SQL = TABLES_SQL + INDEXES_SQL + TRIGGERS_SQL
