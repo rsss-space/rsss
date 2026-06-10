@@ -557,3 +557,33 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     in `payment-method-modal.ts` covers all files but is easy to miss —
     redeclaring it in components that need it is safe and explicit.
 ---
+
+## 2026-06-10 - US-014
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added RsssRegistryDO singleton Durable Object in
+  src/server/durable-objects/registry.ts. The DO holds a SQLite table
+  known_users (did, handle, avatar, updated_at) and exposes three
+  internal HTTP routes: POST /upsert (idempotent upsert on DID),
+  GET /lookup/:did (is DID an rsss user?), and POST /batch-lookup
+  (subset of a DID set that are rsss users). On successful OAuth callback
+  the worker calls upsertRegistryUser via executionCtx.waitUntil so
+  every login records the user. Public API routes GET
+  /api/registry/lookup/:did and POST /api/registry/batch-lookup proxy
+  to the singleton DO. The DO is exported as RsssRegistryDO and
+  registered in wrangler.jsonc (migration v4) for all environments.
+- Files changed: src/server/durable-objects/registry.ts (new),
+  src/server/index.ts, wrangler.jsonc, package.json,
+  test/registry.ts (new), test/run-registry.mjs (new),
+  specs/prd.json, progress.log
+- Verification: npm run test:registry (20/20 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, no regressions)
+- **Learnings for future iterations:**
+  - Singleton DOs are accessed via idFromName('global') and do not
+    need per-user routing.
+  - SqlStorage.exec().one() returns Record<string, SqlStorageValue>|null,
+    not the typed shape -- always cast through unknown first (as unknown as T).
+  - executionCtx.waitUntil on the Hono context is
+    c.executionCtx.waitUntil(promise).
+  - Registry DO migration must be added to ALL three places in
+    wrangler.jsonc: top-level, env.staging, and env.production.
+---

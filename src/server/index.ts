@@ -17,6 +17,9 @@ import {
     RsssUserDO as RsssUserDOBase,
     type Env as RsssUserDOEnv
 } from './durable-objects/index.js'
+import {
+    RsssRegistryDO as RsssRegistryDOBase
+} from './durable-objects/registry.js'
 import { withIsolationHeaders } from './isolation-headers.js'
 import {
     BILLING_PLAN_IDS,
@@ -58,6 +61,7 @@ import type * as BlurhashRuntime from './blurhash-runtime.js'
 
 export interface Env {
     USER_DO:DurableObjectNamespace<RsssUserDOBase>;
+    REGISTRY_DO?:DurableObjectNamespace<RsssRegistryDOBase>;
     SESSIONS:KVNamespace;
     BLURHASH_KV:KVNamespace;
     HTML_KV?:KVNamespace;
@@ -752,6 +756,11 @@ app.post('/api/auth/callback', async (c) => {
 
         await persistOAuthCredentials(c.env, credentials)
 
+        // Record in known-user registry (best-effort, non-blocking)
+        c.executionCtx.waitUntil(
+            upsertRegistryUser(c.env, session)
+        )
+
         // Create session cookie
         const sessionCookie = await createSessionCookie(
             session,
@@ -915,6 +924,33 @@ function getRsssUserDO (
     // Use the DID as the DO name for consistent routing
     const id = env.USER_DO.idFromName(did)
     return env.USER_DO.get(id)
+}
+
+function getRegistryDO (
+    env:Env
+):DurableObjectStub<RsssRegistryDOBase>|null {
+    if (!env.REGISTRY_DO) return null
+    const id = env.REGISTRY_DO.idFromName('global')
+    return env.REGISTRY_DO.get(id)
+}
+
+async function upsertRegistryUser (
+    env:Env,
+    session:OAuthSession
+):Promise<void> {
+    const stub = getRegistryDO(env)
+    if (!stub) return
+    await stub.fetch(
+        new Request('http://registry/upsert', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                did: session.did,
+                handle: session.handle,
+                avatar: session.avatar ?? null
+            })
+        })
+    )
 }
 
 async function persistOAuthCredentials (
@@ -1960,6 +1996,45 @@ dataRouter.all('*', async (c) => {
 
 app.route('/api', dataRouter)
 
+/**
+ * Registry: check if a DID is a known rsss user.
+ * Public (no auth required) — only DID/handle/avatar are stored.
+ */
+app.get('/api/registry/lookup/:did', async (c) => {
+    const stub = getRegistryDO(c.env)
+    if (!stub) return c.json({ known: false }, 200)
+    const did = c.req.param('did')
+    const res = await stub.fetch(
+        new Request(`http://registry/lookup/${encodeURIComponent(did)}`)
+    )
+    return new Response(res.body, {
+        status: res.status,
+        headers: { 'content-type': 'application/json' }
+    })
+})
+
+/**
+ * Registry: batch lookup — which of these DIDs are rsss users?
+ * Body: { dids: string[] }
+ * Returns: { users: { did, handle, avatar }[] }
+ */
+app.post('/api/registry/batch-lookup', async (c) => {
+    const stub = getRegistryDO(c.env)
+    if (!stub) return c.json({ users: [] }, 200)
+    const body = await c.req.json<{ dids?:unknown }>()
+    const res = await stub.fetch(
+        new Request('http://registry/batch-lookup', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+    )
+    return new Response(res.body, {
+        status: res.status,
+        headers: { 'content-type': 'application/json' }
+    })
+})
+
 app.use('/admin/*', requireAdmin, adminRateLimit)
 
 /**
@@ -2116,6 +2191,9 @@ export const RsssUserDO = Sentry.instrumentDurableObjectWithSentry(
     getDOSentryOptions,
     RsssUserDOBase
 )
+
+// Wrangler resolves by export name — keep this named `RsssRegistryDO`.
+export const RsssRegistryDO = RsssRegistryDOBase
 
 // Wrap the worker so fetch and queue handlers report to Sentry.
 export default Sentry.withSentry(getSentryOptions, worker)
