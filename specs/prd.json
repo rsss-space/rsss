@@ -181,7 +181,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A2. UI in src/client/routes/feeds.ts + feeds.css. Reuse @substrate-system/check-box/button. Memory: links not buttons for navigation."
     },
     {

@@ -46,6 +46,11 @@
   `feed_version` once per changed pass, and gate runs with the
   `publish_reconcile:last_attempt` storage cooldown. Missing OAuth
   credentials should skip without consuming the cooldown.
+- Client feed publish/unpublish UI should keep transient per-feed progress
+  and error state on `AppState` signal maps keyed by feed id. The persisted
+  source of truth remains the returned feed row from the existing server
+  endpoints; merge that row into `state.feeds` and mirror it locally with
+  `upsertFeedFromServer` when local-first is active.
 - Adding feed table columns follows the same cross-store pattern as item
   columns: update `TABLES_SQL`, add a guarded RsssUserDO migration and bump
   `USER_DO_MIGRATION_VERSION`, project the column through
@@ -494,4 +499,31 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     tests and future UI-driven reconnect flows.
   - Check OAuth credentials before recording the reconcile cooldown; a
     missing-credentials skip must not block the first run after reconnect.
+---
+
+## 2026-06-10 16:13 PDT - US-012
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added per-feed "Share to Bluesky" controls to the
+  feeds route. The controls use `@substrate-system/check-box`, reflect the
+  server-synced `published` feed state, call the existing
+  `/api/feeds/:id/publish` POST/DELETE endpoints through
+  `State.toggleFeedPublished`, and show per-feed saving, published, and
+  failed states from `@preact/signals`.
+- Files changed: src/client/components/feed-nav.ts,
+  src/client/routes/feeds.css, src/client/state.ts,
+  test/feed-share-toggle.ts, test/browser-tests.ts, specs/prd.json,
+  progress.log
+- Verification: focused `test/feed-share-toggle.ts` browser bundle;
+  `npm run lint`; `npx tsc --noEmit --pretty false`; `npm run stylelint`;
+  browser fallback verification at `http://127.0.0.1:2222/feeds`;
+  `npm test`.
+- **Learnings for future iterations:**
+  - Feed share UI state should live on `AppState` signal maps keyed by feed
+    id, while the feed row itself remains the authoritative source for
+    persisted publish state.
+  - Client publish/unpublish should use the existing server endpoint and
+    merge the returned feed row into `state.feeds`; if local-first is active,
+    mirror that row with `upsertFeedFromServer`.
+  - In direct shell commands, use `npx tapout`; `tapout` is not on PATH
+    outside npm scripts.
 ---

@@ -1,6 +1,7 @@
 import { html } from 'htm/preact/index.js'
 import { type FunctionComponent, Fragment } from 'preact'
 import { useState, useCallback } from 'preact/hooks'
+import { CheckBox } from '@substrate-system/check-box'
 import { CogWheel } from './cog-wheel.js'
 import { SidebarItem } from './sidebar-item.js'
 import { SidebarFooter } from '../components/sidebar-footer.js'
@@ -45,6 +46,14 @@ export const FeedNav:FunctionComponent<{
                 'feed ID: ' + feed.id
             )
         }
+    }
+
+    async function handleShareFeed (
+        ev:Event,
+        feed:Feed
+    ):Promise<void> {
+        const checked = (ev.target as HTMLInputElement).checked
+        await State.toggleFeedPublished(state, feed.id, checked)
     }
 
     const handleAddFeed = useCallback(async (
@@ -164,6 +173,26 @@ export const FeedNav:FunctionComponent<{
                             .perFeed[String(feed.id)] ?? 0
                         const pending = (state
                             .feedUpdateCounts.value[String(feed.id)] ?? 0)
+                        const publishKey = String(feed.id)
+                        const publishPending = Boolean(
+                            state.feedPublishInProgress
+                                .value[publishKey]
+                        )
+                        const publishError = (
+                            state.feedPublishErrors
+                                .value[publishKey] ??
+                            feed.publish_error ??
+                            null
+                        )
+                        const isPublished = feed.published === 1
+                        const publishStatus = publishPending ?
+                            'Sharing...' :
+                            publishError ?
+                                `Failed: ${publishError}` :
+                                isPublished ? 'Published' : ''
+                        const publishStatusClass = publishError ?
+                            ' error' :
+                            ''
                         const isResolving = (
                             feed.last_fetched === null && !feed.last_error
                         )
@@ -203,6 +232,34 @@ export const FeedNav:FunctionComponent<{
                                 `}
 
                             <div class="item-controls">
+                                <div class="feed-share-control">
+                                    <${CheckBox.TAG}
+                                        name=${`share-feed-${feed.id}`}
+                                        aria-describedby=${
+                                            `share-feed-${feed.id}-status`
+                                        }
+                                        checked=${
+                                            isPublished || undefined
+                                        }
+                                        disabled=${
+                                            publishPending || undefined
+                                        }
+                                        onChange=${(ev:Event) => (
+                                            handleShareFeed(ev, feed)
+                                        )}
+                                    >
+                                        Share to Bluesky
+                                    <//>
+                                    <span
+                                        class=${'feed-share-state' +
+                                            publishStatusClass}
+                                        id=${`share-feed-${feed.id}-status`}
+                                        role="status"
+                                        aria-live="polite"
+                                    >
+                                        ${publishStatus}
+                                    </span>
+                                </div>
                                 ${hasFailed && html`
                                     <tool-tip
                                         content="Retry fetching feed"
