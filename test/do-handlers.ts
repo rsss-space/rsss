@@ -146,6 +146,7 @@ function createSql (options:{
         feedSyncQueries: [] as string[],
         blurhashUpdates: [] as unknown[][],
         publishUpdates: [] as unknown[][],
+        unpublishUpdates: [] as unknown[][],
         feedVersionBumps: 0,
         setPendingCountRows (rows:PendingCountRow[]) {
             pendingCountRows = rows
@@ -226,7 +227,10 @@ function createSql (options:{
             // /feeds/:id/refresh selects with FEED_SYNC_COLUMNS for the
             // post-refresh response; the harness returns the same row
             // shape since it doesn't model per-column projection.
-            if (query.includes('FROM feeds WHERE id = ?')) {
+            if (
+                query.includes('SELECT') &&
+                query.includes('FROM feeds WHERE id = ?')
+            ) {
                 return result(feeds.filter(feed => feed.id === params[0]))
             }
 
@@ -265,6 +269,22 @@ function createSql (options:{
                 if (feed) {
                     feed.published = 0
                     feed.publish_error = params[0] as string
+                }
+                return result([])
+            }
+
+            if (
+                query.includes('UPDATE feeds SET') &&
+                query.includes('published = 0') &&
+                query.includes('published_rkey = NULL')
+            ) {
+                this.unpublishUpdates.push(params)
+                const feed = feeds.find(row => row.id === params[0])
+                if (feed) {
+                    feed.published = 0
+                    feed.published_rkey = null
+                    feed.published_at = null
+                    feed.publish_error = null
                 }
                 return result([])
             }
@@ -752,6 +772,158 @@ test('RsssUserDO publish feed leaves state unpublished on PDS auth failure',
         } finally {
             globalThis.fetch = originalFetch
             console.error = originalError
+        }
+    })
+
+test('RsssUserDO unpublish feed deletes record and clears publish state',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, sql, storage } = createDoHarness({
+            feeds: [{
+                ...feedRow(1, 'https://example.com/feed.xml', 'Example'),
+                published: 1,
+                published_rkey: 'feed.existing',
+                published_at: '2026-06-09T20:00:00.000Z'
+            }]
+        })
+        storage.set('oauth:credentials', credentials)
+
+        const calls:Array<{ url:string; body:Record<string, unknown> }> = []
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async (input, init) => {
+            calls.push({
+                url: String(input),
+                body: JSON.parse(String(init?.body)) as Record<
+                    string,
+                    unknown
+                >
+            })
+            return new Response('{}', {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+
+        try {
+            const response = await app.request('/feeds/1/publish', {
+                method: 'DELETE'
+            })
+            const body = response.status === 200 ?
+                await response.json() as { feed:FeedRow } :
+                { feed: null }
+
+            t.equal(response.status, 200, 'unpublish succeeds')
+            t.equal(
+                calls[0]?.url,
+                'https://pds.example/xrpc/com.atproto.repo.deleteRecord'
+            )
+            t.deepEqual(calls[0]?.body, {
+                repo: credentials.did,
+                collection: 'space.rsss.feed.subscription',
+                rkey: 'feed.existing'
+            })
+            t.equal(body.feed?.published, 0, 'returned feed is unpublished')
+            t.equal(
+                body.feed?.published_rkey,
+                null,
+                'returned feed clears rkey'
+            )
+            t.equal(
+                sql.unpublishUpdates.length,
+                1,
+                'publish state is cleared'
+            )
+            t.equal(sql.feedVersionBumps, 1, 'feed version bumped')
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })
+
+test('RsssUserDO unpublish missing remote record is idempotent',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, sql, storage } = createDoHarness({
+            feeds: [{
+                ...feedRow(1, 'https://example.com/feed.xml', 'Example'),
+                published: 1,
+                published_rkey: 'feed.existing',
+                published_at: '2026-06-09T20:00:00.000Z'
+            }]
+        })
+        storage.set('oauth:credentials', credentials)
+
+        const originalFetch = globalThis.fetch
+        const originalError = console.error
+        globalThis.fetch = (async () => {
+            return new Response(JSON.stringify({
+                error: 'RecordNotFound'
+            }), {
+                status: 400,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+        console.error = () => undefined
+
+        try {
+            const response = await app.request('/feeds/1/publish', {
+                method: 'DELETE'
+            })
+            const body = response.status === 200 ?
+                await response.json() as { feed:FeedRow } :
+                { feed: null }
+
+            t.equal(response.status, 200, 'missing PDS record is success')
+            t.equal(body.feed?.published, 0, 'local publish state clears')
+            t.equal(sql.unpublishUpdates.length, 1, 'state is cleared once')
+        } finally {
+            globalThis.fetch = originalFetch
+            console.error = originalError
+        }
+    })
+
+test('RsssUserDO delete feed removes published record before unsubscribe',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, sql, storage } = createDoHarness({
+            feeds: [{
+                ...feedRow(1, 'https://example.com/feed.xml', 'Example'),
+                published: 1,
+                published_rkey: 'feed.existing',
+                published_at: '2026-06-09T20:00:00.000Z'
+            }]
+        })
+        storage.set('oauth:credentials', credentials)
+
+        const calls:Record<string, unknown>[] = []
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async (_input, init) => {
+            calls.push(JSON.parse(String(init?.body)) as Record<
+                string,
+                unknown
+            >)
+            return new Response('{}', {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+
+        try {
+            const response = await app.request('/feeds/1', {
+                method: 'DELETE'
+            })
+            const body = await response.json() as { success:boolean }
+
+            t.equal(response.status, 200, 'unsubscribe succeeds')
+            t.equal(body.success, true, 'unsubscribe response is unchanged')
+            t.deepEqual(calls[0], {
+                repo: credentials.did,
+                collection: 'space.rsss.feed.subscription',
+                rkey: 'feed.existing'
+            })
+            t.equal(sql.feeds.length, 0, 'feed row is deleted')
+            t.equal(sql.unpublishUpdates.length, 1, 'publish state clears')
+        } finally {
+            globalThis.fetch = originalFetch
         }
     })
 

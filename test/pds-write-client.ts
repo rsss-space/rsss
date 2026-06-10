@@ -240,6 +240,22 @@ test('deleteRecord refreshes expired tokens and replays the write', async t => {
     })
 })
 
+test('deleteRecord treats RecordNotFound as idempotent success', async t => {
+    const credentials = await makeCredentials()
+
+    const result = await deleteRecord(credentials, {
+        collection: 'space.rsss.feed.subscription',
+        rkey: 'feed.abc123'
+    }, {
+        persistCredentials: async () => undefined,
+        fetch: async () => {
+            return jsonResponse({ error: 'RecordNotFound' }, { status: 400 })
+        }
+    })
+
+    t.equal(result.ok, true, 'absent record is a successful delete')
+})
+
 test('createRecord reports reauth_required without token material', async t => {
     const credentials = await makeCredentials()
     const reported:Array<{

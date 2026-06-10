@@ -36,6 +36,10 @@
   `RsssUserDO` routes. Load OAuth credentials from `oauth:credentials`, call
   the PDS write helper, then update SQLite publish/follow state and bump
   `user_state.feed_version` only after the remote write result is known.
+- Feed publish/unpublish mutations should share private `RsssUserDO` helpers
+  so direct toggle endpoints and unsubscribe cleanup use the same PDS-write,
+  SQLite-state, and `feed_version` behavior. `deleteRecord` treats
+  `RecordNotFound` as an idempotent success for AT Protocol deletes.
 - Adding feed table columns follows the same cross-store pattern as item
   columns: update `TABLES_SQL`, add a guarded RsssUserDO migration and bump
   `USER_DO_MIGRATION_VERSION`, project the column through
@@ -433,4 +437,28 @@ Thread: https://ampcode.com/threads/
     optional fields later.
   - Republish should reuse `feeds.published_rkey` when present so the PDS
     `putRecord` updates the same subscription record in place.
+---
+
+## 2026-06-10 15:53 PDT - US-010
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added Durable Object unpublish support for feed
+  subscriptions. `DELETE /feeds/:id/publish` now calls AT Protocol
+  `deleteRecord`, clears local publish state, and returns the synced feed row.
+  Unsubscribing from a published feed now deletes the PDS record before
+  removing the feed locally, preventing orphaned public records. PDS
+  `RecordNotFound` responses are treated as idempotent delete success.
+- Files changed: src/server/durable-objects/index.ts,
+  src/server/auth/pds-write-client.ts, test/do-handlers.ts,
+  test/pds-write-client.ts, specs/prd.json, progress.log
+- Verification: focused `test/do-handlers.ts` and `test/pds-write-client.ts`
+  esbuild/tap-spec runs; `npx tsc --noEmit`; `npm run lint`
+- **Learnings for future iterations:**
+  - Reuse private DO helpers for publish-state mutations that are reachable
+    from multiple routes; this keeps route behavior, PDS writes, SQLite
+    updates, and feed-version bumps aligned.
+  - AT Protocol delete idempotency belongs in the PDS write client so every
+    caller gets consistent `RecordNotFound` handling.
+  - The `test/do-handlers.ts` SQL mock must distinguish `SELECT ... FROM
+    feeds WHERE id = ?` from `DELETE FROM feeds WHERE id = ?`; a broad
+    substring match can accidentally swallow delete statements.
 ---

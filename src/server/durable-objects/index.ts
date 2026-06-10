@@ -24,7 +24,7 @@ import {
     fetchOgImage,
     validateFeedUrl
 } from '../feed-fetch.js'
-import { putRecord } from '../auth/pds-write-client.js'
+import { deleteRecord, putRecord } from '../auth/pds-write-client.js'
 import {
     feedSubscriptionLexicon,
     type FeedSubscriptionRecord
@@ -818,6 +818,79 @@ export class RsssUserDO extends DurableObject<Env> {
         return { ok: true, feed: updated }
     }
 
+    private async unpublishFeed (feed:Feed):Promise<
+        | { ok:true; feed:Record<string, unknown> | null }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        if (!feed.published && !feed.published_rkey) {
+            return {
+                ok: true,
+                feed: this.sql.exec(
+                    `SELECT ${FEED_SYNC_COLUMNS}
+                     FROM feeds WHERE id = ?`,
+                    feed.id
+                ).one() as Record<string, unknown> | null
+            }
+        }
+
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return {
+                ok: false,
+                status: 401,
+                error: 'reauth_required'
+            }
+        }
+
+        const rkey = feed.published_rkey ??
+            await subscriptionRkeyForFeedUrl(feed.url)
+        const result = await deleteRecord(credentials, {
+            collection: feedSubscriptionLexicon.id,
+            rkey
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            this.sql.exec(
+                `UPDATE feeds SET
+                    publish_error = ?
+                WHERE id = ?`,
+                result.error.code,
+                feed.id
+            )
+            this.bumpFeedVersion()
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        this.sql.exec(
+            `UPDATE feeds SET
+                published = 0,
+                published_rkey = NULL,
+                published_at = NULL,
+                publish_error = NULL
+            WHERE id = ?`,
+            feed.id
+        )
+        this.bumpFeedVersion()
+
+        const updated = this.sql.exec(
+            `SELECT ${FEED_SYNC_COLUMNS}
+             FROM feeds WHERE id = ?`,
+            feed.id
+        ).one() as Record<string, unknown> | null
+
+        return { ok: true, feed: updated }
+    }
+
     private createRouter (): Hono {
         const app = new Hono()
 
@@ -1267,6 +1340,28 @@ export class RsssUserDO extends DurableObject<Env> {
             return c.json({ feed: result.feed })
         })
 
+        app.delete('/feeds/:id/publish', async (c) => {
+            const id = parseInt(c.req.param('id'), 10)
+            const feed = this.sql.exec(
+                'SELECT * FROM feeds WHERE id = ?',
+                id
+            ).one() as unknown as Feed | null
+
+            if (!feed) {
+                return c.json({ error: 'Feed not found' }, 404)
+            }
+
+            const result = await this.unpublishFeed(feed)
+            if (!result.ok) {
+                return c.json(
+                    { error: result.error },
+                    result.status
+                )
+            }
+
+            return c.json({ feed: result.feed })
+        })
+
         // Delete a feed
         app.delete('/feeds/:id', async (c) => {
             const id = parseInt(c.req.param('id'), 10)
@@ -1283,7 +1378,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const feed = this.sql.exec(
                 'SELECT * FROM feeds WHERE id = ?', id
-            ).one() as Record<string, unknown> | null
+            ).one() as unknown as Feed | null
             if (!feed) {
                 if (body.client_op_id !== undefined) {
                     return c.json({ success: true })
@@ -1292,13 +1387,21 @@ export class RsssUserDO extends DurableObject<Env> {
             }
 
             if (clientUpdatedAt !== undefined) {
-                const serverTs = feed.updated_at as string | null
+                const serverTs = feed.updated_at
                 if (
                     resolveLwwWrite(serverTs, clientUpdatedAt) ===
                     'conflict'
                 ) {
                     return c.json({ feed }, 409)
                 }
+            }
+
+            const unpublish = await this.unpublishFeed(feed)
+            if (!unpublish.ok) {
+                return c.json(
+                    { error: unpublish.error },
+                    unpublish.status
+                )
             }
 
             this.sql.exec('DELETE FROM feeds WHERE id = ?', id)

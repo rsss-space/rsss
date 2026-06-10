@@ -243,6 +243,18 @@ function isAuthFailure (attempt:PdsAttemptResult):boolean {
     return attempt.response.status === 401 || isExpiredToken(attempt)
 }
 
+function isIdempotentDeleteSuccess (
+    request:WriteRequest,
+    attempt:PdsAttemptResult
+):boolean {
+    if (request.operation !== 'com.atproto.repo.deleteRecord') {
+        return false
+    }
+
+    return !attempt.response.ok &&
+        responseError(attempt) === 'RecordNotFound'
+}
+
 async function requestWithNonceRetry (
     credentials:OAuthCredentialRecord,
     request:WriteRequest,
@@ -357,6 +369,14 @@ async function writeRecord (
         }
     }
 
+    if (isIdempotentDeleteSuccess(request, attempt)) {
+        return {
+            ok: true,
+            credentials: activeCredentials,
+            body: attempt.body
+        }
+    }
+
     if (isAuthFailure(attempt)) {
         const refresh = await refreshCredentials(
             activeCredentials,
@@ -381,6 +401,14 @@ async function writeRecord (
         )
 
         if (attempt.response.ok) {
+            return {
+                ok: true,
+                credentials: activeCredentials,
+                body: attempt.body
+            }
+        }
+
+        if (isIdempotentDeleteSuccess(request, attempt)) {
             return {
                 ok: true,
                 credentials: activeCredentials,
