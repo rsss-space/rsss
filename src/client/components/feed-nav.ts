@@ -1,7 +1,9 @@
 import { html } from 'htm/preact/index.js'
 import { type FunctionComponent, Fragment } from 'preact'
-import { useState, useCallback } from 'preact/hooks'
+import { useState, useCallback, useEffect, useRef } from 'preact/hooks'
 import { CheckBox } from '@substrate-system/check-box'
+import { ModalWindow } from '@substrate-system/dialog'
+import '@substrate-system/dialog/css'
 import { CogWheel } from './cog-wheel.js'
 import { SidebarItem } from './sidebar-item.js'
 import { SidebarFooter } from '../components/sidebar-footer.js'
@@ -19,6 +21,24 @@ import './sidebar.css'
 import Debug from '@substrate-system/debug'
 const debug = Debug('rsss:view')
 
+type ModalWindowAttrs = preact.JSX.HTMLAttributes<HTMLElement> & {
+    active?:string;
+    closable?:string;
+    'no-icon'?:string|boolean;
+    animated?:string;
+    noclick?:string|boolean;
+    close?:string;
+};
+
+declare module 'preact' {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
+    export namespace JSX {
+        interface IntrinsicElements {
+            'modal-window':ModalWindowAttrs;
+        }
+    }
+}
+
 export const FeedNav:FunctionComponent<{
     state:AppState
 }> = function ({ state }) {
@@ -34,6 +54,10 @@ export const FeedNav:FunctionComponent<{
     const [addFeedError, setAddFeedError] = useState<
         string|null
     >(null)
+    const [consentFeedId, setConsentFeedId] = useState<
+        number|null
+    >(null)
+    const consentModalRef = useRef<HTMLElement|null>(null)
 
     async function handleDeleteFeed (feed:Feed) {
         if (confirm(
@@ -53,8 +77,32 @@ export const FeedNav:FunctionComponent<{
         feed:Feed
     ):Promise<void> {
         const checked = (ev.target as HTMLInputElement).checked
-        await State.toggleFeedPublished(state, feed.id, checked)
+        if (checked) {
+            setConsentFeedId(feed.id)
+            return
+        }
+        await State.toggleFeedPublished(state, feed.id, false)
     }
+
+    function handleConsentCancel ():void {
+        setConsentFeedId(null)
+    }
+
+    async function handleConsentConfirm ():Promise<void> {
+        const id = consentFeedId
+        if (id == null) return
+        setConsentFeedId(null)
+        await State.toggleFeedPublished(state, id, true)
+    }
+
+    useEffect(() => {
+        const el = consentModalRef.current
+        if (!el) return
+        const evt = ModalWindow.event('close')
+        const handler = () => setConsentFeedId(null)
+        el.addEventListener(evt, handler)
+        return () => el.removeEventListener(evt, handler)
+    }, [consentFeedId])
 
     const handleAddFeed = useCallback(async (
         ev:MouseEvent
@@ -313,6 +361,58 @@ export const FeedNav:FunctionComponent<{
             </div>
 
             <${SidebarFooter} state=${state} />
+
+            ${consentFeedId != null && html`
+                <modal-window
+                    ref=${consentModalRef}
+                    class="publish-consent-modal"
+                    active="true"
+                    closable="true"
+                    aria-labelledby="publish-consent-title"
+                    aria-describedby="publish-consent-body"
+                >
+                    <h2 id="publish-consent-title">
+                        Share to Bluesky network
+                    </h2>
+                    <div
+                        id="publish-consent-body"
+                        class="publish-consent-body"
+                    >
+                        <p>Before sharing, note that:</p>
+                        <ul>
+                            <li>
+                                Records are written to your own
+                                personal data server (PDS)
+                            </li>
+                            <li>
+                                Subscriptions are public on the
+                                AT Protocol network
+                            </li>
+                            <li>
+                                Shared subscriptions do not appear
+                                in your Bluesky timeline
+                            </li>
+                            <li>You can remove them at any time</li>
+                        </ul>
+                    </div>
+                    <div class="publish-consent-actions">
+                        <button
+                            type="button"
+                            class="consent-cancel"
+                            onClick=${handleConsentCancel}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            class="consent-confirm"
+                            onClick=${handleConsentConfirm}
+                        >
+                            Share
+                        </button>
+                    </div>
+                </modal-window>
+            `}
         <//>
     `
 }

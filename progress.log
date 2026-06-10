@@ -527,3 +527,33 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - In direct shell commands, use `npx tapout`; `tapout` is not on PATH
     outside npm scripts.
 ---
+
+## 2026-06-10 - US-013
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added publish consent modal to the feed sharing
+  controls. When a user first checks "Share to Bluesky" for any feed, a
+  `@substrate-system/dialog` modal-window appears before the publish
+  request is made. The modal explains: records are written to your own
+  PDS, subscriptions are public on the AT Protocol network, they do not
+  appear in your Bluesky timeline, and you can remove them at any time.
+  Confirming proceeds with the publish; canceling closes the modal without
+  making any request. Unpublishing (unchecking) bypasses the modal.
+- Files changed: src/client/components/feed-nav.ts,
+  src/client/routes/feeds.css, test/publish-consent-modal.ts,
+  test/browser-tests.ts, specs/prd.json, progress.log
+- Verification: focused `test/publish-consent-modal.ts` tapout run (13
+  passing); `npx tsc --noEmit`; `npm run lint`; `npm test` (all suites).
+- **Learnings for future iterations:**
+  - TypeScript 4.9+ control-flow narrowing can narrow `let` variables
+    captured in async closures to `never` when assigned inside the closure.
+    Use an object wrapper (`const captured = { url: null }`) instead of
+    `let url = null` when capturing values from fetch mocks in tests.
+  - The `ModalWindow.event('close')` static method returns the correct
+    custom event name for the `close` event; use it with `addEventListener`
+    in a `useEffect` keyed on the open state to catch Escape/backdrop
+    close. The effect re-registers whenever `consentFeedId` changes.
+  - Module augmentation of `'preact'` JSX.IntrinsicElements is global
+    within the TypeScript compilation; the `modal-window` type declaration
+    in `payment-method-modal.ts` covers all files but is easy to miss —
+    redeclaring it in components that need it is safe and explicit.
+---

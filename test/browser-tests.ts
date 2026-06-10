@@ -62,6 +62,7 @@ import './blur-hash-swap.js'
 import './atproto-lexicons.js'
 import './subscription-rkey.js'
 import './feed-share-toggle.js'
+import './publish-consent-modal.js'
 
 test('all done', () => {
     if (window) {
