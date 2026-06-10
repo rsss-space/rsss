@@ -1,5 +1,9 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import {
+    generateDPoPKeyPair,
+    type OAuthCredentialRecord
+} from '../src/server/auth/oauth.js'
 
 interface FeedRow {
     id:number
@@ -141,6 +145,7 @@ function createSql (options:{
         itemQueries: [] as string[],
         feedSyncQueries: [] as string[],
         blurhashUpdates: [] as unknown[][],
+        publishUpdates: [] as unknown[][],
         feedVersionBumps: 0,
         setPendingCountRows (rows:PendingCountRow[]) {
             pendingCountRows = rows
@@ -237,6 +242,33 @@ function createSql (options:{
                 return result([])
             }
 
+            if (
+                query.includes('UPDATE feeds SET') &&
+                query.includes('published = 1')
+            ) {
+                this.publishUpdates.push(params)
+                const feed = feeds.find(row => row.id === params[2])
+                if (feed) {
+                    feed.published = 1
+                    feed.published_rkey = params[0] as string
+                    feed.published_at = params[1] as string
+                    feed.publish_error = null
+                }
+                return result([])
+            }
+
+            if (
+                query.includes('UPDATE feeds SET') &&
+                query.includes('publish_error = ?')
+            ) {
+                const feed = feeds.find(row => row.id === params[1])
+                if (feed) {
+                    feed.published = 0
+                    feed.publish_error = params[0] as string
+                }
+                return result([])
+            }
+
             if (query.includes('UPDATE user_state SET feed_version')) {
                 this.feedVersionBumps++
                 return result([{ feed_version: this.feedVersionBumps }])
@@ -287,6 +319,25 @@ function createSql (options:{
 
             throw new Error(`Unexpected SQL: ${query}`)
         }
+    }
+}
+
+async function makeCredentials ():Promise<OAuthCredentialRecord> {
+    const keyPair = await generateDPoPKeyPair()
+    const privateJwk = await crypto.subtle.exportKey(
+        'jwk',
+        keyPair.privateKey
+    )
+
+    return {
+        did: 'did:plc:alice',
+        accessToken: 'access-token-secret',
+        refreshToken: 'refresh-token-secret',
+        tokenEndpoint: 'https://auth.example/token',
+        pdsEndpoint: 'https://pds.example',
+        dpopPrivateKeyJwk: privateJwk,
+        tokenType: 'DPoP',
+        updatedAt: '2026-06-09T20:00:00.000Z'
     }
 }
 
@@ -543,6 +594,166 @@ test('RsssUserDO sync projects feed publish state columns', async t => {
     t.ok(query.includes('published_at'), 'sync selects published_at')
     t.ok(query.includes('publish_error'), 'sync selects publish_error')
 })
+
+test('RsssUserDO publish feed writes subscription record and stores state',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, sql, storage } = createDoHarness({
+            feeds: [{
+                ...feedRow(1, 'https://example.com/feed.xml', 'Example'),
+                site_url: 'https://example.com/'
+            }]
+        })
+        storage.set('oauth:credentials', credentials)
+
+        const calls:Array<{ url:string; body:Record<string, unknown> }> = []
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async (input, init) => {
+            calls.push({
+                url: String(input),
+                body: JSON.parse(String(init?.body)) as Record<
+                    string,
+                    unknown
+                >
+            })
+            return new Response(JSON.stringify({
+                uri: 'at://did:plc:alice/space.rsss.feed.subscription/x'
+            }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+
+        try {
+            const response = await app.request('/feeds/1/publish', {
+                method: 'POST'
+            })
+            const body = response.status === 200 ?
+                await response.json() as { feed:FeedRow } :
+                { feed: null }
+
+            t.equal(response.status, 200, 'publish succeeds')
+            t.equal(calls.length, 1, 'one PDS write')
+            t.equal(
+                calls[0]?.url,
+                'https://pds.example/xrpc/com.atproto.repo.putRecord'
+            )
+            t.equal(
+                calls[0]?.body.collection,
+                'space.rsss.feed.subscription'
+            )
+            t.equal(typeof calls[0]?.body.rkey, 'string')
+            const record = calls[0]?.body.record as Record<string, unknown>
+            t.equal(record.feedUrl, 'https://example.com/feed.xml')
+            t.equal(record.title, 'Example')
+            t.equal(record.siteUrl, 'https://example.com/')
+            t.equal(typeof record.createdAt, 'string')
+            t.equal(record.createdAt, body.feed?.published_at)
+            t.deepEqual({
+                feedUrl: record.feedUrl,
+                title: record.title,
+                siteUrl: record.siteUrl
+            }, {
+                feedUrl: 'https://example.com/feed.xml',
+                title: 'Example',
+                siteUrl: 'https://example.com/'
+            })
+            t.equal(body.feed?.published, 1, 'returned feed is published')
+            t.equal(
+                body.feed?.published_rkey,
+                calls[0]?.body.rkey,
+                'returned feed includes deterministic rkey'
+            )
+            t.equal(sql.publishUpdates.length, 1, 'publish state updated')
+            t.equal(sql.feedVersionBumps, 1, 'feed version bumped')
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })
+
+test('RsssUserDO publish feed reuses rkey on republish', async t => {
+    const credentials = await makeCredentials()
+    const { app, storage } = createDoHarness({
+        feeds: [{
+            ...feedRow(1, 'https://example.com/feed.xml', 'Example'),
+            published: 1,
+            published_rkey: 'feed.existing',
+            published_at: '2026-06-09T20:00:00.000Z'
+        }]
+    })
+    storage.set('oauth:credentials', credentials)
+
+    const bodies:Record<string, unknown>[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+        return new Response('{}', {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+        })
+    }) as typeof fetch
+
+    try {
+        const response = await app.request('/feeds/1/publish', {
+            method: 'POST'
+        })
+
+        t.equal(response.status, 200, 'republish succeeds')
+        t.equal(
+            bodies[0]?.rkey,
+            'feed.existing',
+            'republish updates in place with existing rkey'
+        )
+    } finally {
+        globalThis.fetch = originalFetch
+    }
+})
+
+test('RsssUserDO publish feed requires stored OAuth credentials', async t => {
+    const { app, sql } = createDoHarness()
+
+    const response = await app.request('/feeds/1/publish', {
+        method: 'POST'
+    })
+
+    t.equal(response.status, 401, 'missing credentials require reconnect')
+    t.equal(sql.publishUpdates.length, 0, 'publish state is unchanged')
+})
+
+test('RsssUserDO publish feed leaves state unpublished on PDS auth failure',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, sql, storage } = createDoHarness()
+        storage.set('oauth:credentials', credentials)
+
+        const originalFetch = globalThis.fetch
+        const originalError = console.error
+        globalThis.fetch = (async () => {
+            return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+                status: 401,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+        console.error = () => undefined
+
+        try {
+            const response = await app.request('/feeds/1/publish', {
+                method: 'POST'
+            })
+            const body = response.headers.get('content-type')
+                ?.includes('application/json') ?
+                await response.json() as { error:string } :
+                { error: '' }
+
+            t.equal(response.status, 401, 'auth failure maps to reconnect')
+            t.equal(body.error, 'reauth_required')
+            t.equal(sql.publishUpdates.length, 0, 'state is not published')
+            t.equal(sql.feeds[0]?.published, 0, 'feed remains unpublished')
+        } finally {
+            globalThis.fetch = originalFetch
+            console.error = originalError
+        }
+    })
 
 test('RsssUserDO manual feed refresh is rate limited per feed', async t => {
     const { app, refreshed, storage } = createDoHarness()

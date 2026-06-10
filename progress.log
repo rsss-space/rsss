@@ -32,6 +32,10 @@
   `OAuthCredentialRecord`, inject `persistCredentials`, and let the helper
   sign DPoP proofs, retry one PDS nonce challenge, refresh on auth failure,
   and report sanitized `atproto` errors without token material.
+- AT Protocol write endpoints that mutate per-user rsss state should live on
+  `RsssUserDO` routes. Load OAuth credentials from `oauth:credentials`, call
+  the PDS write helper, then update SQLite publish/follow state and bump
+  `user_state.feed_version` only after the remote write result is known.
 - Adding feed table columns follows the same cross-store pattern as item
   columns: update `TABLES_SQL`, add a guarded RsssUserDO migration and bump
   `USER_DO_MIGRATION_VERSION`, project the column through
@@ -402,4 +406,31 @@ Thread: https://ampcode.com/threads/
     `WebSocketRequestResponsePair` shim when running outside Workers.
   - Tapout uses a fixed local browser server port, so run tapout bundles
     sequentially rather than in parallel.
+---
+
+## 2026-06-10 15:41 PDT - US-009
+Thread: https://ampcode.com/threads/
+- What was implemented: Added `POST /feeds/:id/publish` on the user
+  Durable Object. The route loads stored OAuth credentials, builds a
+  `space.rsss.feed.subscription` record, writes it with `putRecord` using
+  the deterministic feed rkey, persists `published`, `published_rkey`, and
+  `published_at` only after a successful PDS write, records publish errors
+  without marking the feed published, and bumps the feed version for sync.
+  Added route tests for publish success, idempotent republish, missing
+  credentials, and PDS auth failure.
+- Files changed: src/server/durable-objects/index.ts,
+  test/do-handlers.ts, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/do-handlers.ts --bundle
+  --platform=node --format=esm
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts |
+  node --input-type=module | npx tap-spec`; `npm run lint`;
+  `npx tsc --noEmit`; `npm test`
+- **Learnings for future iterations:**
+  - The authenticated `/api/*` proxy strips `/api`, so a DO route at
+    `/feeds/:id/publish` is exposed to clients as `/api/feeds/:id/publish`.
+  - Derived lexicon record types preserve readonly fields; construct records
+    with object literals and conditional spreads instead of assigning
+    optional fields later.
+  - Republish should reuse `feeds.published_rkey` when present so the PDS
+    `putRecord` updates the same subscription record in place.
 ---

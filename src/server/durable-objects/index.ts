@@ -24,6 +24,13 @@ import {
     fetchOgImage,
     validateFeedUrl
 } from '../feed-fetch.js'
+import { putRecord } from '../auth/pds-write-client.js'
+import {
+    feedSubscriptionLexicon,
+    type FeedSubscriptionRecord
+} from '../../shared/lexicons/index.js'
+import { subscriptionRkeyForFeedUrl } from
+    '../../shared/subscription-rkey.js'
 import { fetchFullArticle } from '../article-fetch.js'
 import {
     blurhashCacheKey,
@@ -63,6 +70,10 @@ interface Feed {
     last_fetched:string|null
     last_error:string|null
     last_status:number|null
+    published:number
+    published_rkey:string|null
+    published_at:string|null
+    publish_error:string|null
     created_at:string
     updated_at:string
 }
@@ -712,6 +723,101 @@ export class RsssUserDO extends DurableObject<Env> {
         }
     }
 
+    private async getOAuthCredentials ():
+        Promise<OAuthCredentialRecord | null> {
+        const credentials = await this.ctx.storage.get<unknown>(
+            OAUTH_CREDENTIALS_KEY
+        )
+
+        return isOAuthCredentialRecord(credentials) ? credentials : null
+    }
+
+    private async persistOAuthCredentials (
+        credentials:OAuthCredentialRecord
+    ):Promise<void> {
+        await this.ctx.storage.put(OAUTH_CREDENTIALS_KEY, credentials)
+    }
+
+    private buildFeedSubscriptionRecord (
+        feed:Feed,
+        createdAt:string
+    ):FeedSubscriptionRecord {
+        return {
+            feedUrl: feed.url,
+            createdAt,
+            ...(feed.title ? { title: feed.title } : {}),
+            ...(feed.site_url ? { siteUrl: feed.site_url } : {})
+        }
+    }
+
+    private async publishFeed (feed:Feed):Promise<
+        | { ok:true; feed:Record<string, unknown> | null }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return {
+                ok: false,
+                status: 401,
+                error: 'reauth_required'
+            }
+        }
+
+        const rkey = feed.published_rkey ??
+            await subscriptionRkeyForFeedUrl(feed.url)
+        const publishedAt = feed.published_at ?? new Date().toISOString()
+        const record = this.buildFeedSubscriptionRecord(feed, publishedAt)
+        const result = await putRecord(credentials, {
+            collection: feedSubscriptionLexicon.id,
+            rkey,
+            record,
+            validate: true
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            this.sql.exec(
+                `UPDATE feeds SET
+                    publish_error = ?
+                WHERE id = ?`,
+                result.error.code,
+                feed.id
+            )
+            this.bumpFeedVersion()
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        this.sql.exec(
+            `UPDATE feeds SET
+                published = 1,
+                published_rkey = ?,
+                published_at = ?,
+                publish_error = NULL
+            WHERE id = ?`,
+            rkey,
+            publishedAt,
+            feed.id
+        )
+        this.bumpFeedVersion()
+
+        const updated = this.sql.exec(
+            `SELECT ${FEED_SYNC_COLUMNS}
+             FROM feeds WHERE id = ?`,
+            feed.id
+        ).one() as Record<string, unknown> | null
+
+        return { ok: true, feed: updated }
+    }
+
     private createRouter (): Hono {
         const app = new Hono()
 
@@ -1137,6 +1243,28 @@ export class RsssUserDO extends DurableObject<Env> {
                 published_at:string
             }>
             return c.json({ items: rows })
+        })
+
+        app.post('/feeds/:id/publish', async (c) => {
+            const id = parseInt(c.req.param('id'), 10)
+            const feed = this.sql.exec(
+                'SELECT * FROM feeds WHERE id = ?',
+                id
+            ).one() as unknown as Feed | null
+
+            if (!feed) {
+                return c.json({ error: 'Feed not found' }, 404)
+            }
+
+            const result = await this.publishFeed(feed)
+            if (!result.ok) {
+                return c.json(
+                    { error: result.error },
+                    result.status
+                )
+            }
+
+            return c.json({ feed: result.feed })
         })
 
         // Delete a feed
