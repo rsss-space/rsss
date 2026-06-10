@@ -40,6 +40,12 @@
   so direct toggle endpoints and unsubscribe cleanup use the same PDS-write,
   SQLite-state, and `feed_version` behavior. `deleteRecord` treats
   `RecordNotFound` as an idempotent success for AT Protocol deletes.
+- Published subscription reconciliation lives in `RsssUserDO`: list public
+  `space.rsss.feed.subscription` records from the user's PDS with
+  `com.atproto.repo.listRecords`, align local feed publish columns, bump
+  `feed_version` once per changed pass, and gate runs with the
+  `publish_reconcile:last_attempt` storage cooldown. Missing OAuth
+  credentials should skip without consuming the cooldown.
 - Adding feed table columns follows the same cross-store pattern as item
   columns: update `TABLES_SQL`, add a guarded RsssUserDO migration and bump
   `USER_DO_MIGRATION_VERSION`, project the column through
@@ -461,4 +467,31 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - The `test/do-handlers.ts` SQL mock must distinguish `SELECT ... FROM
     feeds WHERE id = ?` from `DELETE FROM feeds WHERE id = ?`; a broad
     substring match can accidentally swallow delete statements.
+---
+
+## 2026-06-10 16:00 PDT - US-011
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added Durable Object publish-state reconciliation
+  for AT Protocol subscription records. The User DO now lists public
+  `space.rsss.feed.subscription` records via
+  `com.atproto.repo.listRecords`, aligns local `published`,
+  `published_rkey`, `published_at`, and `publish_error` columns in both
+  drift directions, bumps `feed_version` once when any row changes, exposes
+  `POST /feeds/reconcile-published`, and schedules a background reconcile
+  when `/feeds` is opened. Runs are rate-limited with DO storage, while
+  missing credentials skip without consuming the cooldown.
+- Files changed: src/server/durable-objects/index.ts,
+  test/do-handlers.ts, specs/prd.json, progress.log
+- Verification: focused `test/do-handlers.ts` esbuild/tap-spec run;
+  `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Public AT Protocol repo reads use GET
+    `/xrpc/com.atproto.repo.listRecords` with query params `repo`,
+    `collection`, `limit`, and optional `cursor`; subscription rkeys can be
+    parsed from the final segment of the returned AT URI.
+  - Triggering reconciliation from `/feeds` should use `ctx.waitUntil()` so
+    the feed list response remains fast; an explicit route is useful for
+    tests and future UI-driven reconnect flows.
+  - Check OAuth credentials before recording the reconcile cooldown; a
+    missing-credentials skip must not block the first run after reconnect.
 ---

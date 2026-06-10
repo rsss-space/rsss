@@ -109,6 +109,21 @@ interface NewFeedItem {
     imageUrl:string | null
 }
 
+interface ListedSubscriptionRecord {
+    uri:string
+    value:unknown
+}
+
+interface ListedSubscriptionResponse {
+    cursor?:unknown
+    records?:unknown
+}
+
+interface RemoteSubscription {
+    rkey:string
+    createdAt:string|null
+}
+
 const FEED_XML_PARSER = new XMLParser({
     attributeNamePrefix: '@_',
     cdataPropName: '#cdata',
@@ -132,6 +147,8 @@ const ACCOUNT_INACTIVITY_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000
 const ACTIVITY_MARKER_COALESCE_MS = 60 * 1000
 const MANUAL_REFRESH_LIMIT_MS = 60 * 1000
 const MANUAL_REFRESH_STORAGE_PREFIX = 'manual_refresh:'
+const PUBLISH_RECONCILE_INTERVAL_MS = 15 * 60 * 1000
+const PUBLISH_RECONCILE_LAST_KEY = 'publish_reconcile:last_attempt'
 const ALARM_REFRESH_CURSOR_KEY = 'alarm_refresh_cursor'
 const PENDING_DELETION_KEY = 'pending_deletion'
 const MIGRATION_STATE_KEY = 'schema_migration'
@@ -750,6 +767,206 @@ export class RsssUserDO extends DurableObject<Env> {
         }
     }
 
+    private async shouldRunPublishReconcile ():Promise<boolean> {
+        const last = await this.ctx.storage.get<number>(
+            PUBLISH_RECONCILE_LAST_KEY
+        )
+        const now = Date.now()
+
+        if (
+            typeof last === 'number' &&
+            now - last < PUBLISH_RECONCILE_INTERVAL_MS
+        ) {
+            return false
+        }
+
+        await this.ctx.storage.put(PUBLISH_RECONCILE_LAST_KEY, now)
+        return true
+    }
+
+    private listRecordsUrl (
+        credentials:OAuthCredentialRecord,
+        cursor?:string
+    ):string {
+        const base = credentials.pdsEndpoint.endsWith('/') ?
+            credentials.pdsEndpoint :
+            `${credentials.pdsEndpoint}/`
+        const url = new URL('xrpc/com.atproto.repo.listRecords', base)
+
+        url.searchParams.set('repo', credentials.did)
+        url.searchParams.set('collection', feedSubscriptionLexicon.id)
+        url.searchParams.set('limit', '100')
+        if (cursor) url.searchParams.set('cursor', cursor)
+
+        return url.href
+    }
+
+    private parseSubscriptionRkey (uri:string):string|null {
+        const parts = uri.split('/')
+        return parts.length > 0 ? parts[parts.length - 1] || null : null
+    }
+
+    private isListedSubscriptionRecord (
+        value:unknown
+    ):value is ListedSubscriptionRecord {
+        if (typeof value !== 'object' || value === null) return false
+        if (Array.isArray(value)) return false
+
+        const record = value as Partial<ListedSubscriptionRecord>
+        return typeof record.uri === 'string'
+    }
+
+    private subscriptionFromRecord (
+        record:ListedSubscriptionRecord
+    ): { feedUrl:string; subscription:RemoteSubscription } | null {
+        if (typeof record.value !== 'object' || record.value === null) {
+            return null
+        }
+        if (Array.isArray(record.value)) return null
+
+        const value = record.value as Partial<FeedSubscriptionRecord>
+        const rkey = this.parseSubscriptionRkey(record.uri)
+        if (!rkey || typeof value.feedUrl !== 'string') return null
+
+        return {
+            feedUrl: value.feedUrl,
+            subscription: {
+                rkey,
+                createdAt: typeof value.createdAt === 'string' ?
+                    value.createdAt :
+                    null
+            }
+        }
+    }
+
+    private async listRemoteSubscriptions (
+        credentials:OAuthCredentialRecord
+    ):Promise<Map<string, RemoteSubscription>> {
+        const subscriptions = new Map<string, RemoteSubscription>()
+        let cursor:string|undefined
+
+        do {
+            const response = await fetch(this.listRecordsUrl(
+                credentials,
+                cursor
+            ))
+            if (!response.ok) {
+                throw new Error('Could not list AT Protocol records')
+            }
+
+            const body = await response.json<ListedSubscriptionResponse>()
+            const records = Array.isArray(body.records) ?
+                body.records :
+                []
+
+            for (const rawRecord of records) {
+                if (!this.isListedSubscriptionRecord(rawRecord)) continue
+
+                const remote = this.subscriptionFromRecord(rawRecord)
+                if (remote) {
+                    subscriptions.set(
+                        remote.feedUrl,
+                        remote.subscription
+                    )
+                }
+            }
+
+            cursor = typeof body.cursor === 'string' ?
+                body.cursor :
+                undefined
+        } while (cursor)
+
+        return subscriptions
+    }
+
+    private async reconcilePublishedFeeds ():Promise<{
+        ok:true
+        changed:number
+        skipped?:string
+    } | {
+        ok:false
+        error:string
+    }> {
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return {
+                ok: true,
+                changed: 0,
+                skipped: 'missing_credentials'
+            }
+        }
+
+        if (!await this.shouldRunPublishReconcile()) {
+            return {
+                ok: true,
+                changed: 0,
+                skipped: 'rate_limited'
+            }
+        }
+
+        let remoteByUrl:Map<string, RemoteSubscription>
+        try {
+            remoteByUrl = await this.listRemoteSubscriptions(credentials)
+        } catch {
+            return {
+                ok: false,
+                error: 'pds_list_failed'
+            }
+        }
+
+        const feeds = this.sql.exec(
+            'SELECT * FROM feeds'
+        ).toArray() as unknown as Feed[]
+        let changed = 0
+
+        for (const feed of feeds) {
+            const remote = remoteByUrl.get(feed.url)
+
+            if (remote) {
+                const publishedAt = remote.createdAt ??
+                    feed.published_at ??
+                    new Date().toISOString()
+                if (
+                    !feed.published ||
+                    feed.published_rkey !== remote.rkey ||
+                    feed.published_at !== publishedAt ||
+                    feed.publish_error
+                ) {
+                    this.sql.exec(
+                        `UPDATE feeds SET
+                            published = 1,
+                            published_rkey = ?,
+                            published_at = ?,
+                            publish_error = NULL
+                        WHERE id = ?`,
+                        remote.rkey,
+                        publishedAt,
+                        feed.id
+                    )
+                    changed += 1
+                }
+                continue
+            }
+
+            if (feed.published || feed.published_rkey) {
+                this.sql.exec(
+                    `UPDATE feeds SET
+                        published = 0,
+                        published_rkey = NULL,
+                        published_at = NULL,
+                        publish_error = NULL
+                    WHERE id = ?`,
+                    feed.id
+                )
+                changed += 1
+            }
+        }
+
+        if (changed > 0) this.bumpFeedVersion()
+
+        return { ok: true, changed }
+    }
+
     private async publishFeed (feed:Feed):Promise<
         | { ok:true; feed:Record<string, unknown> | null }
         | { ok:false; status:ContentfulStatusCode; error:string }
@@ -1122,6 +1339,9 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // List all feeds
         app.get('/feeds', (c) => {
+            this.ctx.waitUntil(
+                this.reconcilePublishedFeeds().catch(() => undefined)
+            )
             const feeds = this.sql.exec(
                 'SELECT * FROM feeds ORDER BY title ASC'
             ).toArray()
@@ -1135,6 +1355,18 @@ export class RsssUserDO extends DurableObject<Env> {
                 feedUpdateStatus,
                 feedsWithUpdates,
                 feedUpdateCounts
+            })
+        })
+
+        app.post('/feeds/reconcile-published', async (c) => {
+            const result = await this.reconcilePublishedFeeds()
+            if (!result.ok) {
+                return c.json({ error: result.error }, 502)
+            }
+
+            return c.json({
+                changed: result.changed,
+                skipped: result.skipped
             })
         })
 

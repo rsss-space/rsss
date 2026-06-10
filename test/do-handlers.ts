@@ -181,6 +181,10 @@ function createSql (options:{
                 }))
             }
 
+            if (query.trim() === 'SELECT * FROM feeds') {
+                return result(feeds)
+            }
+
             if (
                 query.includes('FROM feeds') &&
                 query.includes('ORDER BY updated_at ASC, id ASC')
@@ -471,9 +475,11 @@ test('RsssUserDO feed handlers list create and refresh feeds', async t => {
         'created feed is returned'
     )
     t.equal(sql.feeds.length, 3, 'feed row is inserted')
-    // In this fast mock, fetchFeed completes before POST response
-    // so waitUntil is not called (fast path of hybrid race)
-    t.equal(waitUntilPromises.length, 0, 'fast path does not use waitUntil')
+    t.equal(
+        waitUntilPromises.length,
+        1,
+        'feed list schedules publish-state reconcile'
+    )
 
     await Promise.all(waitUntilPromises)
 
@@ -878,6 +884,164 @@ test('RsssUserDO unpublish missing remote record is idempotent',
         } finally {
             globalThis.fetch = originalFetch
             console.error = originalError
+        }
+    })
+
+test('RsssUserDO reconcile publish state from repo records',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, sql, storage } = createDoHarness({
+            feeds: [
+                feedRow(1, 'https://example.com/feed.xml', 'Example'),
+                {
+                    ...feedRow(2, 'https://missing.example/feed.xml',
+                        'Missing'),
+                    published: 1,
+                    published_rkey: 'feed.missing',
+                    published_at: '2026-06-09T20:00:00.000Z'
+                }
+            ]
+        })
+        storage.set('oauth:credentials', credentials)
+
+        const calls:string[] = []
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async (input) => {
+            calls.push(String(input))
+            return new Response(JSON.stringify({
+                records: [{
+                    uri: 'at://did:plc:alice/' +
+                        'space.rsss.feed.subscription/feed.remote',
+                    cid: 'bafyremote',
+                    value: {
+                        feedUrl: 'https://example.com/feed.xml',
+                        title: 'Example',
+                        createdAt: '2026-06-10T21:00:00.000Z'
+                    }
+                }]
+            }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+
+        try {
+            const response = await app.request(
+                '/feeds/reconcile-published',
+                { method: 'POST' }
+            )
+            const body = response.status === 200 ?
+                await response.json() as { changed:number } :
+                { changed: -1 }
+
+            t.equal(response.status, 200, 'reconcile succeeds')
+            t.equal(body.changed, 2, 'two drifting rows are corrected')
+            t.equal(calls.length, 1, 'one public listRecords request')
+            t.ok(
+                calls[0]?.includes(
+                    '/xrpc/com.atproto.repo.listRecords?'
+                ),
+                'reads public listRecords from the PDS'
+            )
+            t.ok(
+                calls[0]?.includes(
+                    'collection=space.rsss.feed.subscription'
+                ),
+                'lists rsss subscription records'
+            )
+            t.equal(sql.feeds[0]?.published, 1, 'remote record publishes')
+            t.equal(
+                sql.feeds[0]?.published_rkey,
+                'feed.remote',
+                'remote rkey is stored'
+            )
+            t.equal(
+                sql.feeds[1]?.published,
+                0,
+                'missing remote record unpublishes local state'
+            )
+            t.equal(sql.feedVersionBumps, 1, 'version bumps once')
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })
+
+test('RsssUserDO reconcile publish state is rate limited',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, storage } = createDoHarness()
+        storage.set('oauth:credentials', credentials)
+
+        let calls = 0
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async () => {
+            calls += 1
+            return new Response(JSON.stringify({ records: [] }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+
+        try {
+            const first = await app.request('/feeds/reconcile-published', {
+                method: 'POST'
+            })
+            const second = await app.request('/feeds/reconcile-published', {
+                method: 'POST'
+            })
+            const body = second.status === 200 ?
+                await second.json() as { skipped?:string } :
+                {}
+
+            t.equal(first.status, 200, 'first reconcile succeeds')
+            t.equal(second.status, 200, 'second reconcile is not an error')
+            t.equal(body.skipped, 'rate_limited', 'second call is skipped')
+            t.equal(calls, 1, 'second call does not hit listRecords')
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })
+
+test('RsssUserDO reconcile missing credentials does not consume rate limit',
+    async t => {
+        const credentials = await makeCredentials()
+        const { app, storage } = createDoHarness()
+
+        const missing = await app.request('/feeds/reconcile-published', {
+            method: 'POST'
+        })
+        const missingBody = missing.status === 200 ?
+            await missing.json() as { skipped?:string } :
+            {}
+
+        storage.set('oauth:credentials', credentials)
+
+        let calls = 0
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async () => {
+            calls += 1
+            return new Response(JSON.stringify({ records: [] }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+
+        try {
+            const response = await app.request(
+                '/feeds/reconcile-published',
+                { method: 'POST' }
+            )
+
+            t.equal(missing.status, 200, 'missing credentials is not fatal')
+            t.equal(
+                missingBody.skipped,
+                'missing_credentials',
+                'missing credentials is reported as skipped'
+            )
+            t.equal(response.status, 200, 'later credentialed call runs')
+            t.equal(calls, 1, 'credentialed call reaches listRecords')
+        } finally {
+            globalThis.fetch = originalFetch
         }
     })
 
