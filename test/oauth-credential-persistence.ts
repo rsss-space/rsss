@@ -15,7 +15,9 @@ import {
     type FetchHandler
 } from './signup-helpers.js'
 
-async function makeOAuthState ():Promise<OAuthState> {
+async function makeOAuthState (
+    authServer:string = 'https://auth.example'
+):Promise<OAuthState> {
     const keyPair = await generateDPoPKeyPair()
     const privateJwk = await crypto.subtle.exportKey(
         'jwk',
@@ -26,7 +28,8 @@ async function makeOAuthState ():Promise<OAuthState> {
         verifier: 'verifier-123',
         returnTo: '/feeds',
         dpopPrivateKeyJwk: privateJwk,
-        dpopPublicKeyJwk: keyPair.publicJwk
+        dpopPublicKeyJwk: keyPair.publicJwk,
+        authServer
     }
 }
 
@@ -103,13 +106,9 @@ test('OAuth callback persists tokens in the user DO only', async t => {
     const calls:RecordedDoCall[] = []
     env.USER_DO = makeFakeDo(calls)
     const state = await makeOAuthState()
-    const stateWithAuthServer = {
-        ...state,
-        authServer: 'https://auth.example'
-    }
     await env.SESSIONS.put(
         `oauth:${state.nonce}`,
-        JSON.stringify(stateWithAuthServer)
+        JSON.stringify(state)
     )
 
     const originalFetch = globalThis.fetch
@@ -251,23 +250,19 @@ test('user DO stores OAuth credentials server-side', async t => {
 test('AC3.3: OAuthState persists resolved authServer through KV round-trip',
     async t => {
         const env = makeEnv()
-        const state = await makeOAuthState()
         const authServer = 'https://auth.example'
+        const state = await makeOAuthState(authServer)
 
         // Simulate what startOAuthFlow does: store state with authServer
-        const stateWithAuthServer = {
-            ...state,
-            authServer
-        }
         await env.SESSIONS.put(
         `oauth:${state.nonce}`,
-        JSON.stringify(stateWithAuthServer)
+        JSON.stringify(state)
         )
 
         // Read back from KV and verify authServer is present
         const storedJson = await env.SESSIONS.get(`oauth:${state.nonce}`)
         t.ok(storedJson, 'state stored in KV')
-        const parsed = JSON.parse(storedJson!) as typeof stateWithAuthServer
+        const parsed = JSON.parse(storedJson!) as OAuthState
         t.equal(parsed.authServer, authServer, 'authServer persists in KV')
     })
 
@@ -351,17 +346,13 @@ test('AC3.2: callback succeeds when body.iss === storedState.authServer',
         })
         const calls:RecordedDoCall[] = []
         env.USER_DO = makeFakeDo(calls)
-        const state = await makeOAuthState()
         const authServer = 'https://auth.example'
+        const state = await makeOAuthState(authServer)
 
         // Store state with authServer
-        const stateWithAuthServer = {
-            ...state,
-            authServer
-        }
         await env.SESSIONS.put(
         `oauth:${state.nonce}`,
-        JSON.stringify(stateWithAuthServer)
+        JSON.stringify(state)
         )
 
         const originalFetch = globalThis.fetch
@@ -418,9 +409,11 @@ test(
         const state = await makeOAuthState()
 
         // Store state WITHOUT authServer (simulating old code)
+        // Destructure authServer out to test the fail-closed behavior
+        const { authServer: _, ...stateWithoutAuthServer } = state
         await env.SESSIONS.put(
         `oauth:${state.nonce}`,
-        JSON.stringify(state)
+        JSON.stringify(stateWithoutAuthServer)
         )
 
         const originalFetch = globalThis.fetch
