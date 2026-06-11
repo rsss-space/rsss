@@ -748,11 +748,12 @@ app.post('/api/auth/callback', async (c) => {
             }, 400)
         }
 
-        // RFC 9207: bind iss to the authorization server stored during flow start.
-        // Strict !== comparison ensures fail-closed: if authServer is undefined
-        // (e.g., from old code during deploy window), this rejects the callback.
-        // Note: this comparison requires byte-identical strings; neither iss nor
-        // authServer is canonicalized (e.g., no trailing-slash stripping).
+        // RFC 9207: bind iss to the authorization server resolved at the
+        // start of this flow. Strict !== fails closed — if authServer is
+        // undefined (old state from a deploy window) the callback rejects.
+        // The compare is byte-exact: neither iss nor authServer is
+        // canonicalized (no trailing-slash stripping), so both sides must
+        // already be in the same canonical form.
         if (body.iss !== storedState.authServer) {
             return c.json({
                 error: 'invalid_iss'
