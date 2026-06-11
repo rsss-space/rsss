@@ -726,3 +726,30 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     follower DIDs, and `getBacklinksCount` for the count. Both use
     `collection: 'space.rsss.graph.follow', path: '.subject', subject: did`.
 ---
+
+## 2026-06-10 - US-019
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `src/server/bluesky-follows.ts` with
+  `getBlueskyFollows(did, deps)` — fetches the user's public Bluesky
+  follows from `https://public.api.bsky.app/xrpc/app.bsky.graph.getFollows`,
+  paginating via cursor until all follows are collected. Results are
+  cached briefly (5-minute TTL) via injectable `getCache`/`putCache`
+  deps. Also exports `makeBlueskyFollowsDeps(kv, fetcher)` to wire up
+  a Cloudflare Workers KV namespace for production use.
+  No OAuth scope is requested; this is a public unauthenticated read.
+- Files changed: src/server/bluesky-follows.ts (new),
+  test/bluesky-follows.ts (new, 19 tests),
+  test/run-bluesky-follows.mjs (new),
+  specs/prd.json (US-019 passes:true), progress.log
+- Verification: node test/run-bluesky-follows.mjs (19/19 passing);
+  npx tsc --noEmit; npm run lint (all pass)
+- **Learnings for future iterations:**
+  - Build Bluesky AppView URLs as string templates, not `new URL()` +
+    `searchParams.set`, because `URLSearchParams` percent-encodes colons
+    in DID values (e.g. `did:plc:abc` → `did%3Aplc%3Aabc`), which
+    breaks test assertions and may break real API calls.
+  - The public Bluesky AppView base is `https://public.api.bsky.app`;
+    no auth header is required for `app.bsky.graph.getFollows`.
+  - `makeBlueskyFollowsDeps` bridges the injectable-deps pattern to a
+    real Cloudflare KV namespace with `expirationTtl`.
+---
