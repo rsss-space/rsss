@@ -1,4 +1,5 @@
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import app from '../src/server/index.js'
 import {
     RsssUserDO
@@ -13,18 +14,6 @@ import {
     makeEnv,
     type FetchHandler
 } from './signup-helpers.js'
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] || null }
-    }
-}
 
 async function makeOAuthState ():Promise<OAuthState> {
     const keyPair = await generateDPoPKeyPair()
@@ -196,7 +185,7 @@ function createHarness () {
             request:(path:string, init?:RequestInit) => Promise<Response>
         }
     }
-    userDo.sql = { exec: () => result([]) }
+    userDo.sql = { exec: () => fakeResult([]) }
     userDo.ctx = {
         storage: {
             async put (key:string, value:unknown) {

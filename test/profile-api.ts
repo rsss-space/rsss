@@ -6,6 +6,7 @@
  *    profileApiHandler exported from src/server/profile-api.ts)
  */
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import {
     createSlingshotClient,
@@ -23,18 +24,6 @@ interface FollowRow {
     rkey:string
 }
 
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] ?? null }
-    }
-}
-
 function createFollowSql (initialFollows:FollowRow[] = []) {
     const follows:FollowRow[] = [...initialFollows]
 
@@ -44,12 +33,12 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
             if (query.includes(
                 'SELECT rkey FROM graph_follows WHERE subject_did = ?'
             )) {
-                return result(
+                return fakeResult(
                     follows.filter(f => f.subject_did === params[0])
                 )
             }
             // Absorb DDL and other queries
-            return result([])
+            return fakeResult([])
         }
     }
 }

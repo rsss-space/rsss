@@ -1,5 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import { fakeResult } from './helpers/sql-fake.js'
 import {
     generateDPoPKeyPair,
     type OAuthCredentialRecord
@@ -21,11 +22,6 @@ interface FeedRow {
     publish_error:string|null
     created_at:string
     updated_at:string
-}
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
 }
 
 interface ItemRow {
@@ -51,17 +47,6 @@ interface ItemRow {
     full_content_fetched_at:string|null
     full_content_status:string|null
     feed_title:string|null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () {
-            return rows
-        },
-        one () {
-            return rows[0] || null
-        }
-    }
 }
 
 function feedRow (id:number, url:string, title:string|null):FeedRow {
@@ -154,7 +139,7 @@ function createSql (options:{
         exec (query:string, ...params:unknown[]) {
             if (query.includes('SELECT feed_version FROM user_state')) {
                 this.calls.push('version')
-                return result([{ feed_version: feedVersion }])
+                return fakeResult([{ feed_version: feedVersion }])
             }
 
             if (
@@ -162,7 +147,7 @@ function createSql (options:{
                 query.includes('JOIN feeds') &&
                 query.includes('ORDER BY items.updated_at ASC')
             ) {
-                return result(items)
+                return fakeResult(items)
             }
 
             if (
@@ -172,17 +157,17 @@ function createSql (options:{
             ) {
                 this.calls.push('items')
                 this.itemQueries.push(query)
-                return result(items)
+                return fakeResult(items)
             }
 
             if (query.includes('SELECT * FROM feeds ORDER BY title ASC')) {
-                return result([...feeds].sort((a, b) => {
+                return fakeResult([...feeds].sort((a, b) => {
                     return (a.title || '').localeCompare(b.title || '')
                 }))
             }
 
             if (query.trim() === 'SELECT * FROM feeds') {
-                return result(feeds)
+                return fakeResult(feeds)
             }
 
             if (
@@ -190,19 +175,19 @@ function createSql (options:{
                 query.includes('ORDER BY updated_at ASC, id ASC')
             ) {
                 this.feedSyncQueries.push(query)
-                return result(feeds)
+                return fakeResult(feeds)
             }
 
             if (query.includes('SELECT MAX(updated_at) as latest FROM feeds')) {
-                return result([{ latest: feeds[0]?.updated_at ?? null }])
+                return fakeResult([{ latest: feeds[0]?.updated_at ?? null }])
             }
 
             if (query.includes('SELECT MAX(updated_at) as latest FROM items')) {
-                return result([{ latest: items[0]?.updated_at ?? null }])
+                return fakeResult([{ latest: items[0]?.updated_at ?? null }])
             }
 
             if (query.includes('SELECT id FROM feeds WHERE url = ?')) {
-                return result(feeds
+                return fakeResult(feeds
                     .filter(feed => feed.url === params[0])
                     .map(feed => ({ id: feed.id })))
             }
@@ -210,22 +195,22 @@ function createSql (options:{
             if (query.includes('INSERT INTO feeds (url) VALUES (?)')) {
                 const url = params[0] as string
                 feeds.push(feedRow(feeds.length + 1, url, null))
-                return result([])
+                return fakeResult([])
             }
 
             if (query.includes('SELECT * FROM feeds WHERE url = ?')) {
-                return result(feeds.filter(feed => feed.url === params[0]))
+                return fakeResult(feeds.filter(feed => feed.url === params[0]))
             }
 
             if (query.includes('SELECT * FROM feeds WHERE id = ?')) {
-                return result(feeds.filter(feed => feed.id === params[0]))
+                return fakeResult(feeds.filter(feed => feed.id === params[0]))
             }
 
             // POST /feeds unread count query
             if (query.includes('SELECT COUNT(*) as unread FROM items') &&
                 query.includes('WHERE feed_id = ?') &&
                 query.includes('AND is_read = 0')) {
-                return result([{ unread: 0 }])
+                return fakeResult([{ unread: 0 }])
             }
 
             // /feeds/:id/refresh selects with FEED_SYNC_COLUMNS for the
@@ -235,19 +220,19 @@ function createSql (options:{
                 query.includes('SELECT') &&
                 query.includes('FROM feeds WHERE id = ?')
             ) {
-                return result(feeds.filter(feed => feed.id === params[0]))
+                return fakeResult(feeds.filter(feed => feed.id === params[0]))
             }
 
             if (query.includes('DELETE FROM feeds WHERE id = ?')) {
                 const index = feeds.findIndex(feed => feed.id === params[0])
                 if (index >= 0) feeds.splice(index, 1)
-                return result([])
+                return fakeResult([])
             }
 
             if (query.includes('UPDATE items SET') &&
                 query.includes('blurhash = ?')) {
                 this.blurhashUpdates.push(params)
-                return result([])
+                return fakeResult([])
             }
 
             if (
@@ -262,7 +247,7 @@ function createSql (options:{
                     feed.published_at = params[1] as string
                     feed.publish_error = null
                 }
-                return result([])
+                return fakeResult([])
             }
 
             if (
@@ -274,7 +259,7 @@ function createSql (options:{
                     feed.published = 0
                     feed.publish_error = params[0] as string
                 }
-                return result([])
+                return fakeResult([])
             }
 
             if (
@@ -290,26 +275,26 @@ function createSql (options:{
                     feed.published_at = null
                     feed.publish_error = null
                 }
-                return result([])
+                return fakeResult([])
             }
 
             if (query.includes('UPDATE user_state SET feed_version')) {
                 this.feedVersionBumps++
-                return result([{ feed_version: this.feedVersionBumps }])
+                return fakeResult([{ feed_version: this.feedVersionBumps }])
             }
 
             if (query.includes('pending_count')) {
                 if (pendingCountRows !== null) {
-                    return result(pendingCountRows)
+                    return fakeResult(pendingCountRows)
                 }
-                return result(feeds.map(feed => ({
+                return fakeResult(feeds.map(feed => ({
                     id: feed.id,
                     pending_count: 0
                 })))
             }
 
             if (query.includes('last_pulled_at')) {
-                return result([])
+                return fakeResult([])
             }
 
             // /internal/lazy-html-data fans out into per-counts
@@ -319,26 +304,26 @@ function createSql (options:{
             if (
                 query.includes('SELECT COUNT(*) as count FROM items')
             ) {
-                return result([{ count: 0 }])
+                return fakeResult([{ count: 0 }])
             }
             if (
                 query.includes(
                     'SELECT feed_id, COUNT(*) as unread FROM items'
                 )
             ) {
-                return result([])
+                return fakeResult([])
             }
 
             // sweepStuckResolvingFeeds (018) probes still-resolving
             // rows; no-op for harnesses that don't model the queue.
             if (query.includes('UPDATE feeds SET')) {
-                return result([])
+                return fakeResult([])
             }
             if (
                 query.includes('SELECT id FROM feeds') &&
                 query.includes('last_status = 504')
             ) {
-                return result([])
+                return fakeResult([])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)

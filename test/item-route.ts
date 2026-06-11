@@ -1,21 +1,6 @@
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () {
-            return rows
-        },
-        one () {
-            return rows[0] || null
-        }
-    }
-}
 
 function createItemRouteDo () {
     const exactItem = {
@@ -57,10 +42,10 @@ function createItemRouteDo () {
             })
 
             if (!usesExactLink || hasLikeMatch || hasWildcardParam) {
-                return result([])
+                return fakeResult([])
             }
 
-            return result(params.some(param => links.includes(
+            return fakeResult(params.some(param => links.includes(
                 param as string
             )) ? [exactItem] : [])
         }

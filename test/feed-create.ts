@@ -1,4 +1,5 @@
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface FeedRow {
@@ -12,17 +13,6 @@ interface FeedRow {
     updated_at:string
 }
 
-function result (rows:unknown[]) {
-    return {
-        toArray () {
-            return rows
-        },
-        one () {
-            return rows[0] || null
-        }
-    }
-}
-
 function createFeedSql () {
     const feeds:FeedRow[] = []
 
@@ -30,7 +20,7 @@ function createFeedSql () {
         feeds,
         exec (query:string, ...params:unknown[]) {
             if (query.includes('SELECT id FROM feeds WHERE url = ?')) {
-                return result(feeds
+                return fakeResult(feeds
                     .filter(feed => feed.url === params[0])
                     .map(feed => ({ id: feed.id })))
             }
@@ -47,26 +37,26 @@ function createFeedSql () {
                     created_at: '2026-04-26 00:00:00',
                     updated_at: '2026-04-26 00:00:00'
                 })
-                return result([])
+                return fakeResult([])
             }
 
             if (query.includes('SELECT * FROM feeds WHERE url = ?')) {
-                return result(feeds.filter(feed => feed.url === params[0]))
+                return fakeResult(feeds.filter(feed => feed.url === params[0]))
             }
 
             if (query.includes('SELECT * FROM feeds WHERE id = ?')) {
-                return result(feeds)
+                return fakeResult(feeds)
             }
 
             if (query.includes('SELECT COUNT(*) as count')) {
-                return result([{ count: 0 }])
+                return fakeResult([{ count: 0 }])
             }
 
             // POST /feeds unread count query
             if (query.includes('SELECT COUNT(*) as unread FROM items') &&
                 query.includes('WHERE feed_id = ?') &&
                 query.includes('AND is_read = 0')) {
-                return result([{ unread: 0 }])
+                return fakeResult([{ unread: 0 }])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)

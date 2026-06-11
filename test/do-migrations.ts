@@ -1,26 +1,11 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import { fakeResult } from './helpers/sql-fake.js'
 import {
     INDEXES_SQL,
     TABLES_SQL,
     USER_STATE_SQL
 } from '../src/shared/schema.js'
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[] = []):QueryResult {
-    return {
-        toArray () {
-            return rows
-        },
-        one () {
-            return rows[0] || null
-        }
-    }
-}
 
 function createConstructorContext (storedVersion:number | null) {
     const statements:string[] = []
@@ -33,7 +18,7 @@ function createConstructorContext (storedVersion:number | null) {
                 exec (query:string) {
                     statements.push(query)
                     if (query.includes('PRAGMA table_info(feeds)')) {
-                        return result([
+                        return fakeResult([
                             { name: 'updated_at' },
                             { name: 'last_error' },
                             { name: 'last_status' },
@@ -45,7 +30,7 @@ function createConstructorContext (storedVersion:number | null) {
                         ])
                     }
                     if (query.includes('PRAGMA table_info(items)')) {
-                        return result([
+                        return fakeResult([
                             { name: 'updated_at' },
                             { name: 'thumbnail_url' },
                             { name: 'full_content' },
@@ -53,7 +38,7 @@ function createConstructorContext (storedVersion:number | null) {
                             { name: 'full_content_status' }
                         ])
                     }
-                    return result()
+                    return fakeResult()
                 }
             },
             get: async () => {
@@ -140,7 +125,7 @@ test('RsssUserDO migrates missing item thumbnail column', async t => {
 
     setup.ctx.storage.sql.exec = ((query:string) => {
         if (query.includes('PRAGMA table_info(items)')) {
-            return result([{ name: 'updated_at' }])
+            return fakeResult([{ name: 'updated_at' }])
         }
 
         return originalExec(query)
@@ -271,14 +256,14 @@ test('RsssUserDO reads and bumps feed version through user_state', t => {
             statements.push({ query, params })
 
             if (query.includes('SELECT feed_version FROM user_state')) {
-                return result([{ feed_version: 4 }])
+                return fakeResult([{ feed_version: 4 }])
             }
 
             if (query.includes('UPDATE user_state SET')) {
-                return result([{ feed_version: 5 }])
+                return fakeResult([{ feed_version: 5 }])
             }
 
-            return result()
+            return fakeResult([])
         }
     }
 
@@ -306,7 +291,7 @@ test('RsssUserDO migrates missing item image metadata columns', async t => {
 
     setup.ctx.storage.sql.exec = ((query:string) => {
         if (query.includes('PRAGMA table_info(items)')) {
-            return result([
+            return fakeResult([
                 { name: 'updated_at' },
                 { name: 'thumbnail_url' },
                 { name: 'full_content' },
@@ -345,7 +330,7 @@ test('RsssUserDO migrates missing feed publish state columns', async t => {
 
     setup.ctx.storage.sql.exec = ((query:string) => {
         if (query.includes('PRAGMA table_info(feeds)')) {
-            return result([
+            return fakeResult([
                 { name: 'updated_at' },
                 { name: 'last_error' },
                 { name: 'last_status' },

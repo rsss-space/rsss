@@ -1,5 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import { fakeResult } from './helpers/sql-fake.js'
 
 interface FeedRow {
     id:number
@@ -12,27 +13,11 @@ interface FeedRow {
     updated_at:string
 }
 
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
 interface AlarmStorage {
     get:<T>(key:string) => Promise<T | undefined>
     put:(key:string, value:unknown) => Promise<void>
     delete:(key:string) => Promise<void>
     setAlarm:(time:number) => Promise<void>
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () {
-            return rows
-        },
-        one () {
-            return rows[0] || null
-        }
-    }
 }
 
 function createFeed (id:number, url = `https://example.com/${id}.xml`) {
@@ -87,7 +72,7 @@ function createAlarmDo (
                     .filter(feed => feed.id > cursor)
                     .slice(0, limit)
 
-                return result(batch)
+                return fakeResult(batch)
             }
 
             // sweepStuckResolvingFeeds (added in 018) runs an UPDATE
@@ -95,11 +80,11 @@ function createAlarmDo (
             // just-marked rows. The alarm harness only models the
             // happy-path refresh queue, so both are no-ops here.
             if (query.includes('UPDATE feeds SET')) {
-                return result([])
+                return fakeResult([])
             }
             if (query.includes('SELECT id FROM feeds') &&
                 query.includes('last_status = 504')) {
-                return result([])
+                return fakeResult([])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)
@@ -132,11 +117,11 @@ function createResumeAlarmDo (
             // sweepStuckResolvingFeeds (018) probes/updates rows
             // outside this test's queue model; no-op for both.
             if (query.includes('UPDATE feeds SET')) {
-                return result([])
+                return fakeResult([])
             }
             if (query.includes('SELECT id FROM feeds') &&
                 query.includes('last_status = 504')) {
-                return result([])
+                return fakeResult([])
             }
             if (!query.includes('SELECT * FROM feeds')) {
                 throw new Error(`Unexpected SQL: ${query}`)
@@ -157,7 +142,7 @@ function createResumeAlarmDo (
                 .filter(feed => feed.id > cursor)
                 .slice(0, limit)
 
-            return result(batch)
+            return fakeResult(batch)
         }
     }
 
@@ -323,7 +308,7 @@ test('fetchFeed stores last_error and last_status on failure', async t => {
                     status: params[1],
                     id: params[2]
                 }
-                return result([])
+                return fakeResult([])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)

@@ -4,6 +4,7 @@
  *  - buildGraphResponse helper
  */
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import {
     buildGraphResponse,
@@ -17,18 +18,6 @@ interface FollowRow {
     rkey:string
 }
 
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] ?? null }
-    }
-}
-
 function createFollowSql (initialFollows:FollowRow[] = []) {
     const follows:FollowRow[] = [...initialFollows]
 
@@ -38,13 +27,13 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
             if (query.includes(
                 'SELECT subject_did FROM graph_follows'
             )) {
-                return result(follows)
+                return fakeResult(follows)
             }
 
             if (query.includes(
                 'SELECT rkey FROM graph_follows WHERE subject_did = ?'
             )) {
-                return result(
+                return fakeResult(
                     follows.filter(f => f.subject_did === params[0])
                 )
             }
@@ -54,7 +43,7 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
                     subject_did: params[0] as string,
                     rkey: params[1] as string
                 })
-                return result([])
+                return fakeResult([])
             }
 
             if (query.includes(
@@ -64,10 +53,10 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
                     f => f.subject_did === params[0]
                 )
                 if (idx >= 0) follows.splice(idx, 1)
-                return result([])
+                return fakeResult([])
             }
 
-            return result([])
+            return fakeResult([])
         }
     }
 }

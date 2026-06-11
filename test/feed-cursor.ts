@@ -1,4 +1,5 @@
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface FeedRow {
@@ -8,18 +9,6 @@ interface FeedRow {
     last_pulled_at:string|null
     last_fetched:string|null
     updated_at:string
-}
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[] = []):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] || null }
-    }
 }
 
 function feedRow (
@@ -48,7 +37,7 @@ test('getFeedsWithUpdates returns string IDs of feeds with newer items',
 
         userDo.sql = {
             exec () {
-                return result([{ id: 1 }, { id: 3 }])
+                return fakeResult([{ id: 1 }, { id: 3 }])
             }
         }
 
@@ -67,7 +56,7 @@ test('getFeedsWithUpdates query uses last_pulled_at', t => {
     userDo.sql = {
         exec (query:string) {
             capturedQuery = query
-            return result([])
+            return fakeResult([])
         }
     }
 
@@ -89,7 +78,7 @@ test('getFeedsWithUpdates returns empty when all feeds caught up', t => {
     }
 
     userDo.sql = {
-        exec () { return result([]) }
+        exec () { return fakeResult([]) }
     }
 
     t.deepEqual(userDo.getFeedsWithUpdates(), [], 'empty when no stale feeds')
@@ -130,13 +119,13 @@ function createCursorHarness (
     userDo.sql = {
         exec (query:string, ...params:unknown[]) {
             if (query.includes('SELECT * FROM feeds WHERE id = ?')) {
-                return result(feeds.filter(f => f.id === params[0]))
+                return fakeResult(feeds.filter(f => f.id === params[0]))
             }
             if (query.includes('SELECT * FROM feeds ORDER BY title ASC')) {
-                return result([...feeds])
+                return fakeResult([...feeds])
             }
             if (query.includes('SELECT * FROM feeds')) {
-                return result([...feeds])
+                return fakeResult([...feeds])
             }
             if (
                 query.includes('SELECT') &&
@@ -145,22 +134,22 @@ function createCursorHarness (
             ) {
                 // FEED_SYNC_COLUMNS projection used by the refresh
                 // response (returns the post-fetch row).
-                return result(feeds.filter(f => f.id === params[0]))
+                return fakeResult(feeds.filter(f => f.id === params[0]))
             }
             if (
                 query.includes('COUNT(items.id)') &&
                 query.includes('GROUP BY feeds.id')
             ) {
-                return result([])
+                return fakeResult([])
             }
             if (
                 query.includes('UPDATE feeds') &&
                 query.includes('last_pulled_at')
             ) {
                 cursorUpdates.push(params[params.length - 1] as number)
-                return result([])
+                return fakeResult([])
             }
-            return result([])
+            return fakeResult([])
         }
     }
 
@@ -360,12 +349,12 @@ function createFetchFeedHarness (opts:{
                 } as unknown as QueryResult
             }
             if (query.includes('SELECT id FROM items')) {
-                return result(newItemCount > 0 ? [{ id: 1 }] : [])
+                return fakeResult(newItemCount > 0 ? [{ id: 1 }] : [])
             }
             if (query.includes('UPDATE feeds SET')) {
-                return result([])
+                return fakeResult([])
             }
-            return result([])
+            return fakeResult([])
         }
     }
 
@@ -766,7 +755,7 @@ test('GET /feeds includes per-feed update counts from cached items',
         userDo.sql = {
             exec (query:string) {
                 if (query.includes('SELECT * FROM feeds ORDER BY title ASC')) {
-                    return result([
+                    return fakeResult([
                         feedRow(1, 'https://a.example/feed', '2026-04-02'),
                         feedRow(2, 'https://b.example/feed', '2026-04-20'),
                         feedRow(3, 'https://c.example/feed', null)
@@ -776,13 +765,13 @@ test('GET /feeds includes per-feed update counts from cached items',
                     query.includes('COUNT(items.id)') &&
                     query.includes('GROUP BY feeds.id')
                 ) {
-                    return result([
+                    return fakeResult([
                         { id: 1, pending_count: 2 },
                         { id: 2, pending_count: 0 },
                         { id: 3, pending_count: 1 }
                     ])
                 }
-                return result([])
+                return fakeResult([])
             }
         }
         userDo.ctx = {
@@ -832,7 +821,7 @@ function createPendingHarness (opts:{
     userDo.sql = {
         exec (query:string, ..._params:unknown[]) {
             if (query.includes('SELECT * FROM feeds WHERE id = ?')) {
-                return result([feed])
+                return fakeResult([feed])
             }
             if (
                 query.includes('FROM items') &&
@@ -851,9 +840,9 @@ function createPendingHarness (opts:{
                         title: i.title,
                         published_at: i.pub_date
                     }))
-                return result(rows)
+                return fakeResult(rows)
             }
-            return result([])
+            return fakeResult([])
         }
     }
 
@@ -1001,7 +990,7 @@ function createItemsHarness (opts:{
                 const rows = query.includes('last_pulled_at')
                     ? applyCursor(items, feeds)
                     : items
-                return result(rows.map(i => ({
+                return fakeResult(rows.map(i => ({
                     id: i.id,
                     feed_id: i.feed_id,
                     title: i.title,
@@ -1022,7 +1011,7 @@ function createItemsHarness (opts:{
                     one: () => ({ count: rows.length })
                 } as unknown as QueryResult
             }
-            return result([])
+            return fakeResult([])
         }
     }
 
@@ -1125,7 +1114,7 @@ test('advanceFeedCursor SQL sets last_pulled_at = MAX(pub_date)',
                 if (query.includes('UPDATE feeds SET last_pulled_at')) {
                     cursorSql = query
                 }
-                return result([])
+                return fakeResult([])
             }
         }
         userDo.getFeedsWithUpdates = () => []
@@ -1180,14 +1169,14 @@ test('US2: full refresh advances cursor on every subscribed feed',
         userDo.sql = {
             exec (query:string, ...params:unknown[]) {
                 if (query.includes('SELECT * FROM feeds')) {
-                    return result([...feeds])
+                    return fakeResult([...feeds])
                 }
                 if (
                     query.includes('UPDATE feeds SET last_pulled_at')
                 ) {
                     cursorIds.push(params[params.length - 1] as number)
                 }
-                return result([])
+                return fakeResult([])
             }
         }
         userDo.ctx = {
