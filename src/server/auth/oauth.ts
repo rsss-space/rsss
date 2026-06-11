@@ -3,10 +3,13 @@
  */
 import { reportError } from '../lib/report-error.js'
 
-// DPoP key pair used during the PAR + token exchange. The pair is
-// discarded once the exchange completes because we never call the
-// AT Protocol on behalf of the user -- OAuth is used purely to
-// establish a verified (did, handle) pair for our own session.
+export const AT_PROTOCOL_OAUTH_SCOPE =
+    'atproto repo:space.rsss.feed.subscription ' +
+    'repo:space.rsss.graph.follow'
+
+// DPoP key pair used during the PAR + token exchange. The private key
+// is persisted with the resulting tokens so later PDS calls can prove
+// possession without ever exposing credentials to the browser.
 export interface DPoPKeyPair {
     privateKey: CryptoKey
     publicKey: CryptoKey
@@ -16,17 +19,32 @@ export interface DPoPKeyPair {
 /**
  * Application session derived from a successful Bluesky OAuth flow.
  *
- * We deliberately do not retain the access/refresh tokens or DPoP
- * key pair: this app never calls the user's PDS. Storing tokens we
- * cannot use would just be a credential leak waiting to happen.
- * If we ever start making AT Protocol calls on behalf of the user,
- * the DPoP key pair must be persisted alongside the tokens (see
- * `restoreDPoPKeyPair`).
+ * Browser-visible session derived from a successful Bluesky OAuth flow.
+ * Token material is stored separately in the user's Durable Object,
+ * because the server now writes rsss records to the user's PDS while
+ * keeping OAuth credentials off every client response.
  */
 export interface OAuthSession {
     did: string
     handle: string
     avatar?: string
+}
+
+export interface OAuthCredentialRecord {
+    did:string
+    accessToken:string
+    refreshToken:string
+    tokenEndpoint:string
+    pdsEndpoint:string
+    dpopPrivateKeyJwk:JsonWebKey
+    tokenType?:string
+    accessTokenExpiresAt?:number
+    updatedAt:string
+}
+
+export interface OAuthExchangeResult {
+    session:OAuthSession
+    credentials:OAuthCredentialRecord
 }
 
 export interface OAuthState {
@@ -234,34 +252,7 @@ async function resolveHandle (handle: string): Promise<{
         did = (await wellKnownResponse.text()).trim()
     }
 
-    // Get DID document
-    let pds: string
-    if (did.startsWith('did:plc:')) {
-        const plcResponse = await fetch(`https://plc.directory/${did}`)
-        if (!plcResponse.ok) {
-            throw new Error(`Could not resolve DID: ${did}`)
-        }
-        const plcData = await plcResponse.json() as { service?: Array<{ id: string; serviceEndpoint: string }> }
-        const pdsService = plcData.service?.find(s => s.id === '#atproto_pds')
-        if (!pdsService) {
-            throw new Error('No PDS service found')
-        }
-        pds = pdsService.serviceEndpoint
-    } else if (did.startsWith('did:web:')) {
-        const domain = did.substring(8)
-        const didDocResponse = await fetch(`https://${domain}/.well-known/did.json`)
-        if (!didDocResponse.ok) {
-            throw new Error(`Could not resolve did:web: ${did}`)
-        }
-        const didDoc = await didDocResponse.json() as { service?: Array<{ id: string; serviceEndpoint: string }> }
-        const pdsService = didDoc.service?.find(s => s.id === '#atproto_pds')
-        if (!pdsService) {
-            throw new Error('No PDS service found')
-        }
-        pds = pdsService.serviceEndpoint
-    } else {
-        throw new Error(`Unsupported DID method: ${did}`)
-    }
+    const pds = await resolvePdsEndpoint(did)
 
     // Get auth server from PDS
     const pdsMetaResponse = await fetch(`${pds}/.well-known/oauth-protected-resource`)
@@ -295,6 +286,47 @@ async function getAuthServerMetadata (authServer: string): Promise<{
         throw new Error('Could not get auth server metadata')
     }
     return response.json()
+}
+
+async function resolvePdsEndpoint (did:string):Promise<string> {
+    if (did.startsWith('did:plc:')) {
+        const plcResponse = await fetch(`https://plc.directory/${did}`)
+        if (!plcResponse.ok) {
+            throw new Error(`Could not resolve DID: ${did}`)
+        }
+        const plcData = await plcResponse.json() as {
+            service?: Array<{ id: string; serviceEndpoint: string }>
+        }
+        const pdsService = plcData.service?.find(s => {
+            return s.id === '#atproto_pds'
+        })
+        if (!pdsService) {
+            throw new Error('No PDS service found')
+        }
+        return pdsService.serviceEndpoint
+    }
+
+    if (did.startsWith('did:web:')) {
+        const domain = did.substring(8)
+        const didDocResponse = await fetch(
+            `https://${domain}/.well-known/did.json`
+        )
+        if (!didDocResponse.ok) {
+            throw new Error(`Could not resolve did:web: ${did}`)
+        }
+        const didDoc = await didDocResponse.json() as {
+            service?: Array<{ id: string; serviceEndpoint: string }>
+        }
+        const pdsService = didDoc.service?.find(s => {
+            return s.id === '#atproto_pds'
+        })
+        if (!pdsService) {
+            throw new Error('No PDS service found')
+        }
+        return pdsService.serviceEndpoint
+    }
+
+    throw new Error(`Unsupported DID method: ${did}`)
 }
 
 /**
@@ -337,7 +369,9 @@ export async function startOAuthFlow (
         client_id: clientId,
         redirect_uri: redirectUri,
         state: nonce,
-        scope: 'atproto',
+        // Existing sessions were granted only `atproto`; users must
+        // re-consent on their next login for these repo-specific scopes.
+        scope: AT_PROTOCOL_OAUTH_SCOPE,
         code_challenge: codeChallenge,
         code_challenge_method: 'S256',
         login_hint: did
@@ -455,7 +489,7 @@ export async function exchangeCode (
     clientId: string,
     redirectUri: string,
     authServer: string
-): Promise<OAuthSession> {
+): Promise<OAuthExchangeResult> {
     const metadata = await getAuthServerMetadata(authServer)
 
     // Restore the DPoP key pair from the stored JWKs
@@ -523,12 +557,20 @@ export async function exchangeCode (
     }
 
     const tokens = await response.json() as {
-        sub: string
+        sub?: unknown
+        access_token?: unknown
+        refresh_token?: unknown
+        token_type?: unknown
+        expires_in?: unknown
     }
 
-    // The access/refresh tokens and DPoP-bound token type returned
-    // here are intentionally discarded -- see the OAuthSession docs
-    // for why we do not persist them.
+    if (
+        typeof tokens.sub !== 'string' ||
+        typeof tokens.access_token !== 'string' ||
+        typeof tokens.refresh_token !== 'string'
+    ) {
+        throw new Error('Token response missing required fields')
+    }
 
     // Get handle (and avatar, if any) from DID
     let handle = tokens.sub
@@ -547,10 +589,33 @@ export async function exchangeCode (
         // Use DID as fallback
     }
 
+    const expiresIn = typeof tokens.expires_in === 'number' ?
+        tokens.expires_in :
+        undefined
+    const accessTokenExpiresAt = expiresIn ?
+        Date.now() + expiresIn * 1000 :
+        undefined
+    const pdsEndpoint = await resolvePdsEndpoint(tokens.sub)
+
     return {
-        did: tokens.sub,
-        handle,
-        avatar
+        session: {
+            did: tokens.sub,
+            handle,
+            avatar
+        },
+        credentials: {
+            did: tokens.sub,
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token,
+            tokenEndpoint: metadata.token_endpoint,
+            pdsEndpoint,
+            dpopPrivateKeyJwk: state.dpopPrivateKeyJwk,
+            tokenType: typeof tokens.token_type === 'string' ?
+                tokens.token_type :
+                undefined,
+            accessTokenExpiresAt,
+            updatedAt: new Date().toISOString()
+        }
     }
 }
 

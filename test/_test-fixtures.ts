@@ -1,5 +1,26 @@
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
+type WebSocketPairCtor = new (request:string, response:string) => {
+    request:string
+    response:string
+}
+
+const workerGlobal = globalThis as typeof globalThis & {
+    WebSocketRequestResponsePair?:WebSocketPairCtor
+}
+
+if (typeof workerGlobal.WebSocketRequestResponsePair !== 'function') {
+    workerGlobal.WebSocketRequestResponsePair = class {
+        request:string
+        response:string
+
+        constructor (request:string, response:string) {
+            this.request = request
+            this.response = response
+        }
+    }
+}
+
 // Test fixture: per-account bookkeeping helpers no-op (writes) /
 // return undefined (reads) when a test harness omits `ctx.storage`.
 // Production always has `ctx.storage` via the Cloudflare runtime, so

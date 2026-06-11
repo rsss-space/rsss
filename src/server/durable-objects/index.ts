@@ -8,6 +8,7 @@ import {
     TRIGGERS_SQL,
     DEAD_LETTER_OUTBOX_SQL,
     USER_STATE_SQL,
+    GRAPH_FOLLOWS_SQL,
     ALL_FULL_CONTENT_STATUSES,
     type FullContentStatus,
     isSuccessStatus,
@@ -24,6 +25,19 @@ import {
     fetchOgImage,
     validateFeedUrl
 } from '../feed-fetch.js'
+import {
+    deleteRecord,
+    putRecord,
+    createRecord
+} from '../auth/pds-write-client.js'
+import {
+    feedSubscriptionLexicon,
+    graphFollowLexicon,
+    type FeedSubscriptionRecord,
+    type GraphFollowRecord
+} from '../../shared/lexicons/index.js'
+import { subscriptionRkeyForFeedUrl } from
+    '../../shared/subscription-rkey.js'
 import { fetchFullArticle } from '../article-fetch.js'
 import {
     blurhashCacheKey,
@@ -37,6 +51,9 @@ import {
     parseImageMap
 } from '../full-content-images.js'
 import { enqueueBodyBlurJobs } from '../blurhash-body-enqueue.js'
+import type {
+    OAuthCredentialRecord
+} from '../auth/oauth.js'
 
 export interface Env {
     USER:DurableObjectNamespace<RsssUserDO>
@@ -60,6 +77,10 @@ interface Feed {
     last_fetched:string|null
     last_error:string|null
     last_status:number|null
+    published:number
+    published_rkey:string|null
+    published_at:string|null
+    publish_error:string|null
     created_at:string
     updated_at:string
 }
@@ -95,6 +116,21 @@ interface NewFeedItem {
     imageUrl:string | null
 }
 
+interface ListedSubscriptionRecord {
+    uri:string
+    value:unknown
+}
+
+interface ListedSubscriptionResponse {
+    cursor?:unknown
+    records?:unknown
+}
+
+interface RemoteSubscription {
+    rkey:string
+    createdAt:string|null
+}
+
 const FEED_XML_PARSER = new XMLParser({
     attributeNamePrefix: '@_',
     cdataPropName: '#cdata',
@@ -118,13 +154,16 @@ const ACCOUNT_INACTIVITY_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000
 const ACTIVITY_MARKER_COALESCE_MS = 60 * 1000
 const MANUAL_REFRESH_LIMIT_MS = 60 * 1000
 const MANUAL_REFRESH_STORAGE_PREFIX = 'manual_refresh:'
+const PUBLISH_RECONCILE_INTERVAL_MS = 15 * 60 * 1000
+const PUBLISH_RECONCILE_LAST_KEY = 'publish_reconcile:last_attempt'
 const ALARM_REFRESH_CURSOR_KEY = 'alarm_refresh_cursor'
 const PENDING_DELETION_KEY = 'pending_deletion'
 const MIGRATION_STATE_KEY = 'schema_migration'
-const USER_DO_MIGRATION_VERSION = 7
+const USER_DO_MIGRATION_VERSION = 8
 const FEEDS_UPDATED_AT_BUMP_KEY = 'feeds_updated_at_bump_for_last_pulled_at'
 const SYNC_PAGE_LIMIT = 500
 const FETCH_FULL_THROTTLE_PREFIX = 'fetch_full:'
+const OAUTH_CREDENTIALS_KEY = 'oauth:credentials'
 const MAX_PARSED_FEED_ITEMS = 1000
 const MAX_FEED_TITLE_LENGTH = 8 * 1024
 const MAX_FEED_DESCRIPTION_LENGTH = 64 * 1024
@@ -136,7 +175,8 @@ export const POST_HYBRID_WAIT_MS = 3000
 export const RESOLVE_TIMEOUT_ERROR = 'Initial fetch did not complete'
 const FEED_SYNC_COLUMNS = `
     id, url, title, description, site_url, last_fetched, last_pulled_at,
-    last_error, last_status, created_at, updated_at
+    last_error, last_status, published, published_rkey, published_at,
+    publish_error, created_at, updated_at
 `
 const ITEM_COLUMNS = `
     items.id, items.feed_id, items.guid, items.title, items.link,
@@ -170,6 +210,37 @@ function isDuplicateInsertError (err:unknown):boolean {
 
     return message.includes('sqlite_constraint_unique') ||
         message.includes('unique constraint failed')
+}
+
+function isObjectRecord (value:unknown):value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+}
+
+function isOAuthCredentialRecord (
+    value:unknown
+):value is OAuthCredentialRecord {
+    if (!isObjectRecord(value)) return false
+    if (typeof value.did !== 'string') return false
+    if (typeof value.accessToken !== 'string') return false
+    if (typeof value.refreshToken !== 'string') return false
+    if (typeof value.tokenEndpoint !== 'string') return false
+    if (typeof value.pdsEndpoint !== 'string') return false
+    if (typeof value.updatedAt !== 'string') return false
+    if (!isObjectRecord(value.dpopPrivateKeyJwk)) return false
+    if (
+        value.tokenType !== undefined &&
+        typeof value.tokenType !== 'string'
+    ) {
+        return false
+    }
+    if (
+        value.accessTokenExpiresAt !== undefined &&
+        typeof value.accessTokenExpiresAt !== 'number'
+    ) {
+        return false
+    }
+
+    return true
 }
 
 interface MigrationState {
@@ -434,6 +505,7 @@ export class RsssUserDO extends DurableObject<Env> {
             this.migrateAddItemThumbnail()
             this.migrateAddItemImageMetadata()
             this.migrateAddLastPulledAt()
+            this.migrateAddFeedPublishState()
             this.migrateAddItemFullContent()
             this.migrateAddFullContentImages()
             await this.ctx.storage.put(MIGRATION_STATE_KEY, {
@@ -460,6 +532,7 @@ export class RsssUserDO extends DurableObject<Env> {
         this.sql.exec(TRIGGERS_SQL)
         this.sql.exec(DEAD_LETTER_OUTBOX_SQL)
         this.sql.exec(USER_STATE_SQL)
+        this.sql.exec(GRAPH_FOLLOWS_SQL)
     }
 
     /**
@@ -596,6 +669,27 @@ export class RsssUserDO extends DurableObject<Env> {
         }
     }
 
+    private migrateAddFeedPublishState () {
+        const cols = this.sql.exec('PRAGMA table_info(feeds)').toArray()
+        const has = (name:string) => cols.some(
+            (col:unknown) => (col as { name:string }).name === name
+        )
+        const columns = [
+            ['published', 'INTEGER NOT NULL DEFAULT 0'],
+            ['published_rkey', 'TEXT'],
+            ['published_at', 'TEXT'],
+            ['publish_error', 'TEXT']
+        ]
+
+        for (const [name, type] of columns) {
+            if (!has(name)) {
+                this.sql.exec(
+                    `ALTER TABLE feeds ADD COLUMN ${name} ${type}`
+                )
+            }
+        }
+    }
+
     getFeedsWithUpdates ():string[] {
         const rows = this.sql.exec(`
             SELECT feeds.id FROM feeds
@@ -654,12 +748,492 @@ export class RsssUserDO extends DurableObject<Env> {
         }
     }
 
+    private async getOAuthCredentials ():
+        Promise<OAuthCredentialRecord | null> {
+        const credentials = await this.ctx.storage.get<unknown>(
+            OAUTH_CREDENTIALS_KEY
+        )
+
+        return isOAuthCredentialRecord(credentials) ? credentials : null
+    }
+
+    private async persistOAuthCredentials (
+        credentials:OAuthCredentialRecord
+    ):Promise<void> {
+        await this.ctx.storage.put(OAUTH_CREDENTIALS_KEY, credentials)
+    }
+
+    private buildFeedSubscriptionRecord (
+        feed:Feed,
+        createdAt:string
+    ):FeedSubscriptionRecord {
+        return {
+            feedUrl: feed.url,
+            createdAt,
+            ...(feed.title ? { title: feed.title } : {}),
+            ...(feed.site_url ? { siteUrl: feed.site_url } : {})
+        }
+    }
+
+    private async shouldRunPublishReconcile ():Promise<boolean> {
+        const last = await this.ctx.storage.get<number>(
+            PUBLISH_RECONCILE_LAST_KEY
+        )
+        const now = Date.now()
+
+        if (
+            typeof last === 'number' &&
+            now - last < PUBLISH_RECONCILE_INTERVAL_MS
+        ) {
+            return false
+        }
+
+        await this.ctx.storage.put(PUBLISH_RECONCILE_LAST_KEY, now)
+        return true
+    }
+
+    private listRecordsUrl (
+        credentials:OAuthCredentialRecord,
+        cursor?:string
+    ):string {
+        const base = credentials.pdsEndpoint.endsWith('/') ?
+            credentials.pdsEndpoint :
+            `${credentials.pdsEndpoint}/`
+        const url = new URL('xrpc/com.atproto.repo.listRecords', base)
+
+        url.searchParams.set('repo', credentials.did)
+        url.searchParams.set('collection', feedSubscriptionLexicon.id)
+        url.searchParams.set('limit', '100')
+        if (cursor) url.searchParams.set('cursor', cursor)
+
+        return url.href
+    }
+
+    private parseSubscriptionRkey (uri:string):string|null {
+        const parts = uri.split('/')
+        return parts.length > 0 ? parts[parts.length - 1] || null : null
+    }
+
+    private isListedSubscriptionRecord (
+        value:unknown
+    ):value is ListedSubscriptionRecord {
+        if (typeof value !== 'object' || value === null) return false
+        if (Array.isArray(value)) return false
+
+        const record = value as Partial<ListedSubscriptionRecord>
+        return typeof record.uri === 'string'
+    }
+
+    private subscriptionFromRecord (
+        record:ListedSubscriptionRecord
+    ): { feedUrl:string; subscription:RemoteSubscription } | null {
+        if (typeof record.value !== 'object' || record.value === null) {
+            return null
+        }
+        if (Array.isArray(record.value)) return null
+
+        const value = record.value as Partial<FeedSubscriptionRecord>
+        const rkey = this.parseSubscriptionRkey(record.uri)
+        if (!rkey || typeof value.feedUrl !== 'string') return null
+
+        return {
+            feedUrl: value.feedUrl,
+            subscription: {
+                rkey,
+                createdAt: typeof value.createdAt === 'string' ?
+                    value.createdAt :
+                    null
+            }
+        }
+    }
+
+    private async listRemoteSubscriptions (
+        credentials:OAuthCredentialRecord
+    ):Promise<Map<string, RemoteSubscription>> {
+        const subscriptions = new Map<string, RemoteSubscription>()
+        let cursor:string|undefined
+
+        do {
+            const response = await fetch(this.listRecordsUrl(
+                credentials,
+                cursor
+            ))
+            if (!response.ok) {
+                throw new Error('Could not list AT Protocol records')
+            }
+
+            const body = await response.json<ListedSubscriptionResponse>()
+            const records = Array.isArray(body.records) ?
+                body.records :
+                []
+
+            for (const rawRecord of records) {
+                if (!this.isListedSubscriptionRecord(rawRecord)) continue
+
+                const remote = this.subscriptionFromRecord(rawRecord)
+                if (remote) {
+                    subscriptions.set(
+                        remote.feedUrl,
+                        remote.subscription
+                    )
+                }
+            }
+
+            cursor = typeof body.cursor === 'string' ?
+                body.cursor :
+                undefined
+        } while (cursor)
+
+        return subscriptions
+    }
+
+    private async reconcilePublishedFeeds ():Promise<{
+        ok:true
+        changed:number
+        skipped?:string
+    } | {
+        ok:false
+        error:string
+    }> {
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return {
+                ok: true,
+                changed: 0,
+                skipped: 'missing_credentials'
+            }
+        }
+
+        if (!await this.shouldRunPublishReconcile()) {
+            return {
+                ok: true,
+                changed: 0,
+                skipped: 'rate_limited'
+            }
+        }
+
+        let remoteByUrl:Map<string, RemoteSubscription>
+        try {
+            remoteByUrl = await this.listRemoteSubscriptions(credentials)
+        } catch {
+            return {
+                ok: false,
+                error: 'pds_list_failed'
+            }
+        }
+
+        const feeds = this.sql.exec(
+            'SELECT * FROM feeds'
+        ).toArray() as unknown as Feed[]
+        let changed = 0
+
+        for (const feed of feeds) {
+            const remote = remoteByUrl.get(feed.url)
+
+            if (remote) {
+                const publishedAt = remote.createdAt ??
+                    feed.published_at ??
+                    new Date().toISOString()
+                if (
+                    !feed.published ||
+                    feed.published_rkey !== remote.rkey ||
+                    feed.published_at !== publishedAt ||
+                    feed.publish_error
+                ) {
+                    this.sql.exec(
+                        `UPDATE feeds SET
+                            published = 1,
+                            published_rkey = ?,
+                            published_at = ?,
+                            publish_error = NULL
+                        WHERE id = ?`,
+                        remote.rkey,
+                        publishedAt,
+                        feed.id
+                    )
+                    changed += 1
+                }
+                continue
+            }
+
+            if (feed.published || feed.published_rkey) {
+                this.sql.exec(
+                    `UPDATE feeds SET
+                        published = 0,
+                        published_rkey = NULL,
+                        published_at = NULL,
+                        publish_error = NULL
+                    WHERE id = ?`,
+                    feed.id
+                )
+                changed += 1
+            }
+        }
+
+        if (changed > 0) this.bumpFeedVersion()
+
+        return { ok: true, changed }
+    }
+
+    private async publishFeed (feed:Feed):Promise<
+        | { ok:true; feed:Record<string, unknown> | null }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return {
+                ok: false,
+                status: 401,
+                error: 'reauth_required'
+            }
+        }
+
+        const rkey = feed.published_rkey ??
+            await subscriptionRkeyForFeedUrl(feed.url)
+        const publishedAt = feed.published_at ?? new Date().toISOString()
+        const record = this.buildFeedSubscriptionRecord(feed, publishedAt)
+        const result = await putRecord(credentials, {
+            collection: feedSubscriptionLexicon.id,
+            rkey,
+            record,
+            validate: true
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            this.sql.exec(
+                `UPDATE feeds SET
+                    publish_error = ?
+                WHERE id = ?`,
+                result.error.code,
+                feed.id
+            )
+            this.bumpFeedVersion()
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        this.sql.exec(
+            `UPDATE feeds SET
+                published = 1,
+                published_rkey = ?,
+                published_at = ?,
+                publish_error = NULL
+            WHERE id = ?`,
+            rkey,
+            publishedAt,
+            feed.id
+        )
+        this.bumpFeedVersion()
+
+        const updated = this.sql.exec(
+            `SELECT ${FEED_SYNC_COLUMNS}
+             FROM feeds WHERE id = ?`,
+            feed.id
+        ).one() as Record<string, unknown> | null
+
+        return { ok: true, feed: updated }
+    }
+
+    private async unpublishFeed (feed:Feed):Promise<
+        | { ok:true; feed:Record<string, unknown> | null }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        if (!feed.published && !feed.published_rkey) {
+            return {
+                ok: true,
+                feed: this.sql.exec(
+                    `SELECT ${FEED_SYNC_COLUMNS}
+                     FROM feeds WHERE id = ?`,
+                    feed.id
+                ).one() as Record<string, unknown> | null
+            }
+        }
+
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return {
+                ok: false,
+                status: 401,
+                error: 'reauth_required'
+            }
+        }
+
+        const rkey = feed.published_rkey ??
+            await subscriptionRkeyForFeedUrl(feed.url)
+        const result = await deleteRecord(credentials, {
+            collection: feedSubscriptionLexicon.id,
+            rkey
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            this.sql.exec(
+                `UPDATE feeds SET
+                    publish_error = ?
+                WHERE id = ?`,
+                result.error.code,
+                feed.id
+            )
+            this.bumpFeedVersion()
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        this.sql.exec(
+            `UPDATE feeds SET
+                published = 0,
+                published_rkey = NULL,
+                published_at = NULL,
+                publish_error = NULL
+            WHERE id = ?`,
+            feed.id
+        )
+        this.bumpFeedVersion()
+
+        const updated = this.sql.exec(
+            `SELECT ${FEED_SYNC_COLUMNS}
+             FROM feeds WHERE id = ?`,
+            feed.id
+        ).one() as Record<string, unknown> | null
+
+        return { ok: true, feed: updated }
+    }
+
+    private async followUser (targetDid:string):Promise<
+        | { ok:true; alreadyFollowing:boolean }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        const existing = this.sql.exec(
+            'SELECT rkey FROM graph_follows WHERE subject_did = ?',
+            targetDid
+        ).one() as { rkey:string } | null
+
+        if (existing) {
+            return { ok: true, alreadyFollowing: true }
+        }
+
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return { ok: false, status: 401, error: 'reauth_required' }
+        }
+
+        const record:GraphFollowRecord = {
+            subject: targetDid,
+            createdAt: new Date().toISOString()
+        }
+
+        const result = await createRecord(credentials, {
+            collection: graphFollowLexicon.id,
+            record
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        const body = result.body as Record<string, unknown>
+        const uri = typeof body.uri === 'string' ? body.uri : ''
+        const rkey = uri.split('/').pop() ?? ''
+
+        this.sql.exec(
+            `INSERT INTO graph_follows (subject_did, rkey)
+             VALUES (?, ?)`,
+            targetDid,
+            rkey
+        )
+
+        return { ok: true, alreadyFollowing: false }
+    }
+
+    private async unfollowUser (targetDid:string):Promise<
+        | { ok:true }
+        | { ok:false; status:ContentfulStatusCode; error:string }
+    > {
+        const existing = this.sql.exec(
+            'SELECT rkey FROM graph_follows WHERE subject_did = ?',
+            targetDid
+        ).one() as { rkey:string } | null
+
+        if (!existing) {
+            return { ok: true }
+        }
+
+        const credentials = await this.getOAuthCredentials()
+        if (!credentials) {
+            return { ok: false, status: 401, error: 'reauth_required' }
+        }
+
+        const result = await deleteRecord(credentials, {
+            collection: graphFollowLexicon.id,
+            rkey: existing.rkey
+        }, {
+            persistCredentials: async nextCredentials => {
+                await this.persistOAuthCredentials(nextCredentials)
+            }
+        })
+
+        if (!result.ok) {
+            return {
+                ok: false,
+                status: result.error.code === 'reauth_required' ?
+                    401 :
+                    502,
+                error: result.error.code
+            }
+        }
+
+        this.sql.exec(
+            'DELETE FROM graph_follows WHERE subject_did = ?',
+            targetDid
+        )
+
+        return { ok: true }
+    }
+
     private createRouter (): Hono {
         const app = new Hono()
 
         // Health check
         app.get('/health', (c) => {
             return c.json({ status: 'ok', service: 'do' })
+        })
+
+        app.put('/internal/oauth/credentials', async (c) => {
+            const body = await c.req.json<unknown>()
+            if (!isOAuthCredentialRecord(body)) {
+                return c.json({ error: 'Invalid OAuth credentials' }, 400)
+            }
+
+            await this.ctx.storage.put(OAUTH_CREDENTIALS_KEY, body)
+
+            return new Response(null, { status: 204 })
         })
 
         app.post('/internal/blurhash/items/:id', async (c) => {
@@ -874,6 +1448,9 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // List all feeds
         app.get('/feeds', (c) => {
+            this.ctx.waitUntil(
+                this.reconcilePublishedFeeds().catch(() => undefined)
+            )
             const feeds = this.sql.exec(
                 'SELECT * FROM feeds ORDER BY title ASC'
             ).toArray()
@@ -887,6 +1464,18 @@ export class RsssUserDO extends DurableObject<Env> {
                 feedUpdateStatus,
                 feedsWithUpdates,
                 feedUpdateCounts
+            })
+        })
+
+        app.post('/feeds/reconcile-published', async (c) => {
+            const result = await this.reconcilePublishedFeeds()
+            if (!result.ok) {
+                return c.json({ error: result.error }, 502)
+            }
+
+            return c.json({
+                changed: result.changed,
+                skipped: result.skipped
             })
         })
 
@@ -1070,6 +1659,50 @@ export class RsssUserDO extends DurableObject<Env> {
             return c.json({ items: rows })
         })
 
+        app.post('/feeds/:id/publish', async (c) => {
+            const id = parseInt(c.req.param('id'), 10)
+            const feed = this.sql.exec(
+                'SELECT * FROM feeds WHERE id = ?',
+                id
+            ).one() as unknown as Feed | null
+
+            if (!feed) {
+                return c.json({ error: 'Feed not found' }, 404)
+            }
+
+            const result = await this.publishFeed(feed)
+            if (!result.ok) {
+                return c.json(
+                    { error: result.error },
+                    result.status
+                )
+            }
+
+            return c.json({ feed: result.feed })
+        })
+
+        app.delete('/feeds/:id/publish', async (c) => {
+            const id = parseInt(c.req.param('id'), 10)
+            const feed = this.sql.exec(
+                'SELECT * FROM feeds WHERE id = ?',
+                id
+            ).one() as unknown as Feed | null
+
+            if (!feed) {
+                return c.json({ error: 'Feed not found' }, 404)
+            }
+
+            const result = await this.unpublishFeed(feed)
+            if (!result.ok) {
+                return c.json(
+                    { error: result.error },
+                    result.status
+                )
+            }
+
+            return c.json({ feed: result.feed })
+        })
+
         // Delete a feed
         app.delete('/feeds/:id', async (c) => {
             const id = parseInt(c.req.param('id'), 10)
@@ -1086,7 +1719,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const feed = this.sql.exec(
                 'SELECT * FROM feeds WHERE id = ?', id
-            ).one() as Record<string, unknown> | null
+            ).one() as unknown as Feed | null
             if (!feed) {
                 if (body.client_op_id !== undefined) {
                     return c.json({ success: true })
@@ -1095,13 +1728,21 @@ export class RsssUserDO extends DurableObject<Env> {
             }
 
             if (clientUpdatedAt !== undefined) {
-                const serverTs = feed.updated_at as string | null
+                const serverTs = feed.updated_at
                 if (
                     resolveLwwWrite(serverTs, clientUpdatedAt) ===
                     'conflict'
                 ) {
                     return c.json({ feed }, 409)
                 }
+            }
+
+            const unpublish = await this.unpublishFeed(feed)
+            if (!unpublish.ok) {
+                return c.json(
+                    { error: unpublish.error },
+                    unpublish.status
+                )
             }
 
             this.sql.exec('DELETE FROM feeds WHERE id = ?', id)
@@ -1676,6 +2317,53 @@ export class RsssUserDO extends DurableObject<Env> {
 
         app.delete('/internal/account/deletion', async (c) => {
             await this.ctx.storage.delete(PENDING_DELETION_KEY)
+            return c.json({ ok: true })
+        })
+
+        app.get('/graph/following', (c) => {
+            const rows = this.sql.exec(
+                'SELECT subject_did FROM graph_follows ORDER BY rowid'
+            ).toArray() as Array<{ subject_did:string }>
+            return c.json({ dids: rows.map(r => r.subject_did) })
+        })
+
+        app.get('/graph/follow/:targetDid', (c) => {
+            const targetDid = c.req.param('targetDid')
+            const row = this.sql.exec(
+                'SELECT rkey FROM graph_follows WHERE subject_did = ?',
+                targetDid
+            ).one()
+            return c.json({ following: row !== null })
+        })
+
+        app.post('/graph/follow', async (c) => {
+            const body = await c.req.json<{
+                targetDid?:unknown
+            }>().catch(() => ({ targetDid: undefined }))
+            const targetDid = body.targetDid
+            if (typeof targetDid !== 'string' || !targetDid) {
+                return c.json({ error: 'invalid_body' }, 400)
+            }
+
+            const result = await this.followUser(targetDid)
+            if (!result.ok) {
+                return c.json({ error: result.error }, result.status)
+            }
+
+            return c.json({ ok: true }, result.alreadyFollowing ? 200 : 201)
+        })
+
+        app.delete('/graph/follow/:targetDid', async (c) => {
+            const targetDid = c.req.param('targetDid')
+            if (!targetDid) {
+                return c.json({ error: 'invalid_target' }, 400)
+            }
+
+            const result = await this.unfollowUser(targetDid)
+            if (!result.ok) {
+                return c.json({ error: result.error }, result.status)
+            }
+
             return c.json({ ok: true })
         })
 

@@ -53,6 +53,10 @@ export const TABLES_SQL = `
         last_pulled_at TEXT,
         last_error TEXT,
         last_status INTEGER,
+        published INTEGER NOT NULL DEFAULT 0,
+        published_rkey TEXT,
+        published_at TEXT,
+        publish_error TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -135,6 +139,15 @@ export const USER_STATE_SQL = `
         feed_version INTEGER NOT NULL DEFAULT 0
     );
     INSERT OR IGNORE INTO user_state (id, feed_version) VALUES (1, 0);
+`
+
+export const GRAPH_FOLLOWS_SQL = `
+    CREATE TABLE IF NOT EXISTS graph_follows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_did TEXT NOT NULL UNIQUE,
+        rkey TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+    );
 `
 
 /** Full schema: tables + indexes + triggers. Suitable for fresh databases. */

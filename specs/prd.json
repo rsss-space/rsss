@@ -15,7 +15,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-001 / FR-1. NSID namespace space.rsss.* (reverse DNS of rsss.space). Shared code dir is src/shared/ (e.g. src/shared/schema.ts)."
     },
     {
@@ -30,7 +30,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "PRD FR-9 / Technical Considerations (deterministic rkeys). Pure logic in src/shared/. Consumed by US-009 (publish)."
     },
     {
@@ -45,7 +45,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-002 / FR-2. src/server/auth/oauth.ts currently sets scope: 'atproto' (~line 340). Also update the served client-metadata document."
     },
     {
@@ -60,7 +60,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-003 / FR-3, FR-4. oauth.ts already has restoreDPoPKeyPair + token-discard comments (lines ~7, ~530). User DO is src/server/durable-objects/index.ts."
     },
     {
@@ -75,7 +75,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-003/US-004 / FR-3. Reuses key material persisted in US-004. Must use WebCrypto (Cloudflare Workers runtime)."
     },
     {
@@ -91,7 +91,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-003 / FR-3, FR-15. Depends on US-004 storage and US-005 DPoP helper."
     },
     {
@@ -106,7 +106,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-004 / FR-6, FR-11, FR-15. Decide @atproto/api vs extend hand-rolled code (must run on Workers). Reuse/extend src/server/middleware/rate-limit.ts for backoff."
     },
     {
@@ -120,7 +120,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A1 / FR-10. DO migrations live in src/server/durable-objects/index.ts (migrateAddItemImageMetadata etc; USER_DO_MIGRATION_VERSION). Record/shared types in src/shared/schema.ts."
     },
     {
@@ -136,7 +136,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A3 / FR-5, FR-6, FR-7, FR-9. Per-feed opt-in only; never write a record without an explicit per-feed action."
     },
     {
@@ -151,7 +151,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A4 / FR-6, FR-7, FR-8. Hook into the existing unsubscribe path in the user DO."
     },
     {
@@ -165,7 +165,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A5 / FR-16. listRecords against the user's own repo is public (no auth). Reuse/extend src/server/middleware/rate-limit.ts."
     },
     {
@@ -181,7 +181,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A2. UI in src/client/routes/feeds.ts + feeds.css. Reuse @substrate-system/check-box/button. Memory: links not buttons for navigation."
     },
     {
@@ -196,7 +196,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-A6. Reuse @substrate-system/dialog. Colors from _variables.css / _vars.css. Do not touch unrelated CSS."
     },
     {
@@ -210,7 +210,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-B1 / FR-12. Store in a singleton DO SQLite or D1 (Open Question: pick per existing deployment/migration tooling). Authoritative source for our own user base."
     },
     {
@@ -225,7 +225,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-B3/US-B4 / FR-17, Technical Considerations. Read-only index/caches; PDS records remain canonical. Tolerate indexing latency."
     },
     {
@@ -240,7 +240,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-B2 / FR-8, FR-11. Followers are served by Constellation (US-018), not a home-grown edge index. The follow button UI is added in US-017 and US-021."
     },
     {
@@ -256,7 +256,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-B3 / FR-13. New route under src/client/routes/. Reads are public (no auth or scope required)."
     },
     {
@@ -272,7 +272,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-B4 / FR-12, FR-17. Uses the US-015 Constellation client."
     },
     {
@@ -286,7 +286,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-C1 / FR-14. Public unauthenticated read; needs neither the user's tokens nor any scope."
     },
     {
@@ -300,7 +300,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-C2 / FR-14."
     },
     {

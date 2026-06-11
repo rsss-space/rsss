@@ -8,6 +8,8 @@ import {
     createSessionCookie,
     verifySessionCookie,
     destroySessionCookie,
+    AT_PROTOCOL_OAUTH_SCOPE,
+    type OAuthCredentialRecord,
     type OAuthSession,
     type OAuthState
 } from './auth/oauth.js'
@@ -15,6 +17,9 @@ import {
     RsssUserDO as RsssUserDOBase,
     type Env as RsssUserDOEnv
 } from './durable-objects/index.js'
+import {
+    RsssRegistryDO as RsssRegistryDOBase
+} from './durable-objects/registry.js'
 import { withIsolationHeaders } from './isolation-headers.js'
 import {
     BILLING_PLAN_IDS,
@@ -51,11 +56,27 @@ import { reportError } from './lib/report-error.js'
 import {
     createRateLimitMiddleware
 } from './middleware/rate-limit.js'
+import {
+    buildProfileResponse,
+    parseSubscriptionRecord,
+    type ProfileSubscription,
+    type ProfileApiDeps
+} from './profile-api.js'
+import {
+    createSlingshotClient,
+    createConstellationClient,
+    RSSS_USER_AGENT
+} from './microcosm-client.js'
+import {
+    buildGraphResponse,
+    type GraphApiDeps
+} from './graph-api.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
 export interface Env {
     USER_DO:DurableObjectNamespace<RsssUserDOBase>;
+    REGISTRY_DO?:DurableObjectNamespace<RsssRegistryDOBase>;
     SESSIONS:KVNamespace;
     BLURHASH_KV:KVNamespace;
     HTML_KV?:KVNamespace;
@@ -74,6 +95,8 @@ export interface Env {
     ADMIN_TOKEN?:string;
     APP_ORIGIN?:string;
     NODE_ENV:string;
+    CONSTELLATION_URL?:string;
+    SLINGSHOT_URL?:string;
     SENTRY_DSN?:string;
 }
 
@@ -528,7 +551,7 @@ function resolveOAuthClient (
     const redirectUri = `http://127.0.0.1:${url.port}/oauth/callback`
     const params = new URLSearchParams({
         redirect_uri: redirectUri,
-        scope: 'atproto'
+        scope: AT_PROTOCOL_OAUTH_SCOPE
     })
     return {
         clientId: `http://localhost?${params.toString()}`,
@@ -552,7 +575,7 @@ app.get('/oauth/client-metadata.json', (c) => {
         redirect_uris: [
             `${baseUrl}/oauth/callback`
         ],
-        scope: 'atproto',
+        scope: AT_PROTOCOL_OAUTH_SCOPE,
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         token_endpoint_auth_method: 'none',
@@ -730,13 +753,14 @@ app.post('/api/auth/callback', async (c) => {
             c.env.OAUTH_CLIENT_ID
         )
 
-        const session = await exchangeCode(
+        const exchange = await exchangeCode(
             body.code,
             storedState,
             clientId,
             redirectUri,
             body.iss
         )
+        const { session, credentials } = exchange
 
         // Delete the used state
         await c.env.SESSIONS.delete(stateKey)
@@ -745,6 +769,13 @@ app.post('/api/auth/callback', async (c) => {
         await c.env.SESSIONS.put(
             `user:${session.did}`,
             session.handle
+        )
+
+        await persistOAuthCredentials(c.env, credentials)
+
+        // Record in known-user registry (best-effort, non-blocking)
+        c.executionCtx.waitUntil(
+            upsertRegistryUser(c.env, session)
         )
 
         // Create session cookie
@@ -910,6 +941,50 @@ function getRsssUserDO (
     // Use the DID as the DO name for consistent routing
     const id = env.USER_DO.idFromName(did)
     return env.USER_DO.get(id)
+}
+
+function getRegistryDO (
+    env:Env
+):DurableObjectStub<RsssRegistryDOBase>|null {
+    if (!env.REGISTRY_DO) return null
+    const id = env.REGISTRY_DO.idFromName('global')
+    return env.REGISTRY_DO.get(id)
+}
+
+async function upsertRegistryUser (
+    env:Env,
+    session:OAuthSession
+):Promise<void> {
+    const stub = getRegistryDO(env)
+    if (!stub) return
+    await stub.fetch(
+        new Request('http://registry/upsert', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                did: session.did,
+                handle: session.handle,
+                avatar: session.avatar ?? null
+            })
+        })
+    )
+}
+
+async function persistOAuthCredentials (
+    env:Env,
+    credentials:OAuthCredentialRecord
+):Promise<void> {
+    const stub = getRsssUserDO(env, credentials.did)
+    const response = await stub.fetch(
+        new Request('http://do/internal/oauth/credentials', {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(credentials)
+        })
+    )
+    if (!response.ok) {
+        throw new Error('Could not persist OAuth credentials')
+    }
 }
 
 /**
@@ -1841,6 +1916,69 @@ app.post(
     }
 )
 
+/**
+ * Following/followers graph for the authenticated user.
+ * Following is read from the user's DO SQLite. Followers
+ * are fetched from Constellation (eventual consistency).
+ */
+app.get('/api/graph', requireAuth, async (c) => {
+    const session = c.get('session')!
+    const constellation = createConstellationClient({
+        baseUrl: c.env.CONSTELLATION_URL
+    })
+
+    const deps:GraphApiDeps = {
+        listFollowing: async () => {
+            try {
+                const stub = getRsssUserDO(c.env, session.did)
+                const res = await stub.fetch(
+                    new Request('http://do/graph/following')
+                )
+                if (!res.ok) return []
+                const body = await res.json() as { dids:string[] }
+                return body.dids ?? []
+            } catch {
+                return []
+            }
+        },
+        getFollowers: async (did:string) => {
+            const [backlinkRes, countRes] = await Promise.all([
+                constellation.getDistinct({
+                    collection: 'space.rsss.graph.follow',
+                    path: '.subject',
+                    subject: did
+                }),
+                constellation.getBacklinksCount({
+                    collection: 'space.rsss.graph.follow',
+                    path: '.subject',
+                    subject: did
+                })
+            ])
+
+            const available = !('code' in backlinkRes) ||
+                !('code' in countRes)
+
+            const dids = 'code' in backlinkRes ?
+                [] :
+                backlinkRes.subjects.slice(0, 100)
+
+            const count = 'code' in countRes ?
+                dids.length :
+                countRes.count
+
+            return { dids, count, available }
+        }
+    }
+
+    try {
+        const graph = await buildGraphResponse(session.did, deps)
+        return c.json(graph)
+    } catch (err) {
+        reportError(err, 'graph', { route: '/api/graph' })
+        return c.json({ error: 'graph_unavailable' }, 503)
+    }
+})
+
 export const dataRouter = new Hono<{
     Bindings:Env;
     Variables:Variables
@@ -1937,6 +2075,173 @@ dataRouter.all('*', async (c) => {
 })
 
 app.route('/api', dataRouter)
+
+function extractPdsUrl (didDoc:unknown):string | null {
+    if (!didDoc || typeof didDoc !== 'object') return null
+    const doc = didDoc as Record<string, unknown>
+    const services = doc.service
+    if (!Array.isArray(services)) return null
+    const pds = services.find((s:unknown) => {
+        if (!s || typeof s !== 'object') return false
+        const svc = s as Record<string, unknown>
+        return svc.type === 'AtprotoPersonalDataServer' ||
+            svc.id === '#atproto_pds'
+    })
+    if (!pds) return null
+    const svc = pds as Record<string, unknown>
+    return typeof svc.serviceEndpoint === 'string' ?
+        svc.serviceEndpoint : null
+}
+
+/**
+ * Profile: get a user's published subscriptions and follow state.
+ * Public (no auth required for reading); session used for follow state.
+ */
+app.get('/api/profile/:did', async (c) => {
+    const input = c.req.param('did')
+    const session = c.get('session')
+    const slingshot = createSlingshotClient({
+        baseUrl: c.env.SLINGSHOT_URL
+    })
+
+    let resolvedDidDoc:unknown
+
+    const deps:ProfileApiDeps = {
+        resolveIdentity: async (raw:string) => {
+            const params = raw.startsWith('did:') ?
+                { did: raw } :
+                { handle: raw }
+            const result = await slingshot.resolveIdentity(params)
+            if ('code' in result) throw new Error(result.message)
+            resolvedDidDoc = result.didDoc
+            return { did: result.did, handle: result.handle }
+        },
+        listSubscriptions: async (targetDid:string) => {
+            const result = await slingshot.listRecords({
+                repo: targetDid,
+                collection: 'space.rsss.feed.subscription',
+                limit: 100
+            })
+            if (!('code' in result)) {
+                return result.records
+                    .map(r => parseSubscriptionRecord(r.uri, r.value))
+                    .filter((r):r is ProfileSubscription => r !== null)
+            }
+            // Fallback: direct PDS listRecords
+            const pdsUrl = extractPdsUrl(resolvedDidDoc)
+            if (!pdsUrl) return []
+            try {
+                const pdsRes = await fetch(
+                    `${pdsUrl}/xrpc/com.atproto.repo.listRecords?` +
+                    `repo=${encodeURIComponent(targetDid)}&` +
+                    'collection=space.rsss.feed.subscription&limit=100',
+                    { headers: { 'user-agent': RSSS_USER_AGENT } }
+                )
+                if (!pdsRes.ok) return []
+                const data = await pdsRes.json() as {
+                    records?:Array<{
+                        uri?:string
+                        value?:unknown
+                    }>
+                }
+                return (data.records ?? [])
+                    .map(r => parseSubscriptionRecord(
+                        r.uri ?? '', r.value
+                    ))
+                    .filter((s):s is ProfileSubscription => s !== null)
+            } catch {
+                return []
+            }
+        },
+        lookupAvatar: async (targetDid:string) => {
+            const stub = getRegistryDO(c.env)
+            if (!stub) return null
+            try {
+                const res = await stub.fetch(
+                    new Request(
+                        `http://registry/lookup/${encodeURIComponent(targetDid)}`
+                    )
+                )
+                if (!res.ok) return null
+                const data = await res.json() as {
+                    known:boolean
+                    avatar?:string | null
+                }
+                return data.known ? data.avatar ?? null : null
+            } catch {
+                return null
+            }
+        }
+    }
+
+    try {
+        const profile = await buildProfileResponse(input, deps)
+
+        let following = false
+        if (session) {
+            try {
+                const userDO = getRsssUserDO(c.env, session.did)
+                const followRes = await userDO.fetch(
+                    new Request(
+                        'http://do/graph/follow/' +
+                        `${encodeURIComponent(profile.did)}`
+                    )
+                )
+                if (followRes.ok) {
+                    const data = await followRes.json() as {
+                        following:boolean
+                    }
+                    following = data.following
+                }
+            } catch {
+                // follow check failed — default false
+            }
+        }
+
+        return c.json({ ...profile, following })
+    } catch {
+        return c.json({ error: 'Profile not found' }, 404)
+    }
+})
+
+/**
+ * Registry: check if a DID is a known rsss user.
+ * Public (no auth required) — only DID/handle/avatar are stored.
+ */
+app.get('/api/registry/lookup/:did', async (c) => {
+    const stub = getRegistryDO(c.env)
+    if (!stub) return c.json({ known: false }, 200)
+    const did = c.req.param('did')
+    const res = await stub.fetch(
+        new Request(`http://registry/lookup/${encodeURIComponent(did)}`)
+    )
+    return new Response(res.body, {
+        status: res.status,
+        headers: { 'content-type': 'application/json' }
+    })
+})
+
+/**
+ * Registry: batch lookup — which of these DIDs are rsss users?
+ * Body: { dids: string[] }
+ * Returns: { users: { did, handle, avatar }[] }
+ */
+app.post('/api/registry/batch-lookup', async (c) => {
+    const stub = getRegistryDO(c.env)
+    if (!stub) return c.json({ users: [] }, 200)
+    const body = await c.req.json<{ dids?:unknown }>()
+    const res = await stub.fetch(
+        new Request('http://registry/batch-lookup', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+    )
+    return new Response(res.body, {
+        status: res.status,
+        headers: { 'content-type': 'application/json' }
+    })
+})
 
 app.use('/admin/*', requireAdmin, adminRateLimit)
 
@@ -2094,6 +2399,9 @@ export const RsssUserDO = Sentry.instrumentDurableObjectWithSentry(
     getDOSentryOptions,
     RsssUserDOBase
 )
+
+// Wrangler resolves by export name — keep this named `RsssRegistryDO`.
+export const RsssRegistryDO = RsssRegistryDOBase
 
 // Wrap the worker so fetch and queue handlers report to Sentry.
 export default Sentry.withSentry(getSentryOptions, worker)

@@ -16,6 +16,10 @@
 			{
 				"name": "USER_DO",
 				"class_name": "RsssUserDO"
+			},
+			{
+				"name": "REGISTRY_DO",
+				"class_name": "RsssRegistryDO"
 			}
 		]
 	},
@@ -50,6 +54,10 @@
 			"renamed_classes": [
 				{ "from": "UserDO", "to": "RsssUserDO" }
 			]
+		},
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["RsssRegistryDO"]
 		}
 	],
 
@@ -146,6 +154,10 @@
 					{
 						"name": "USER_DO",
 						"class_name": "RsssUserDO"
+					},
+					{
+						"name": "REGISTRY_DO",
+						"class_name": "RsssRegistryDO"
 					}
 				]
 			},
@@ -164,6 +176,10 @@
 					"renamed_classes": [
 						{ "from": "UserDO", "to": "RsssUserDO" }
 					]
+				},
+				{
+					"tag": "v4",
+					"new_sqlite_classes": ["RsssRegistryDO"]
 				}
 			],
 			"kv_namespaces": [
@@ -219,6 +235,10 @@
 					{
 						"name": "USER_DO",
 						"class_name": "RsssUserDO"
+					},
+					{
+						"name": "REGISTRY_DO",
+						"class_name": "RsssRegistryDO"
 					}
 				]
 			},
@@ -237,6 +257,10 @@
 					"renamed_classes": [
 						{ "from": "UserDO", "to": "RsssUserDO" }
 					]
+				},
+				{
+					"tag": "v4",
+					"new_sqlite_classes": ["RsssRegistryDO"]
 				}
 			],
 			"kv_namespaces": [

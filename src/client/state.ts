@@ -669,6 +669,8 @@ export type AppState = {
     feeds:Signal<Feed[]>,
     feedsLoading:Signal<boolean>,
     feedsError:Signal<string|null>,
+    feedPublishInProgress:Signal<Record<string, boolean>>,
+    feedPublishErrors:Signal<Record<string, string>>,
     // Manual "Refresh Feeds" lifecycle. Held true from click until the
     // visible result lands (SSE refresh-complete + refreshAfterSync),
     // POST failure, 401, or 60s safety timeout. Distinct from
@@ -789,6 +791,8 @@ export function State ():AppState {
         feeds: signal<Feed[]>(seededFeeds),
         feedsLoading: signal<boolean>(false),
         feedsError: signal<string|null>(null),
+        feedPublishInProgress: signal<Record<string, boolean>>({}),
+        feedPublishErrors: signal<Record<string, string>>({}),
         refreshInProgress: refreshInProgressSignal,
         feedSyncStatus: signal<
             'inactive'|'updates'|'syncing'|'error'|'synced'
@@ -2284,6 +2288,109 @@ State.loadFeeds = async function (
                 err.message :
                 'Failed to load feeds'
             state.feedsLoading.value = false
+        })
+    }
+}
+
+function removeRecordKey<T> (
+    record:Record<string, T>,
+    key:string
+):Record<string, T> {
+    const next = { ...record }
+    delete next[key]
+    return next
+}
+
+async function feedPublishErrorMessage (
+    err:unknown
+):Promise<string> {
+    if (err instanceof HTTPError) {
+        if (err.response.status === 401) {
+            return 'Reconnect your account to share feeds.'
+        }
+        const body:{ error?:string } = await err.response.json<{
+            error?:string
+        }>().catch(() => ({} as { error?:string }))
+        return body.error || `Publish failed (${err.response.status})`
+    }
+
+    return err instanceof Error ?
+        err.message :
+        'Publish failed'
+}
+
+/**
+ * Publish or unpublish one feed's public AT Protocol subscription record.
+ */
+State.toggleFeedPublished = async function (
+    state:AppState,
+    feedId:number,
+    publish:boolean
+):Promise<void> {
+    const key = String(feedId)
+    batch(() => {
+        state.feedPublishInProgress.value = {
+            ...state.feedPublishInProgress.value,
+            [key]: true
+        }
+        state.feedPublishErrors.value = removeRecordKey(
+            state.feedPublishErrors.value,
+            key
+        )
+    })
+
+    try {
+        const response = publish ?
+            await api.post(`feeds/${feedId}/publish`) :
+            await api.delete(`feeds/${feedId}/publish`)
+        const body = await response.json<{ feed:Feed }>()
+        const updated = body.feed
+        if (!updated) throw new Error('Missing feed payload')
+
+        const did = state.user.value?.did
+        const db = did ? getLocalDb(did) : null
+        if (db) {
+            try {
+                await upsertFeedFromServer(
+                    db,
+                    updated as unknown as Record<string, unknown>
+                )
+            } catch (err) {
+                debug('toggleFeedPublished local upsert error:', err)
+            }
+        }
+
+        batch(() => {
+            state.feeds.value = state.feeds.value.map((feed) => (
+                feed.id === feedId ? { ...feed, ...updated } : feed
+            ))
+            state.feedPublishInProgress.value = removeRecordKey(
+                state.feedPublishInProgress.value,
+                key
+            )
+            state.feedPublishErrors.value = removeRecordKey(
+                state.feedPublishErrors.value,
+                key
+            )
+        })
+        schedulePaintCacheWrite(state)
+    } catch (err) {
+        const message = await feedPublishErrorMessage(err)
+        debug('toggleFeedPublished error:', err)
+        batch(() => {
+            state.feedPublishInProgress.value = removeRecordKey(
+                state.feedPublishInProgress.value,
+                key
+            )
+            state.feedPublishErrors.value = {
+                ...state.feedPublishErrors.value,
+                [key]: message
+            }
+            state.feeds.value = state.feeds.value.map((feed) => (
+                feed.id === feedId ?
+                    { ...feed, publish_error: message } :
+                    feed
+            ))
         })
     }
 }

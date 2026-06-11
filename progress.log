@@ -1,5 +1,65 @@
 # Ralph Progress Log — ralph/article-image-blurhash
 
+## Codebase Patterns
+
+- Shared AT Protocol lexicons live under `src/shared/lexicons/`.
+  Export literal lexicon objects with `as const satisfies LexiconDoc`, then
+  derive record TypeScript types from the lexicon's `record.properties` and
+  `record.required` data instead of duplicating field shapes by hand.
+- Deterministic AT Protocol subscription rkeys live in
+  `src/shared/subscription-rkey.ts`. Canonicalize the feed URL before hashing,
+  and keep callers async because the helper uses WebCrypto `crypto.subtle`.
+- AT Protocol OAuth scopes live in `AT_PROTOCOL_OAUTH_SCOPE` from
+  `src/server/auth/oauth.ts`; use that constant for authorization requests,
+  loopback client IDs, and `/oauth/client-metadata.json` so the scope
+  surfaces cannot drift.
+- OAuth token exchange returns a browser-safe `session` plus server-only
+  `credentials`. The callback persists credentials to the user's Durable
+  Object through `PUT /internal/oauth/credentials`; the DO stores the record
+  under `oauth:credentials` with `ctx.storage.put`.
+- Server-side PDS requests should use `src/server/auth/dpop-proof.ts` for
+  later DPoP proof JWTs from persisted private JWKs. Pass an already
+  base64url-encoded SHA-256 access-token hash as `accessTokenHash`; the
+  helper strips query and fragment from `htu` and only exposes public JWK
+  members in the JWT header.
+- AT Protocol token refresh lives in
+  `src/server/auth/token-refresh.ts`. Keep credential persistence injected
+  through `persistCredentials` so callers can write through the user's DO;
+  the helper returns a typed `reauth_required` result instead of throwing
+  token-related auth failures.
+- Server-side PDS record writes live in
+  `src/server/auth/pds-write-client.ts`. Pass the persisted
+  `OAuthCredentialRecord`, inject `persistCredentials`, and let the helper
+  sign DPoP proofs, retry one PDS nonce challenge, refresh on auth failure,
+  and report sanitized `atproto` errors without token material.
+- AT Protocol write endpoints that mutate per-user rsss state should live on
+  `RsssUserDO` routes. Load OAuth credentials from `oauth:credentials`, call
+  the PDS write helper, then update SQLite publish/follow state and bump
+  `user_state.feed_version` only after the remote write result is known.
+- Feed publish/unpublish mutations should share private `RsssUserDO` helpers
+  so direct toggle endpoints and unsubscribe cleanup use the same PDS-write,
+  SQLite-state, and `feed_version` behavior. `deleteRecord` treats
+  `RecordNotFound` as an idempotent success for AT Protocol deletes.
+- Published subscription reconciliation lives in `RsssUserDO`: list public
+  `space.rsss.feed.subscription` records from the user's PDS with
+  `com.atproto.repo.listRecords`, align local feed publish columns, bump
+  `feed_version` once per changed pass, and gate runs with the
+  `publish_reconcile:last_attempt` storage cooldown. Missing OAuth
+  credentials should skip without consuming the cooldown.
+- Client feed publish/unpublish UI should keep transient per-feed progress
+  and error state on `AppState` signal maps keyed by feed id. The persisted
+  source of truth remains the returned feed row from the existing server
+  endpoints; merge that row into `state.feeds` and mirror it locally with
+  `upsertFeedFromServer` when local-first is active.
+- Adding feed table columns follows the same cross-store pattern as item
+  columns: update `TABLES_SQL`, add a guarded RsssUserDO migration and bump
+  `USER_DO_MIGRATION_VERSION`, project the column through
+  `FEED_SYNC_COLUMNS`, add local OPFS compatibility in
+  `ensureFeedTerminalStateColumns`, and persist the field in both
+  `pull-sync.ts` and `push-sync.ts` feed upserts. Keep newly projected
+  client `Feed` fields optional when existing bootstrap/test payloads may be
+  partial.
+
 Blur-Hash Placeholders for Article Images (specs/038-article-image-blurhash/plan.md)
 Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-production-readiness-audit/
 
@@ -144,4 +204,578 @@ Previous run (production-readiness-audit) archived at specs/archive/2026-06-07-p
 - **Learnings for future iterations:**
   - Pure CSS tasks have no meaningful unit tests to write; verification is through `npm run build` (lightningcss) and visual browser inspection.
   - `blur-hash` is a custom element tag name so it needs no class selector — `& blur-hash { ... }` as a nested rule inside `.article-body` is the correct form.
+---
+
+## 2026-06-09 13:21 PDT - US-001
+Thread: https://ampcode.com/threads/
+- What was implemented: Added shared AT Protocol lexicon definitions for
+  `space.rsss.feed.subscription` and `space.rsss.graph.follow`, plus
+  derived TypeScript record types based on each lexicon's literal
+  `record.properties` and `record.required` data. Added focused browser
+  tests for the lexicon shape and derived type surface, and registered the
+  test in the consolidated browser bundle.
+- Files changed: src/shared/lexicons/index.ts, test/atproto-lexicons.ts,
+  test/browser-tests.ts, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/atproto-lexicons.ts --bundle |
+  npx tapout`; `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Lexicon records should stay in `src/shared/lexicons/` so both client
+    and server code can import the same definitions.
+  - Keep lexicon objects literal with `as const satisfies LexiconDoc`; this
+    preserves required-field tuples for type derivation.
+  - `tapout` is available through `npx tapout` in direct shell commands; npm
+    scripts provide it on PATH automatically.
+---
+
+## 2026-06-09 13:25 PDT - US-002
+Thread: https://ampcode.com/threads/
+- What was implemented: Added a shared deterministic subscription rkey helper
+  for AT Protocol feed subscription records. The helper canonicalizes feed
+  URLs, hashes the canonical URL with SHA-256, returns a lower-case
+  `feed.<hex>` rkey, and exposes a baseline AT Protocol record-key validator.
+- Files changed: src/shared/subscription-rkey.ts, test/subscription-rkey.ts,
+  test/browser-tests.ts, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/subscription-rkey.ts --bundle |
+  npx tapout`; `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - AT Protocol record keys allow only ASCII alphanumerics plus `.-_:~`,
+    must be 1-512 chars, and cannot be `.` or `..`; lower-case keys are
+    recommended.
+  - URL canonicalization should strip hashes and credentials, sort query
+    params, and rely on `URL.href` for scheme/host/default-port normalization.
+  - The rkey helper is async because shared client/server code uses WebCrypto
+    rather than Node-only hashing APIs.
+---
+
+## 2026-06-09 13:29 PDT - US-003
+Thread: https://ampcode.com/threads/
+- What was implemented: Added the shared `AT_PROTOCOL_OAUTH_SCOPE` constant
+  and used it for the OAuth authorization request, localhost loopback
+  client ID, and served client metadata. Added focused tests that assert the
+  scope is exactly `atproto repo:space.rsss.feed.subscription
+  repo:space.rsss.graph.follow` and excludes `transition:generic` and
+  `app.bsky.*` scopes.
+- Files changed: src/server/auth/oauth.ts, src/server/index.ts,
+  test/oauth-scopes.ts, test/run-all-tests.mjs, specs/prd.json,
+  progress.log
+- Verification: `npx esbuild ./test/oauth-scopes.ts --bundle
+  --platform=node --format=esm --external:./src/server/blurhash-runtime.js
+  --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npm run lint`;
+  `npx tsc --noEmit`; `npm test`
+- **Learnings for future iterations:**
+  - The OAuth scope has three surfaces: the PAR/authorization parameters in
+    `startOAuthFlow`, the localhost loopback `client_id` in
+    `resolveOAuthClient`, and `/oauth/client-metadata.json`.
+  - Server route tests that import `src/server/index.ts` need the Sentry
+    alias and often `--external:stripe` when bundled through esbuild.
+  - Keep the re-consent comment next to the authorization request scope,
+    since that is the behavior users hit on their next login.
+---
+
+## 2026-06-09 13:40 PDT - US-004
+Thread: https://ampcode.com/threads/
+- What was implemented: Persisted OAuth access tokens, refresh tokens,
+  token endpoint, PDS endpoint, and DPoP private JWK per DID in the user's
+  Durable Object after a successful OAuth exchange. Kept the browser session
+  response token-free and added focused tests for callback persistence and
+  the internal DO storage route.
+- Files changed: src/server/auth/oauth.ts, src/server/index.ts,
+  src/server/durable-objects/index.ts,
+  test/oauth-credential-persistence.ts, test/run-all-tests.mjs,
+  specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/oauth-credential-persistence.ts
+  --bundle --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx esbuild
+  ./test/oauth-scopes.ts --bundle --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx tsc --noEmit`;
+  `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Keep token material out of `OAuthSession`; browser-visible auth state
+    should remain only DID, handle, and optional avatar.
+  - The callback persists credentials through the existing internal DO
+    `fetch(new Request(...))` pattern used by other server-to-DO flows.
+  - SQLite-backed Durable Objects can use `ctx.storage.put` for private
+    per-object key/value records without adding a SQL migration.
+---
+
+## 2026-06-09 13:47 PDT - US-005
+Thread: https://ampcode.com/threads/
+- What was implemented: Added `src/server/auth/dpop-proof.ts` with a
+  WebCrypto DPoP proof JWT helper for persisted private JWKs and an
+  access-token SHA-256 hash helper. Added focused tests that verify the
+  header, request claims, optional `ath` and `nonce` claims, query/fragment
+  stripping from `htu`, public-only header JWK, and ES256 signature
+  verification with the header public key.
+- Files changed: src/server/auth/dpop-proof.ts, test/dpop-proof.ts,
+  test/run-all-tests.mjs, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/dpop-proof.ts --bundle
+  --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx tsc --noEmit`;
+  `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Later PDS write/refresh code should call `createDPoPProofJwt` with the
+    private JWK stored by US-004, not the exchange-time in-memory
+    `DPoPKeyPair`.
+  - `accessTokenHash` is the already base64url-encoded SHA-256 token hash
+    for the `ath` claim; use `createAccessTokenHash` when starting from a
+    raw access token.
+  - DPoP `htu` must omit query and fragment. The helper normalizes this
+    with `new URL(...)` before signing.
+---
+
+## 2026-06-09 13:56 PDT - US-006
+Thread: https://ampcode.com/threads/
+- What was implemented: Added a DPoP-bound OAuth token refresh helper that
+  exchanges the stored refresh token at the authorization server token
+  endpoint, retries once when the server returns `use_dpop_nonce` with a
+  `DPoP-Nonce` header, persists rotated access/refresh tokens through an
+  injected callback, and returns a typed `reauth_required` result for
+  unrecoverable auth failures.
+- Files changed: src/server/auth/token-refresh.ts,
+  test/oauth-token-refresh.ts, test/run-all-tests.mjs, specs/prd.json,
+  progress.log
+- Verification: `npx esbuild ./test/oauth-token-refresh.ts --bundle
+  --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npx tsc --noEmit`;
+  `npm run lint`
+- **Learnings for future iterations:**
+  - Token endpoint DPoP proofs do not include `ath`; reserve `ath` for PDS
+    requests that send `Authorization: DPoP <access-token>`.
+  - The AT Protocol token endpoint reports auth-server nonce challenges as
+    JSON `{ error: "use_dpop_nonce" }` plus the `DPoP-Nonce` header; retry
+    with that nonce once, then treat continued failure as re-auth required.
+  - Injecting `persistCredentials` keeps refresh usable by future PDS-write
+    helpers without importing the Worker router or Durable Object stub.
+---
+
+## 2026-06-09 14:02 PDT - US-007
+Thread: https://ampcode.com/threads/
+- What was implemented: Added a server-side AT Protocol PDS write client
+  with `putRecord`, `createRecord`, and `deleteRecord`. Requests are
+  DPoP-bound with the stored private JWK and access-token hash, retry one
+  server nonce challenge, refresh expired tokens through the existing
+  OAuth refresh helper, replay writes with rotated credentials, and return
+  typed `reauth_required` or `pds_write_failed` results. Added focused
+  tests for signing, nonce retry, refresh replay, and sanitized error
+  reporting, then registered the test in the full harness.
+- Files changed: src/server/auth/pds-write-client.ts,
+  test/pds-write-client.ts, test/run-all-tests.mjs, specs/prd.json,
+  progress.log
+- Verification: `npx esbuild ./test/pds-write-client.ts --bundle
+  --platform=node --format=esm
+  --external:./src/server/blurhash-runtime.js --external:stripe
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts
+  --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts |
+  node --input-type=module | npx tap-spec`; `npm run lint`;
+  `npx tsc --noEmit`; `npm test`
+- **Learnings for future iterations:**
+  - Use `pds-write-client.ts` for all authenticated repo writes instead of
+    hand-rolling PDS fetches in feature endpoints.
+  - PDS write tests can stay hermetic by injecting `fetch`,
+    `persistCredentials`, `now`, and `reportError`.
+  - Error reporting context should include operation, collection, status,
+    and server error strings, but never OAuth access or refresh tokens.
+---
+
+## 2026-06-09 14:13 PDT - US-008
+Thread: https://ampcode.com/threads/
+- What was implemented: Added per-feed publish state columns for AT
+  Protocol subscription sharing: `published`, `published_rkey`,
+  `published_at`, and `publish_error`. The shared schema now creates the
+  columns, the User DO has a guarded v8 migration, `/sync` projects the
+  fields, and local-first OPFS pull/push feed upserts preserve them.
+  Added focused tests for fresh schema, migration, server sync projection,
+  and local pull-sync storage.
+- Files changed: src/shared/schema.ts,
+  src/server/durable-objects/index.ts, src/client/db/local-db.ts,
+  src/client/db/pull-sync.ts, src/client/db/push-sync.ts,
+  src/client/db/types.ts, test/_test-fixtures.ts, test/do-migrations.ts,
+  test/do-handlers.ts, test/pull-sync.ts, specs/prd.json, progress.log
+- Verification: `npm run test:pull-sync`; `printf "import
+  './test/_test-fixtures.js'; import './test/do-migrations.js';" |
+  npx esbuild --bundle
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts |
+  npx tapout`; `printf "import './test/_test-fixtures.js'; import
+  './test/do-handlers.js';" | npx esbuild --bundle
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts |
+  npx tapout`; `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Feed publish state is part of the normal server-authoritative sync
+    payload; do not add a side channel for UI state.
+  - Constructor-based DO tests need `ctx.setWebSocketAutoResponse` and a
+    `WebSocketRequestResponsePair` shim when running outside Workers.
+  - Tapout uses a fixed local browser server port, so run tapout bundles
+    sequentially rather than in parallel.
+---
+
+## 2026-06-10 15:41 PDT - US-009
+Thread: https://ampcode.com/threads/
+- What was implemented: Added `POST /feeds/:id/publish` on the user
+  Durable Object. The route loads stored OAuth credentials, builds a
+  `space.rsss.feed.subscription` record, writes it with `putRecord` using
+  the deterministic feed rkey, persists `published`, `published_rkey`, and
+  `published_at` only after a successful PDS write, records publish errors
+  without marking the feed published, and bumps the feed version for sync.
+  Added route tests for publish success, idempotent republish, missing
+  credentials, and PDS auth failure.
+- Files changed: src/server/durable-objects/index.ts,
+  test/do-handlers.ts, specs/prd.json, progress.log
+- Verification: `npx esbuild ./test/do-handlers.ts --bundle
+  --platform=node --format=esm
+  --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts |
+  node --input-type=module | npx tap-spec`; `npm run lint`;
+  `npx tsc --noEmit`; `npm test`
+- **Learnings for future iterations:**
+  - The authenticated `/api/*` proxy strips `/api`, so a DO route at
+    `/feeds/:id/publish` is exposed to clients as `/api/feeds/:id/publish`.
+  - Derived lexicon record types preserve readonly fields; construct records
+    with object literals and conditional spreads instead of assigning
+    optional fields later.
+  - Republish should reuse `feeds.published_rkey` when present so the PDS
+    `putRecord` updates the same subscription record in place.
+---
+
+## 2026-06-10 15:53 PDT - US-010
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added Durable Object unpublish support for feed
+  subscriptions. `DELETE /feeds/:id/publish` now calls AT Protocol
+  `deleteRecord`, clears local publish state, and returns the synced feed row.
+  Unsubscribing from a published feed now deletes the PDS record before
+  removing the feed locally, preventing orphaned public records. PDS
+  `RecordNotFound` responses are treated as idempotent delete success.
+- Files changed: src/server/durable-objects/index.ts,
+  src/server/auth/pds-write-client.ts, test/do-handlers.ts,
+  test/pds-write-client.ts, specs/prd.json, progress.log
+- Verification: focused `test/do-handlers.ts` and `test/pds-write-client.ts`
+  esbuild/tap-spec runs; `npx tsc --noEmit`; `npm run lint`
+- **Learnings for future iterations:**
+  - Reuse private DO helpers for publish-state mutations that are reachable
+    from multiple routes; this keeps route behavior, PDS writes, SQLite
+    updates, and feed-version bumps aligned.
+  - AT Protocol delete idempotency belongs in the PDS write client so every
+    caller gets consistent `RecordNotFound` handling.
+  - The `test/do-handlers.ts` SQL mock must distinguish `SELECT ... FROM
+    feeds WHERE id = ?` from `DELETE FROM feeds WHERE id = ?`; a broad
+    substring match can accidentally swallow delete statements.
+---
+
+## 2026-06-10 16:00 PDT - US-011
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added Durable Object publish-state reconciliation
+  for AT Protocol subscription records. The User DO now lists public
+  `space.rsss.feed.subscription` records via
+  `com.atproto.repo.listRecords`, aligns local `published`,
+  `published_rkey`, `published_at`, and `publish_error` columns in both
+  drift directions, bumps `feed_version` once when any row changes, exposes
+  `POST /feeds/reconcile-published`, and schedules a background reconcile
+  when `/feeds` is opened. Runs are rate-limited with DO storage, while
+  missing credentials skip without consuming the cooldown.
+- Files changed: src/server/durable-objects/index.ts,
+  test/do-handlers.ts, specs/prd.json, progress.log
+- Verification: focused `test/do-handlers.ts` esbuild/tap-spec run;
+  `npx tsc --noEmit`; `npm run lint`; `npm test`
+- **Learnings for future iterations:**
+  - Public AT Protocol repo reads use GET
+    `/xrpc/com.atproto.repo.listRecords` with query params `repo`,
+    `collection`, `limit`, and optional `cursor`; subscription rkeys can be
+    parsed from the final segment of the returned AT URI.
+  - Triggering reconciliation from `/feeds` should use `ctx.waitUntil()` so
+    the feed list response remains fast; an explicit route is useful for
+    tests and future UI-driven reconnect flows.
+  - Check OAuth credentials before recording the reconcile cooldown; a
+    missing-credentials skip must not block the first run after reconnect.
+---
+
+## 2026-06-10 16:13 PDT - US-012
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added per-feed "Share to Bluesky" controls to the
+  feeds route. The controls use `@substrate-system/check-box`, reflect the
+  server-synced `published` feed state, call the existing
+  `/api/feeds/:id/publish` POST/DELETE endpoints through
+  `State.toggleFeedPublished`, and show per-feed saving, published, and
+  failed states from `@preact/signals`.
+- Files changed: src/client/components/feed-nav.ts,
+  src/client/routes/feeds.css, src/client/state.ts,
+  test/feed-share-toggle.ts, test/browser-tests.ts, specs/prd.json,
+  progress.log
+- Verification: focused `test/feed-share-toggle.ts` browser bundle;
+  `npm run lint`; `npx tsc --noEmit --pretty false`; `npm run stylelint`;
+  browser fallback verification at `http://127.0.0.1:2222/feeds`;
+  `npm test`.
+- **Learnings for future iterations:**
+  - Feed share UI state should live on `AppState` signal maps keyed by feed
+    id, while the feed row itself remains the authoritative source for
+    persisted publish state.
+  - Client publish/unpublish should use the existing server endpoint and
+    merge the returned feed row into `state.feeds`; if local-first is active,
+    mirror that row with `upsertFeedFromServer`.
+  - In direct shell commands, use `npx tapout`; `tapout` is not on PATH
+    outside npm scripts.
+---
+
+## 2026-06-10 - US-013
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added publish consent modal to the feed sharing
+  controls. When a user first checks "Share to Bluesky" for any feed, a
+  `@substrate-system/dialog` modal-window appears before the publish
+  request is made. The modal explains: records are written to your own
+  PDS, subscriptions are public on the AT Protocol network, they do not
+  appear in your Bluesky timeline, and you can remove them at any time.
+  Confirming proceeds with the publish; canceling closes the modal without
+  making any request. Unpublishing (unchecking) bypasses the modal.
+- Files changed: src/client/components/feed-nav.ts,
+  src/client/routes/feeds.css, test/publish-consent-modal.ts,
+  test/browser-tests.ts, specs/prd.json, progress.log
+- Verification: focused `test/publish-consent-modal.ts` tapout run (13
+  passing); `npx tsc --noEmit`; `npm run lint`; `npm test` (all suites).
+- **Learnings for future iterations:**
+  - TypeScript 4.9+ control-flow narrowing can narrow `let` variables
+    captured in async closures to `never` when assigned inside the closure.
+    Use an object wrapper (`const captured = { url: null }`) instead of
+    `let url = null` when capturing values from fetch mocks in tests.
+  - The `ModalWindow.event('close')` static method returns the correct
+    custom event name for the `close` event; use it with `addEventListener`
+    in a `useEffect` keyed on the open state to catch Escape/backdrop
+    close. The effect re-registers whenever `consentFeedId` changes.
+  - Module augmentation of `'preact'` JSX.IntrinsicElements is global
+    within the TypeScript compilation; the `modal-window` type declaration
+    in `payment-method-modal.ts` covers all files but is easy to miss —
+    redeclaring it in components that need it is safe and explicit.
+---
+
+## 2026-06-10 - US-014
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added RsssRegistryDO singleton Durable Object in
+  src/server/durable-objects/registry.ts. The DO holds a SQLite table
+  known_users (did, handle, avatar, updated_at) and exposes three
+  internal HTTP routes: POST /upsert (idempotent upsert on DID),
+  GET /lookup/:did (is DID an rsss user?), and POST /batch-lookup
+  (subset of a DID set that are rsss users). On successful OAuth callback
+  the worker calls upsertRegistryUser via executionCtx.waitUntil so
+  every login records the user. Public API routes GET
+  /api/registry/lookup/:did and POST /api/registry/batch-lookup proxy
+  to the singleton DO. The DO is exported as RsssRegistryDO and
+  registered in wrangler.jsonc (migration v4) for all environments.
+- Files changed: src/server/durable-objects/registry.ts (new),
+  src/server/index.ts, wrangler.jsonc, package.json,
+  test/registry.ts (new), test/run-registry.mjs (new),
+  specs/prd.json, progress.log
+- Verification: npm run test:registry (20/20 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, no regressions)
+- **Learnings for future iterations:**
+  - Singleton DOs are accessed via idFromName('global') and do not
+    need per-user routing.
+  - SqlStorage.exec().one() returns Record<string, SqlStorageValue>|null,
+    not the typed shape -- always cast through unknown first (as unknown as T).
+  - executionCtx.waitUntil on the Hono context is
+    c.executionCtx.waitUntil(promise).
+  - Registry DO migration must be added to ALL three places in
+    wrangler.jsonc: top-level, env.staging, and env.production.
+---
+
+## 2026-06-10 - US-015
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `src/server/microcosm-client.ts` with
+  `createConstellationClient` and `createSlingshotClient` factories.
+  Constellation exposes `getBacklinks`, `getBacklinksCount`, and
+  `getDistinct` for the `space.rsss.graph.follow` collection; Slingshot
+  exposes `getRecord` and `resolveIdentity`. Both clients accept an
+  optional `baseUrl` (defaulting to constellation.microcosm.blue and
+  slingshot.microcosm.blue respectively) and an optional `fetch` dep for
+  testing. Every request sends `RSSS_USER_AGENT`. All methods return a
+  `MicrocosmServiceError` typed error on network failure or non-2xx
+  response rather than throwing. Added `CONSTELLATION_URL` and
+  `SLINGSHOT_URL` optional vars to the `Env` interface in
+  `src/server/index.ts`.
+- Files changed: src/server/microcosm-client.ts (new),
+  src/server/index.ts, test/microcosm-client.ts (new),
+  test/run-microcosm-client.mjs (new), specs/prd.json, progress.log
+- Verification: `node test/run-microcosm-client.mjs` (40/40 passing);
+  `npx tsc --noEmit`; `npm run lint`; `npm test` (full suite, no regressions)
+- **Learnings for future iterations:**
+  - Microcosm Constellation endpoints follow xrpc-style paths:
+    `blue.microcosm.constellation.getBacklinks`,
+    `blue.microcosm.constellation.getBacklinksCount`,
+    `blue.microcosm.constellation.getDistinct`.
+  - Slingshot proxies standard AT Protocol xrpc endpoints:
+    `com.atproto.repo.getRecord`, `com.atproto.identity.resolveIdentity`.
+  - The `createConstellationClient` and `createSlingshotClient` factories
+    accept `{ baseUrl?, fetch? }` — inject `fetch` in tests; set `baseUrl`
+    from `env.CONSTELLATION_URL` / `env.SLINGSHOT_URL` in route handlers.
+  - All error paths return `{ code: 'service_unavailable', ... }` instead
+    of throwing; callers can distinguish success from failure with
+    `'code' in result`.
+---
+
+## 2026-06-10 - US-016
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added follow/unfollow endpoints to the
+  RsssUserDO. A new `graph_follows` SQLite table (subject_did UNIQUE,
+  rkey) persists follow rkeys for idempotency and unfollow support.
+  Two new private methods — `followUser` and `unfollowUser` — use
+  `createRecord` / `deleteRecord` from the PDS write client to write /
+  delete `space.rsss.graph.follow` records on the user's own PDS.
+  Two new DO routes are registered: `POST /graph/follow` (body:
+  `{ targetDid }`) and `DELETE /graph/follow/:targetDid`. Re-follow
+  returns 200 (no PDS write); unfollow of an unknown DID returns 200
+  (no PDS write). The implementation never touches `app.bsky.graph.follow`.
+- Files changed: src/shared/schema.ts (added GRAPH_FOLLOWS_SQL),
+  src/server/durable-objects/index.ts (import, table init, methods,
+  routes), test/graph-follow.ts (new, 27 tests),
+  test/run-graph-follow.mjs (new), specs/prd.json, progress.log
+- Verification: node test/run-graph-follow.mjs (27/27 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, no regressions)
+- **Learnings for future iterations:**
+  - `graph_follows` table uses UNIQUE on subject_did for DB-level
+    idempotency; route handler checks existence first to skip PDS call.
+  - `createRecord` without `rkey` lets the PDS assign a TID; the
+    returned `uri` (`at://did/.../rkey`) carries the rkey — extract
+    with `uri.split('/').pop()`.
+  - `GRAPH_FOLLOWS_SQL` uses `CREATE TABLE IF NOT EXISTS` so it is
+    safe to call repeatedly in `initDatabase`.
+  - Test harness for graph_follows mirrors the do-handlers.ts pattern:
+    mock sql.exec via query-string matching; bypass initDatabase by
+    directly assigning `userDo.sql`.
+---
+
+## 2026-06-10 - US-017
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `GET /api/profile/:did` public server
+  endpoint in `src/server/index.ts`. The endpoint resolves identity via
+  Slingshot, lists `space.rsss.feed.subscription` records (Slingshot
+  first, falling back to direct PDS listRecords via DID doc service
+  endpoint), looks up avatar from the registry DO, and checks follow
+  state for authenticated sessions. Added `extractPdsUrl` helper to parse
+  the PDS `serviceEndpoint` from an AT Protocol DID document. Added
+  `src/client/routes/profile.ts` Preact route component with avatar,
+  handle, follow/unfollow button (hidden for own profile), and per-feed
+  "Add" subscribe button. Added `src/client/routes/profile.css`.
+  Registered the `/profile/:did` route in `src/client/routes/index.ts`.
+  Used existing pre-written tests (26/26 passing).
+- Files changed: src/server/index.ts (new endpoint + helper),
+  src/client/routes/profile.ts (new),
+  src/client/routes/profile.css (new),
+  src/client/routes/index.ts (route registration),
+  specs/prd.json, progress.log
+- Verification: node test/run-profile-api.mjs (26/26 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, 1995/0 pass/fail)
+- **Learnings for future iterations:**
+  - The profile endpoint sits on `app` (not `dataRouter`) so it is
+    public; authenticated follow-state check uses a best-effort inner
+    try/catch and defaults to false on failure.
+  - `extractPdsUrl` reads `didDoc.service[].serviceEndpoint` where
+    `type === 'AtprotoPersonalDataServer'` — needed for the PDS fallback
+    when Slingshot is unavailable.
+  - Module-level `profileState` signal works for SPA navigation because
+    `fetchProfile` immediately sets `loading:true`; the `isStale` guard
+    (`ps.did !== did && !ps.loading`) prevents stale-data flash.
+  - `dataRouter.all('*')` proxies `POST/DELETE /api/graph/follow*` to
+    the user DO, so no explicit follow/unfollow routes needed in
+    `index.ts`; they inherit `requireAuth` from `dataRouter.use('*')`.
+---
+
+## 2026-06-10 - US-018
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added following/followers graph route.
+  DO: new `GET /graph/following` endpoint returning
+  `{ dids: string[] }` from the local `graph_follows` SQLite table.
+  Server: new `src/server/graph-api.ts` with `buildGraphResponse`
+  (injectable deps, easy to test). New `GET /api/graph` endpoint
+  on the main Hono app (placed before `app.route('/api', dataRouter)`)
+  that calls the DO for following, and Constellation
+  `getDistinct`+`getBacklinksCount` for followers. Returns
+  `{ following, followers, followersCount, constellationAvailable }`.
+  Client: new `src/client/routes/graph.ts` and `graph.css` with a
+  `/graph` route showing following and followers lists; each DID
+  links to its profile page. Constellation degradation surfaces as
+  a "(counts may be delayed)" inline note.
+- Files changed: src/server/durable-objects/index.ts (GET /graph/following),
+  src/server/graph-api.ts (new), src/server/index.ts (GET /api/graph),
+  src/client/routes/graph.ts (new), src/client/routes/graph.css (new),
+  src/client/routes/index.ts (route registration),
+  test/graph-following.ts (new, 21 tests),
+  test/run-graph-following.mjs (new),
+  specs/prd.json, progress.log
+- Verification: node test/run-graph-following.mjs (21/21 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, no regressions)
+- **Learnings for future iterations:**
+  - Add server endpoints that need to call both the DO AND external
+    services (like Constellation) to `app` directly (before
+    `app.route('/api', dataRouter)`), not to `dataRouter`.
+  - `GET /graph/following` on the DO returns all `subject_did` from
+    `graph_follows ORDER BY rowid` — safe to call with no auth check
+    since the DO proxy already enforces auth at the server level.
+  - `buildGraphResponse` deps pattern (same as `buildProfileResponse`)
+    keeps server logic testable without spinning up a full Hono app.
+  - Constellation uses `getDistinct` (not `getBacklinks`) to get unique
+    follower DIDs, and `getBacklinksCount` for the count. Both use
+    `collection: 'space.rsss.graph.follow', path: '.subject', subject: did`.
+---
+
+## 2026-06-10 - US-019
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `src/server/bluesky-follows.ts` with
+  `getBlueskyFollows(did, deps)` — fetches the user's public Bluesky
+  follows from `https://public.api.bsky.app/xrpc/app.bsky.graph.getFollows`,
+  paginating via cursor until all follows are collected. Results are
+  cached briefly (5-minute TTL) via injectable `getCache`/`putCache`
+  deps. Also exports `makeBlueskyFollowsDeps(kv, fetcher)` to wire up
+  a Cloudflare Workers KV namespace for production use.
+  No OAuth scope is requested; this is a public unauthenticated read.
+- Files changed: src/server/bluesky-follows.ts (new),
+  test/bluesky-follows.ts (new, 19 tests),
+  test/run-bluesky-follows.mjs (new),
+  specs/prd.json (US-019 passes:true), progress.log
+- Verification: node test/run-bluesky-follows.mjs (19/19 passing);
+  npx tsc --noEmit; npm run lint (all pass)
+- **Learnings for future iterations:**
+  - Build Bluesky AppView URLs as string templates, not `new URL()` +
+    `searchParams.set`, because `URLSearchParams` percent-encodes colons
+    in DID values (e.g. `did:plc:abc` → `did%3Aplc%3Aabc`), which
+    breaks test assertions and may break real API calls.
+  - The public Bluesky AppView base is `https://public.api.bsky.app`;
+    no auth header is required for `app.bsky.graph.getFollows`.
+  - `makeBlueskyFollowsDeps` bridges the injectable-deps pattern to a
+    real Cloudflare KV namespace with `expirationTtl`.
+---
+
+## 2026-06-10 - US-020
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `src/server/recommendations.ts` with
+  `computeRecommendations(userDid, deps)` — computes the intersection of
+  the user's Bluesky follows (US-019) and the rsss registry (US-014),
+  then excludes the user themselves and anyone they already follow on rsss
+  (from `listRsssFollowing`). Uses injectable deps pattern for testability.
+  Exports `RecommendedUser`, `RegistryUser`, and `RecommendationsDeps`.
+  `displayName` is null (registry does not store it); `sharedFeedsCount`
+  is optional. 19 tests cover intersection, exclusion, empty-follows
+  short-circuit, self-exclusion, and registry call argument shape.
+- Files changed: src/server/recommendations.ts (new),
+  test/recommendations.ts (new, 19 tests),
+  test/run-recommendations.mjs (new),
+  specs/prd.json (US-020 passes:true), progress.log
+- Verification: node test/run-recommendations.mjs (19/19 passing);
+  npx tsc --noEmit (no errors); npm run lint (no errors)
+- **Learnings for future iterations:**
+  - The registry `batch-lookup` call is skipped entirely when the Bluesky
+    follows list is empty — short-circuit before the async call.
+  - Self-exclusion (user's own DID) is handled in the same `excludeSet`
+    as existing rsss follows — no separate branch needed.
+  - `displayName` is null since neither the registry nor `bluesky-follows`
+    currently stores it; US-021 may fetch it from Bluesky profile if needed.
 ---
