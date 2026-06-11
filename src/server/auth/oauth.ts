@@ -48,11 +48,12 @@ export interface OAuthExchangeResult {
 }
 
 export interface OAuthState {
-    nonce: string
-    verifier: string
-    returnTo: string
-    dpopPrivateKeyJwk: JsonWebKey  // DPoP private key for token exchange
-    dpopPublicKeyJwk: JsonWebKey   // DPoP public key
+    nonce:string
+    verifier:string
+    returnTo:string
+    dpopPrivateKeyJwk:JsonWebKey
+    dpopPublicKeyJwk:JsonWebKey
+    authServer:string
 }
 
 // PKCE helpers
@@ -361,7 +362,8 @@ export async function startOAuthFlow (
         verifier,
         returnTo,
         dpopPrivateKeyJwk,
-        dpopPublicKeyJwk: dpopKeyPair.publicJwk
+        dpopPublicKeyJwk: dpopKeyPair.publicJwk,
+        authServer
     }
 
     const params = new URLSearchParams({
