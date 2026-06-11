@@ -688,3 +688,41 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     the user DO, so no explicit follow/unfollow routes needed in
     `index.ts`; they inherit `requireAuth` from `dataRouter.use('*')`.
 ---
+
+## 2026-06-10 - US-018
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added following/followers graph route.
+  DO: new `GET /graph/following` endpoint returning
+  `{ dids: string[] }` from the local `graph_follows` SQLite table.
+  Server: new `src/server/graph-api.ts` with `buildGraphResponse`
+  (injectable deps, easy to test). New `GET /api/graph` endpoint
+  on the main Hono app (placed before `app.route('/api', dataRouter)`)
+  that calls the DO for following, and Constellation
+  `getDistinct`+`getBacklinksCount` for followers. Returns
+  `{ following, followers, followersCount, constellationAvailable }`.
+  Client: new `src/client/routes/graph.ts` and `graph.css` with a
+  `/graph` route showing following and followers lists; each DID
+  links to its profile page. Constellation degradation surfaces as
+  a "(counts may be delayed)" inline note.
+- Files changed: src/server/durable-objects/index.ts (GET /graph/following),
+  src/server/graph-api.ts (new), src/server/index.ts (GET /api/graph),
+  src/client/routes/graph.ts (new), src/client/routes/graph.css (new),
+  src/client/routes/index.ts (route registration),
+  test/graph-following.ts (new, 21 tests),
+  test/run-graph-following.mjs (new),
+  specs/prd.json, progress.log
+- Verification: node test/run-graph-following.mjs (21/21 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, no regressions)
+- **Learnings for future iterations:**
+  - Add server endpoints that need to call both the DO AND external
+    services (like Constellation) to `app` directly (before
+    `app.route('/api', dataRouter)`), not to `dataRouter`.
+  - `GET /graph/following` on the DO returns all `subject_did` from
+    `graph_follows ORDER BY rowid` — safe to call with no auth check
+    since the DO proxy already enforces auth at the server level.
+  - `buildGraphResponse` deps pattern (same as `buildProfileResponse`)
+    keeps server logic testable without spinning up a full Hono app.
+  - Constellation uses `getDistinct` (not `getBacklinks`) to get unique
+    follower DIDs, and `getBacklinksCount` for the count. Both use
+    `collection: 'space.rsss.graph.follow', path: '.subject', subject: did`.
+---

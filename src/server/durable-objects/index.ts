@@ -2320,6 +2320,22 @@ export class RsssUserDO extends DurableObject<Env> {
             return c.json({ ok: true })
         })
 
+        app.get('/graph/following', (c) => {
+            const rows = this.sql.exec(
+                'SELECT subject_did FROM graph_follows ORDER BY rowid'
+            ).toArray() as Array<{ subject_did:string }>
+            return c.json({ dids: rows.map(r => r.subject_did) })
+        })
+
+        app.get('/graph/follow/:targetDid', (c) => {
+            const targetDid = c.req.param('targetDid')
+            const row = this.sql.exec(
+                'SELECT rkey FROM graph_follows WHERE subject_did = ?',
+                targetDid
+            ).one()
+            return c.json({ following: row !== null })
+        })
+
         app.post('/graph/follow', async (c) => {
             const body = await c.req.json<{
                 targetDid?:unknown

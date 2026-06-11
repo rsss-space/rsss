@@ -64,8 +64,13 @@ import {
 } from './profile-api.js'
 import {
     createSlingshotClient,
+    createConstellationClient,
     RSSS_USER_AGENT
 } from './microcosm-client.js'
+import {
+    buildGraphResponse,
+    type GraphApiDeps
+} from './graph-api.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
@@ -1910,6 +1915,69 @@ app.post(
         }
     }
 )
+
+/**
+ * Following/followers graph for the authenticated user.
+ * Following is read from the user's DO SQLite. Followers
+ * are fetched from Constellation (eventual consistency).
+ */
+app.get('/api/graph', requireAuth, async (c) => {
+    const session = c.get('session')!
+    const constellation = createConstellationClient({
+        baseUrl: c.env.CONSTELLATION_URL
+    })
+
+    const deps:GraphApiDeps = {
+        listFollowing: async () => {
+            try {
+                const stub = getRsssUserDO(c.env, session.did)
+                const res = await stub.fetch(
+                    new Request('http://do/graph/following')
+                )
+                if (!res.ok) return []
+                const body = await res.json() as { dids:string[] }
+                return body.dids ?? []
+            } catch {
+                return []
+            }
+        },
+        getFollowers: async (did:string) => {
+            const [backlinkRes, countRes] = await Promise.all([
+                constellation.getDistinct({
+                    collection: 'space.rsss.graph.follow',
+                    path: '.subject',
+                    subject: did
+                }),
+                constellation.getBacklinksCount({
+                    collection: 'space.rsss.graph.follow',
+                    path: '.subject',
+                    subject: did
+                })
+            ])
+
+            const available = !('code' in backlinkRes) ||
+                !('code' in countRes)
+
+            const dids = 'code' in backlinkRes ?
+                [] :
+                backlinkRes.subjects.slice(0, 100)
+
+            const count = 'code' in countRes ?
+                dids.length :
+                countRes.count
+
+            return { dids, count, available }
+        }
+    }
+
+    try {
+        const graph = await buildGraphResponse(session.did, deps)
+        return c.json(graph)
+    } catch (err) {
+        reportError(err, 'graph', { route: '/api/graph' })
+        return c.json({ error: 'graph_unavailable' }, 503)
+    }
+})
 
 export const dataRouter = new Hono<{
     Bindings:Env;
