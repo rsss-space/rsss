@@ -872,6 +872,24 @@ test('RsssUserDO unpublish missing remote record is idempotent',
         }
     })
 
+test('RsssUserDO POST /feeds/:id/publish returns 404 for missing feed id',
+    async t => {
+        const { app } = createDoHarness({
+            feeds: []
+        })
+
+        const response = await app.request('/feeds/999/publish', {
+            method: 'POST'
+        })
+
+        t.equal(
+            response.status,
+            404,
+            'missing feed id returns 404 (AC1.4: zero-row queries ' +
+            'return null, not 500)'
+        )
+    })
+
 test('RsssUserDO reconcile publish state from repo records',
     async t => {
         const credentials = await makeCredentials()

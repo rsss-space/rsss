@@ -344,7 +344,6 @@ function createFetchFeedHarness (opts:{
                 _insertCallCount++
                 return {
                     toArray: () => [],
-                    one: () => null,
                     rowsWritten: newItemCount
                 } as unknown as QueryResult
             }
@@ -1006,10 +1005,7 @@ function createItemsHarness (opts:{
                 const rows = query.includes('last_pulled_at')
                     ? applyCursor(items, feeds)
                     : items
-                return {
-                    toArray: () => [{ count: rows.length }],
-                    one: () => ({ count: rows.length })
-                } as unknown as QueryResult
+                return fakeResult([{ count: rows.length }])
             }
             return fakeResult([])
         }
