@@ -5,6 +5,8 @@
  * can swap in fakes without spinning up real DOs or HTTP servers.
  */
 
+import { httpUrlOrNull } from '../shared/publisher-link.js'
+
 export interface ProfileSubscription {
     uri:string
     rkey:string
@@ -46,7 +48,8 @@ export async function buildProfileResponse (
 
 /**
  * Parse space.rsss.feed.subscription record value into a
- * ProfileSubscription, or return null if the record is malformed.
+ * ProfileSubscription, or return null if the record is malformed
+ * or contains invalid (non-http(s)) URLs.
  */
 export function parseSubscriptionRecord (
     uri:string,
@@ -54,14 +57,19 @@ export function parseSubscriptionRecord (
 ):ProfileSubscription | null {
     if (typeof value !== 'object' || value === null) return null
     const v = value as Record<string, unknown>
-    if (typeof v.feedUrl !== 'string') return null
+    const feedUrl = httpUrlOrNull(
+        typeof v.feedUrl === 'string' ? v.feedUrl : null
+    )
+    if (!feedUrl) return null
     const parts = uri.split('/')
     const rkey = parts[parts.length - 1] ?? ''
     return {
         uri,
         rkey,
-        feedUrl: v.feedUrl,
+        feedUrl,
         title: typeof v.title === 'string' ? v.title : null,
-        siteUrl: typeof v.siteUrl === 'string' ? v.siteUrl : null
+        siteUrl: httpUrlOrNull(
+            typeof v.siteUrl === 'string' ? v.siteUrl : null
+        )
     }
 }
