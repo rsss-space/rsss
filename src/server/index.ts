@@ -748,6 +748,12 @@ app.post('/api/auth/callback', async (c) => {
             }, 400)
         }
 
+        if (body.iss !== storedState.authServer) {
+            return c.json({
+                error: 'invalid_iss'
+            }, 400)
+        }
+
         const { clientId, redirectUri } = resolveOAuthClient(
             c.req.url,
             c.env.OAUTH_CLIENT_ID
