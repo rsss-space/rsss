@@ -200,6 +200,11 @@ export interface IdentityResult {
     didDoc?:unknown
 }
 
+export interface ListRecordsResult {
+    records:SlingshotRecord[]
+    cursor?:string
+}
+
 interface GetRecordParams {
     repo:string
     collection:string
@@ -211,6 +216,13 @@ interface ResolveIdentityParams {
     handle?:string
 }
 
+interface ListRecordsParams {
+    repo:string
+    collection:string
+    limit?:number
+    cursor?:string
+}
+
 export interface SlingshotClient {
     getRecord(
         params:GetRecordParams
@@ -218,6 +230,9 @@ export interface SlingshotClient {
     resolveIdentity(
         params:ResolveIdentityParams
     ):Promise<IdentityResult | MicrocosmServiceError>
+    listRecords(
+        params:ListRecordsParams
+    ):Promise<ListRecordsResult | MicrocosmServiceError>
 }
 
 export interface SlingshotClientOptions {
@@ -289,5 +304,34 @@ export function createSlingshotClient (
         }
     }
 
-    return { getRecord, resolveIdentity }
+    async function listRecords (
+        params:ListRecordsParams
+    ):Promise<ListRecordsResult | MicrocosmServiceError> {
+        const urlParams:Record<string, string | undefined> = {
+            repo: params.repo,
+            collection: params.collection
+        }
+        if (params.limit !== undefined) {
+            urlParams.limit = String(params.limit)
+        }
+        if (params.cursor !== undefined) {
+            urlParams.cursor = params.cursor
+        }
+        const url = slingshotUrl(
+            base,
+            'com.atproto.repo.listRecords',
+            urlParams
+        )
+        const result = await getJson(url, fetcher)
+        if (!result.ok) {
+            return serviceError(result.message, result.status)
+        }
+        const body = result.body as Record<string, unknown>
+        return {
+            records: (body.records as SlingshotRecord[] | undefined) ?? [],
+            cursor: body.cursor as string | undefined
+        }
+    }
+
+    return { getRecord, resolveIdentity, listRecords }
 }
