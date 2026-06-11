@@ -753,3 +753,29 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - `makeBlueskyFollowsDeps` bridges the injectable-deps pattern to a
     real Cloudflare KV namespace with `expirationTtl`.
 ---
+
+## 2026-06-10 - US-020
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `src/server/recommendations.ts` with
+  `computeRecommendations(userDid, deps)` — computes the intersection of
+  the user's Bluesky follows (US-019) and the rsss registry (US-014),
+  then excludes the user themselves and anyone they already follow on rsss
+  (from `listRsssFollowing`). Uses injectable deps pattern for testability.
+  Exports `RecommendedUser`, `RegistryUser`, and `RecommendationsDeps`.
+  `displayName` is null (registry does not store it); `sharedFeedsCount`
+  is optional. 19 tests cover intersection, exclusion, empty-follows
+  short-circuit, self-exclusion, and registry call argument shape.
+- Files changed: src/server/recommendations.ts (new),
+  test/recommendations.ts (new, 19 tests),
+  test/run-recommendations.mjs (new),
+  specs/prd.json (US-020 passes:true), progress.log
+- Verification: node test/run-recommendations.mjs (19/19 passing);
+  npx tsc --noEmit (no errors); npm run lint (no errors)
+- **Learnings for future iterations:**
+  - The registry `batch-lookup` call is skipped entirely when the Bluesky
+    follows list is empty — short-circuit before the async call.
+  - Self-exclusion (user's own DID) is handled in the same `excludeSet`
+    as existing rsss follows — no separate branch needed.
+  - `displayName` is null since neither the registry nor `bluesky-follows`
+    currently stores it; US-021 may fetch it from Bluesky profile if needed.
+---

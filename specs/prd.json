@@ -300,7 +300,7 @@
         "Typecheck and lint pass (npx tsc --noEmit && npm run lint)"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-C2 / FR-14."
     },
     {
