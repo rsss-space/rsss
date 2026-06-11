@@ -56,6 +56,16 @@ import { reportError } from './lib/report-error.js'
 import {
     createRateLimitMiddleware
 } from './middleware/rate-limit.js'
+import {
+    buildProfileResponse,
+    parseSubscriptionRecord,
+    type ProfileSubscription,
+    type ProfileApiDeps
+} from './profile-api.js'
+import {
+    createSlingshotClient,
+    RSSS_USER_AGENT
+} from './microcosm-client.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
@@ -1997,6 +2007,134 @@ dataRouter.all('*', async (c) => {
 })
 
 app.route('/api', dataRouter)
+
+function extractPdsUrl (didDoc:unknown):string | null {
+    if (!didDoc || typeof didDoc !== 'object') return null
+    const doc = didDoc as Record<string, unknown>
+    const services = doc.service
+    if (!Array.isArray(services)) return null
+    const pds = services.find((s:unknown) => {
+        if (!s || typeof s !== 'object') return false
+        const svc = s as Record<string, unknown>
+        return svc.type === 'AtprotoPersonalDataServer' ||
+            svc.id === '#atproto_pds'
+    })
+    if (!pds) return null
+    const svc = pds as Record<string, unknown>
+    return typeof svc.serviceEndpoint === 'string' ?
+        svc.serviceEndpoint : null
+}
+
+/**
+ * Profile: get a user's published subscriptions and follow state.
+ * Public (no auth required for reading); session used for follow state.
+ */
+app.get('/api/profile/:did', async (c) => {
+    const input = c.req.param('did')
+    const session = c.get('session')
+    const slingshot = createSlingshotClient({
+        baseUrl: c.env.SLINGSHOT_URL
+    })
+
+    let resolvedDidDoc:unknown
+
+    const deps:ProfileApiDeps = {
+        resolveIdentity: async (raw:string) => {
+            const params = raw.startsWith('did:') ?
+                { did: raw } :
+                { handle: raw }
+            const result = await slingshot.resolveIdentity(params)
+            if ('code' in result) throw new Error(result.message)
+            resolvedDidDoc = result.didDoc
+            return { did: result.did, handle: result.handle }
+        },
+        listSubscriptions: async (targetDid:string) => {
+            const result = await slingshot.listRecords({
+                repo: targetDid,
+                collection: 'space.rsss.feed.subscription',
+                limit: 100
+            })
+            if (!('code' in result)) {
+                return result.records
+                    .map(r => parseSubscriptionRecord(r.uri, r.value))
+                    .filter((r):r is ProfileSubscription => r !== null)
+            }
+            // Fallback: direct PDS listRecords
+            const pdsUrl = extractPdsUrl(resolvedDidDoc)
+            if (!pdsUrl) return []
+            try {
+                const pdsRes = await fetch(
+                    `${pdsUrl}/xrpc/com.atproto.repo.listRecords?` +
+                    `repo=${encodeURIComponent(targetDid)}&` +
+                    'collection=space.rsss.feed.subscription&limit=100',
+                    { headers: { 'user-agent': RSSS_USER_AGENT } }
+                )
+                if (!pdsRes.ok) return []
+                const data = await pdsRes.json() as {
+                    records?:Array<{
+                        uri?:string
+                        value?:unknown
+                    }>
+                }
+                return (data.records ?? [])
+                    .map(r => parseSubscriptionRecord(
+                        r.uri ?? '', r.value
+                    ))
+                    .filter((s):s is ProfileSubscription => s !== null)
+            } catch {
+                return []
+            }
+        },
+        lookupAvatar: async (targetDid:string) => {
+            const stub = getRegistryDO(c.env)
+            if (!stub) return null
+            try {
+                const res = await stub.fetch(
+                    new Request(
+                        `http://registry/lookup/${encodeURIComponent(targetDid)}`
+                    )
+                )
+                if (!res.ok) return null
+                const data = await res.json() as {
+                    known:boolean
+                    avatar?:string | null
+                }
+                return data.known ? data.avatar ?? null : null
+            } catch {
+                return null
+            }
+        }
+    }
+
+    try {
+        const profile = await buildProfileResponse(input, deps)
+
+        let following = false
+        if (session) {
+            try {
+                const userDO = getRsssUserDO(c.env, session.did)
+                const followRes = await userDO.fetch(
+                    new Request(
+                        'http://do/graph/follow/' +
+                        `${encodeURIComponent(profile.did)}`
+                    )
+                )
+                if (followRes.ok) {
+                    const data = await followRes.json() as {
+                        following:boolean
+                    }
+                    following = data.following
+                }
+            } catch {
+                // follow check failed — default false
+            }
+        }
+
+        return c.json({ ...profile, following })
+    } catch {
+        return c.json({ error: 'Profile not found' }, 404)
+    }
+})
 
 /**
  * Registry: check if a DID is a known rsss user.

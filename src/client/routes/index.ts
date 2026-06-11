@@ -12,6 +12,7 @@ import { PrivacyRoute } from './privacy.js'
 import { ConfirmCloseRoute } from './confirm-close.js'
 import { UpdatesRoute } from './updates.js'
 import { FeedsRoute } from './feeds.js'
+import { ProfileRoute } from './profile.js'
 // import Debug from '@substrate-system/debug'
 // const debug = Debug('rsss:routes')
 
@@ -102,6 +103,10 @@ export default function _Router (state:AppState):InstanceType<typeof Router> {
 
     router.addRoute('/post/*', () => {
         return ItemReader
+    })
+
+    router.addRoute('/profile/:did', () => {
+        return ProfileRoute
     })
 
     return router

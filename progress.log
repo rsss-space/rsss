@@ -652,3 +652,39 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     mock sql.exec via query-string matching; bypass initDatabase by
     directly assigning `userDo.sql`.
 ---
+
+## 2026-06-10 - US-017
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added `GET /api/profile/:did` public server
+  endpoint in `src/server/index.ts`. The endpoint resolves identity via
+  Slingshot, lists `space.rsss.feed.subscription` records (Slingshot
+  first, falling back to direct PDS listRecords via DID doc service
+  endpoint), looks up avatar from the registry DO, and checks follow
+  state for authenticated sessions. Added `extractPdsUrl` helper to parse
+  the PDS `serviceEndpoint` from an AT Protocol DID document. Added
+  `src/client/routes/profile.ts` Preact route component with avatar,
+  handle, follow/unfollow button (hidden for own profile), and per-feed
+  "Add" subscribe button. Added `src/client/routes/profile.css`.
+  Registered the `/profile/:did` route in `src/client/routes/index.ts`.
+  Used existing pre-written tests (26/26 passing).
+- Files changed: src/server/index.ts (new endpoint + helper),
+  src/client/routes/profile.ts (new),
+  src/client/routes/profile.css (new),
+  src/client/routes/index.ts (route registration),
+  specs/prd.json, progress.log
+- Verification: node test/run-profile-api.mjs (26/26 passing);
+  npx tsc --noEmit; npm run lint; npm test (full suite, 1995/0 pass/fail)
+- **Learnings for future iterations:**
+  - The profile endpoint sits on `app` (not `dataRouter`) so it is
+    public; authenticated follow-state check uses a best-effort inner
+    try/catch and defaults to false on failure.
+  - `extractPdsUrl` reads `didDoc.service[].serviceEndpoint` where
+    `type === 'AtprotoPersonalDataServer'` — needed for the PDS fallback
+    when Slingshot is unavailable.
+  - Module-level `profileState` signal works for SPA navigation because
+    `fetchProfile` immediately sets `loading:true`; the `isStale` guard
+    (`ps.did !== did && !ps.loading`) prevents stale-data flash.
+  - `dataRouter.all('*')` proxies `POST/DELETE /api/graph/follow*` to
+    the user DO, so no explicit follow/unfollow routes needed in
+    `index.ts`; they inherit `requireAuth` from `dataRouter.use('*')`.
+---
