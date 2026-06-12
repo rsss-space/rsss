@@ -108,9 +108,11 @@ class PersistentSQLiteClient {
     db:PersistentDb|null = null
     filename:string|null = null
     private files:Map<string, PersistentDb>
+    private removed:string[]
 
-    constructor (files:Map<string, PersistentDb>) {
+    constructor (files:Map<string, PersistentDb>, removed:string[] = []) {
         this.files = files
+        this.removed = removed
     }
 
     async probe ():Promise<void> {}
@@ -157,6 +159,18 @@ class PersistentSQLiteClient {
             resultRows: rows
         })
         return rows as T[]
+    }
+
+    async remove (
+        options:{ did?:string; filename?:string; directory?:string } = {}
+    ):Promise<void> {
+        const filename = options.filename || (
+            options.did ? getOpfsFilename(options.did) : ''
+        )
+        if (filename) {
+            this.files.delete(filename)
+            this.removed.push(filename)
+        }
     }
 
     async close ():Promise<void> {
@@ -238,7 +252,7 @@ function setupPersistentLocalFirst (
     }
     setTestMode(false)
     setSQLiteWorkerClientFactoryForTests(() => (
-        new PersistentSQLiteClient(files) as unknown as SQLiteWorkerClient
+        new PersistentSQLiteClient(files, removed) as unknown as SQLiteWorkerClient
     ))
     Object.defineProperty(navigator, 'storage', {
         value: {
@@ -878,6 +892,14 @@ test('bootstrapLocalDb: failed bootstrap clears state and partial data',
         _resetSupportedCache()
         setSQLiteWorkerClientFactoryForTests(() => ({
             probe: async () => {},
+            remove: async (options:{ did?:string; filename?:string }) => {
+                const filename = options.filename || (
+                    options.did ? getOpfsFilename(options.did) : ''
+                )
+                if (filename) {
+                    removed.push(filename)
+                }
+            },
             dispose: () => {}
         } as unknown as SQLiteWorkerClient))
         Object.defineProperty(globalThis, 'crossOriginIsolated', {
@@ -957,6 +979,9 @@ test('resetLocalFirst closes worker db before removing OPFS data',
             },
             exec: async () => {},
             query: async () => [],
+            remove: async () => {
+                events.push('remove')
+            },
             close: async () => {
                 events.push('close')
             },
