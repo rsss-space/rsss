@@ -23,7 +23,8 @@ import {
 import {
     getOpfsFilename,
     setSQLiteWorkerClientFactoryForTests,
-    setTestMode
+    setTestMode,
+    removeOpfsDb
 } from '../src/client/db/sqlite-init.js'
 import {
     resetTabCoordinationForTests
@@ -128,11 +129,11 @@ class PersistentSQLiteClient {
     db:PersistentDb|null = null
     filename:string|null = null
     private files:Map<string, PersistentDb>
-    private counters:{ opens:number; probes:number }
+    private counters:{ opens:number; probes:number; removes:string[] }
 
     constructor (
         files:Map<string, PersistentDb>,
-        counters:{ opens:number; probes:number }
+        counters:{ opens:number; probes:number; removes:string[] }
     ) {
         this.files = files
         this.counters = counters
@@ -187,6 +188,21 @@ class PersistentSQLiteClient {
             resultRows: rows
         })
         return rows as T[]
+    }
+
+    async remove (
+        options:{ did?:string; filename?:string; directory?:string } = {}
+    ):Promise<void> {
+        const filename = options.filename || (
+            options.did ? getOpfsFilename(options.did) : ''
+        )
+        if (!filename) {
+            throw new Error('test remove requires did or filename')
+        }
+        this.counters.removes.push(filename)
+        const db = this.files.get(filename)
+        if (db) db.close()
+        this.files.delete(filename)
     }
 
     async close ():Promise<void> {
@@ -274,13 +290,13 @@ async function loadLocalRows (state:AppState):Promise<void> {
 
 interface OpfsHarness {
     files:Map<string, PersistentDb>
-    counters:{ opens:number; probes:number }
+    counters:{ opens:number; probes:number; removes:string[] }
     cleanup:() => void
 }
 
 function setupOpfsHarness ():OpfsHarness {
     const files = new Map<string, PersistentDb>()
-    const counters = { opens: 0, probes: 0 }
+    const counters = { opens: 0, probes: 0, removes: [] }
     const originalStorage = navigator.storage
     const originalOnline = navigator.onLine
     const originalIsolated = (
@@ -468,6 +484,45 @@ test(
         } finally {
             render(null, root)
             root.remove()
+            harness.cleanup()
+            resetLocalFirstState()
+        }
+    }
+)
+
+test(
+    'removeOpfsDb calls worker remove RPC with correct filename (AC15.2)',
+    async (t) => {
+        resetLocalFirstState()
+        const harness = setupOpfsHarness()
+        const sync = makeFetchCounter()
+
+        try {
+            setSyncSubscriptions(true)
+            saveLocalFirstSettings()
+
+            // Create a DB via the SAH-pool path
+            await bootstrapLocalDb(did, sync.fetchFn)
+            const filename = getOpfsFilename(did)
+
+            // Verify the file exists in the pool
+            t.ok(harness.files.has(filename),
+                'DB file exists in pool after bootstrap')
+
+            // Call removeOpfsDb
+            await removeOpfsDb(did)
+
+            // Verify the worker's remove RPC was called with the correct
+            // filename
+            t.equal(harness.counters.removes.length, 1,
+                'remove was called once')
+            t.equal(harness.counters.removes[0], filename,
+                'remove was called with the correct filename')
+
+            // Verify the file is actually removed from the pool
+            t.ok(!harness.files.has(filename),
+                'DB file is removed from pool after removeOpfsDb')
+        } finally {
             harness.cleanup()
             resetLocalFirstState()
         }

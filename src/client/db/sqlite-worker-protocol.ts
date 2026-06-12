@@ -43,19 +43,29 @@ export interface SqliteWorkerCloseRequest {
     type:'close'
 }
 
+export interface SqliteWorkerRemoveRequest {
+    id:number
+    type:'remove'
+    did?:string
+    filename?:string
+    directory?:string
+}
+
 export type SqliteWorkerRequest =
     SqliteWorkerProbeRequest |
     SqliteWorkerOpenRequest |
     SqliteWorkerExecRequest |
     SqliteWorkerQueryRequest |
-    SqliteWorkerCloseRequest
+    SqliteWorkerCloseRequest |
+    SqliteWorkerRemoveRequest
 
 export type SqliteWorkerRequestBody =
     Omit<SqliteWorkerProbeRequest, 'id'> |
     Omit<SqliteWorkerOpenRequest, 'id'> |
     Omit<SqliteWorkerExecRequest, 'id'> |
     Omit<SqliteWorkerQueryRequest, 'id'> |
-    Omit<SqliteWorkerCloseRequest, 'id'>
+    Omit<SqliteWorkerCloseRequest, 'id'> |
+    Omit<SqliteWorkerRemoveRequest, 'id'>
 
 export interface SqliteWorkerSerializedError {
     name:string

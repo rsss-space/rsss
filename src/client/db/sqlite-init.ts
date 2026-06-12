@@ -244,14 +244,16 @@ export function getOpfsFilename (did:string):string {
 /**
  * Remove the OPFS SQLite file for `did`.
  * Best-effort — resolves even if the file does not exist.
+ * Deletes via the SAH-pool VFS unlink RPC (not plain removeEntry).
  */
 export async function removeOpfsDb (did:string):Promise<void> {
     try {
-        const root = await navigator.storage.getDirectory()
-        const dir = await root.getDirectoryHandle('rsss-db', {
-            create: false
-        })
-        await dir.removeEntry(getOpfsFilename(did))
+        const client = _workerClientFactory()
+        try {
+            await client.remove({ did })
+        } finally {
+            await client.close()
+        }
     } catch {
         // file may not exist; ignore
     }
