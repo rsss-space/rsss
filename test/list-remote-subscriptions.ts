@@ -256,3 +256,195 @@ test('listRemoteSubscriptions bails on cursor stall (AC7.5)',
             globalThis.fetch = originalFetch
         }
     })
+
+test('listRemoteSubscriptions rejects blocked PDS hosts (AC20.1)',
+    async (t) => {
+        // When the PDS endpoint is a blocked host (loopback), the function
+        // should refuse to fetch and throw, without making a fetch request.
+        let fetchCalls = 0
+        const originalFetch = globalThis.fetch
+
+        try {
+            const userDo = Object.create(
+                RsssUserDO.prototype
+            ) as unknown as {
+                listRemoteSubscriptions(
+                    creds:OAuthCredentialRecord
+                ):Promise<Map<string, RemoteSubscription>>
+                listRecordsUrl(
+                    creds:OAuthCredentialRecord,
+                    cursor?:string
+                ):string
+                isListedSubscriptionRecord(
+                    value:unknown
+                ):value is ListedSubscriptionRecord
+                subscriptionFromRecord(
+                    record:ListedSubscriptionRecord
+                ):{ feedUrl:string; subscription:RemoteSubscription }|null
+            }
+
+            // Track fetch calls; should NOT be called for blocked hosts
+            globalThis.fetch = (async () => {
+                fetchCalls++
+                return makeSuccessResponse(makeListRecordsPage(5))
+            }) as typeof fetch
+
+            userDo.listRecordsUrl = (creds, cursor) => {
+                const base = creds.pdsEndpoint.endsWith('/') ?
+                    creds.pdsEndpoint :
+                    `${creds.pdsEndpoint}/`
+                const url = new URL(
+                    'xrpc/com.atproto.repo.listRecords',
+                    base
+                )
+                url.searchParams.set('repo', creds.did)
+                url.searchParams.set(
+                    'collection',
+                    feedSubscriptionLexicon.id
+                )
+                url.searchParams.set('limit', '100')
+                if (cursor) url.searchParams.set('cursor', cursor)
+                return url.href
+            }
+
+            userDo.isListedSubscriptionRecord = (
+                value
+            ):value is ListedSubscriptionRecord => {
+                if (typeof value !== 'object' || value === null) return false
+                if (Array.isArray(value)) return false
+                const record = value as Partial<ListedSubscriptionRecord>
+                return typeof record.uri === 'string'
+            }
+
+            userDo.subscriptionFromRecord = (record) => {
+                if (typeof record.value !== 'object' ||
+                    record.value === null) {
+                    return null
+                }
+                if (Array.isArray(record.value)) return null
+                const value = record.value as {
+                    feedUrl?:string; createdAt?:string
+                }
+                const rkey = record.uri.split('/').pop() || null
+                if (!rkey || typeof value.feedUrl !== 'string') return null
+                return {
+                    feedUrl: value.feedUrl,
+                    subscription: {
+                        rkey,
+                        createdAt: typeof value.createdAt === 'string' ?
+                            value.createdAt :
+                            null
+                    }
+                }
+            }
+
+            // Test with loopback (127.0.0.1)
+            let threw = false
+            try {
+                await userDo.listRemoteSubscriptions({
+                    did: 'did:plc:test',
+                    pdsEndpoint: 'http://127.0.0.1:8080'
+                })
+            } catch (err) {
+                threw = true
+            }
+
+            t.ok(threw, 'should throw for blocked host')
+            t.equal(fetchCalls, 0, 'should not make fetch for blocked host')
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })
+
+test('listRemoteSubscriptions accepts normal PDS hosts (AC20.1)',
+    async (t) => {
+        // With a normal PDS host, the function should fetch normally
+        let fetchCalls = 0
+        const originalFetch = globalThis.fetch
+
+        try {
+            const userDo = Object.create(
+                RsssUserDO.prototype
+            ) as unknown as {
+                listRemoteSubscriptions(
+                    creds:OAuthCredentialRecord
+                ):Promise<Map<string, RemoteSubscription>>
+                listRecordsUrl(
+                    creds:OAuthCredentialRecord,
+                    cursor?:string
+                ):string
+                isListedSubscriptionRecord(
+                    value:unknown
+                ):value is ListedSubscriptionRecord
+                subscriptionFromRecord(
+                    record:ListedSubscriptionRecord
+                ):{ feedUrl:string; subscription:RemoteSubscription }|null
+            }
+
+            // Normal fetch works
+            globalThis.fetch = (async () => {
+                fetchCalls++
+                return makeSuccessResponse(makeListRecordsPage(5))
+            }) as typeof fetch
+
+            userDo.listRecordsUrl = (creds, cursor) => {
+                const base = creds.pdsEndpoint.endsWith('/') ?
+                    creds.pdsEndpoint :
+                    `${creds.pdsEndpoint}/`
+                const url = new URL(
+                    'xrpc/com.atproto.repo.listRecords',
+                    base
+                )
+                url.searchParams.set('repo', creds.did)
+                url.searchParams.set(
+                    'collection',
+                    feedSubscriptionLexicon.id
+                )
+                url.searchParams.set('limit', '100')
+                if (cursor) url.searchParams.set('cursor', cursor)
+                return url.href
+            }
+
+            userDo.isListedSubscriptionRecord = (
+                value
+            ):value is ListedSubscriptionRecord => {
+                if (typeof value !== 'object' || value === null) return false
+                if (Array.isArray(value)) return false
+                const record = value as Partial<ListedSubscriptionRecord>
+                return typeof record.uri === 'string'
+            }
+
+            userDo.subscriptionFromRecord = (record) => {
+                if (typeof record.value !== 'object' ||
+                    record.value === null) {
+                    return null
+                }
+                if (Array.isArray(record.value)) return null
+                const value = record.value as {
+                    feedUrl?:string; createdAt?:string
+                }
+                const rkey = record.uri.split('/').pop() || null
+                if (!rkey || typeof value.feedUrl !== 'string') return null
+                return {
+                    feedUrl: value.feedUrl,
+                    subscription: {
+                        rkey,
+                        createdAt: typeof value.createdAt === 'string' ?
+                            value.createdAt :
+                            null
+                    }
+                }
+            }
+
+            // Test with normal PDS
+            const result = await userDo.listRemoteSubscriptions({
+                did: 'did:plc:test',
+                pdsEndpoint: 'https://pds.example.com/'
+            })
+
+            t.ok(fetchCalls > 0, 'should make fetch for normal host')
+            t.ok(result.size > 0, 'should return subscriptions')
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })

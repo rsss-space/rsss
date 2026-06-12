@@ -23,7 +23,8 @@ import {
     FeedFetchError,
     fetchFeedText,
     fetchOgImage,
-    validateFeedUrl
+    validateFeedUrl,
+    isBlockedHostname
 } from '../feed-fetch.js'
 import {
     deleteRecord,
@@ -894,10 +895,16 @@ export class RsssUserDO extends DurableObject<Env> {
                 break
             }
 
-            const response = await fetch(this.listRecordsUrl(
+            // Validate PDS endpoint host against SSRF guard (AC20.1)
+            const url = new URL(this.listRecordsUrl(
                 credentials,
                 cursor
             ))
+            if (isBlockedHostname(url.hostname)) {
+                throw new Error('PDS endpoint host is not allowed')
+            }
+
+            const response = await fetch(url.href)
             if (!response.ok) {
                 throw new Error('Could not list AT Protocol records')
             }
