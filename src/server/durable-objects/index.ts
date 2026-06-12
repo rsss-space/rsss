@@ -521,14 +521,20 @@ export class RsssUserDO extends DurableObject<Env> {
         // pick up the newly-projected `last_pulled_at` column.
         // Guarded by its own storage key so it runs at most once
         // per RsssUserDO regardless of the schema migration version.
+        // Persist the guard flag BEFORE the UPDATE: if the DO cold-starts
+        // between the UPDATE and put, the flag is already set, so the
+        // UPDATE will not re-run on the next instantiation. This trades
+        // a missed one-time bump (harmless: feeds were already bumped once)
+        // for never re-bumping (the harmful case, which forces spurious
+        // full resyncs on every cold start until redeployed).
         const feedsBumpDone = await this.ctx.storage.get<boolean>(
             FEEDS_UPDATED_AT_BUMP_KEY
         )
         if (!feedsBumpDone) {
+            await this.ctx.storage.put(FEEDS_UPDATED_AT_BUMP_KEY, true)
             this.sql.exec(
                 "UPDATE feeds SET updated_at = datetime('now')"
             )
-            await this.ctx.storage.put(FEEDS_UPDATED_AT_BUMP_KEY, true)
         }
 
         // 3. Create indexes and triggers (shared schema) - idempotent
