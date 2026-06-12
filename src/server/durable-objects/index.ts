@@ -459,6 +459,23 @@ function manualRefreshRetryAfterSeconds (
  *   cost, and is re-armed on the user's next request.
  * - State persists in SQLite across hibernation cycles
  */
+
+// Parse and validate a numeric id parameter.
+// Returns null if the id is not finite, <= 0, or noncanonical.
+function parseIdParam (raw:string):number|null {
+    const id = Number.parseInt(raw, 10)
+    if (!Number.isFinite(id) || id <= 0 || String(id) !== raw) return null
+    return id
+}
+
+// Parse and validate a query param (e.g., limit, offset).
+// Returns null if the param is not finite or negative.
+function parseNonNegativeInt (raw:string):number|null {
+    const n = Number.parseInt(raw, 10)
+    if (!Number.isFinite(n) || n < 0 || String(n) !== raw) return null
+    return n
+}
+
 export class RsssUserDO extends DurableObject<Env> {
     private app: Hono
     private sql: SqlStorage
@@ -1660,7 +1677,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Get a specific feed
         app.get('/feeds/:id', (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const feed = this.sql.exec('SELECT * FROM feeds WHERE id = ?', id).toArray()[0] ?? null
 
             if (!feed) {
@@ -1672,7 +1692,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Pending items for a feed (not yet pulled past last_pulled_at)
         app.get('/feeds/:id/pending', (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const rows = this.sql.exec(
                 `SELECT CAST(id AS TEXT) AS id,
                     COALESCE(title, '') AS title,
@@ -1697,7 +1720,10 @@ export class RsssUserDO extends DurableObject<Env> {
         })
 
         app.post('/feeds/:id/publish', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const feed = this.sql.exec(
                 'SELECT * FROM feeds WHERE id = ?',
                 id
@@ -1719,7 +1745,10 @@ export class RsssUserDO extends DurableObject<Env> {
         })
 
         app.delete('/feeds/:id/publish', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const feed = this.sql.exec(
                 'SELECT * FROM feeds WHERE id = ?',
                 id
@@ -1742,7 +1771,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Delete a feed
         app.delete('/feeds/:id', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const body:{
                 client_op_id?:string
                 client_updated_at?:string
@@ -1853,8 +1885,13 @@ export class RsssUserDO extends DurableObject<Env> {
             const feedId = c.req.query('feed_id')
             const isRead = c.req.query('is_read')
             const isStarred = c.req.query('is_starred')
-            const limit = parseInt(c.req.query('limit') || '50', 10)
-            const offset = parseInt(c.req.query('offset') || '0', 10)
+            const limitParam = c.req.query('limit') || '50'
+            const offsetParam = c.req.query('offset') || '0'
+            const limit = parseNonNegativeInt(limitParam)
+            const offset = parseNonNegativeInt(offsetParam)
+            if (limit === null || offset === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
 
             // Reading-list cursor filter: only items whose feed has been
             // refreshed at least once and whose pub_date is at-or-before
@@ -1875,8 +1912,12 @@ export class RsssUserDO extends DurableObject<Env> {
             const params: (string | number)[] = []
 
             if (feedId) {
+                const parsedFeedId = parseIdParam(feedId)
+                if (parsedFeedId === null) {
+                    return c.json({ error: 'invalid_id' }, 400)
+                }
                 query += ' AND items.feed_id = ?'
-                params.push(parseInt(feedId, 10))
+                params.push(parsedFeedId)
             }
 
             if (isRead !== undefined) {
@@ -1903,8 +1944,14 @@ export class RsssUserDO extends DurableObject<Env> {
             const countParams: (string | number)[] = []
 
             if (feedId) {
+                // feedId already validated above; reuse result if present
                 countQuery += ' AND items.feed_id = ?'
-                countParams.push(parseInt(feedId, 10))
+                // We already validated feedId above in the first feedId block
+                const parsedFeedId = parseIdParam(feedId)
+                if (parsedFeedId === null) {
+                    return c.json({ error: 'invalid_id' }, 400)
+                }
+                countParams.push(parsedFeedId)
             }
             if (isRead !== undefined) {
                 countQuery += ' AND items.is_read = ?'
@@ -1988,7 +2035,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Mark item as read/unread
         app.patch('/items/:id', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const body = await c.req.json<{
                 is_read?:boolean
                 is_starred?:boolean
@@ -2180,9 +2230,8 @@ export class RsssUserDO extends DurableObject<Env> {
         // the row after the attempt completed; the caller distinguishes
         // success vs failure by inspecting full_content_status.
         app.post('/items/:id/fetch-full', async (c) => {
-            const rawId = c.req.param('id')
-            const id = Number.parseInt(rawId, 10)
-            if (!Number.isFinite(id) || id <= 0 || String(id) !== rawId) {
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
                 return c.json({ error: 'invalid_id' }, 400)
             }
 

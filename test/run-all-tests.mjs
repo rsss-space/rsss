@@ -51,6 +51,7 @@ const commands = [
     'npm run test:graph-following',
     'npm run test:list-remote-subscriptions',
     'npm run test:subscription-reconcile',
+    'npm run test:do-id-params',
     'npm run test:admin-auth',
     'npm run test:admin-refresh-all',
     'npm run test:recommendations-route',
