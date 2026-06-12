@@ -2302,11 +2302,14 @@ app.get('/admin/users', requireAdmin, async (c) => {
 /**
  * Admin: refresh all feeds for all tracked users.
  * Accepts optional `dids` array in body to refresh
- * specific users only.
+ * specific users only. Supports cursor/limit pagination
+ * via query params for handling large user counts.
  * Requires ADMIN_TOKEN bearer header.
  */
 app.post('/admin/refresh-all', requireAdmin, async (c) => {
     let dids:string[]
+    let listComplete = true
+    let nextCursor:string|undefined
 
     // Check if specific DIDs were provided
     const body = await c.req.json<{
@@ -2316,13 +2319,22 @@ app.post('/admin/refresh-all', requireAdmin, async (c) => {
     if (body.dids && body.dids.length > 0) {
         dids = body.dids
     } else {
-        // List all tracked users from KV
+        // List tracked users from KV with pagination support
+        const limit = c.req.query('limit')
+            ? parseInt(c.req.query('limit')!, 10)
+            : 100
+        const cursor = c.req.query('cursor') || undefined
+
         const result = await c.env.SESSIONS.list({
-            prefix: 'user:'
+            prefix: 'user:',
+            limit,
+            cursor
         })
         dids = result.keys.map(
             (key) => key.name.replace('user:', '')
         )
+        listComplete = result.list_complete
+        nextCursor = result.cursor
     }
 
     if (dids.length === 0) {
@@ -2365,7 +2377,12 @@ app.post('/admin/refresh-all', requireAdmin, async (c) => {
         }
     }
 
-    return c.json({ results })
+    const response:Record<string, unknown> = {
+        results,
+        list_complete: listComplete
+    }
+    if (nextCursor) response.cursor = nextCursor
+    return c.json(response)
 })
 
 /**
