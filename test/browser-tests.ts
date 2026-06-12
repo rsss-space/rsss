@@ -61,6 +61,7 @@ import './full-content-images.js'
 import './blur-hash-swap.js'
 import './atproto-lexicons.js'
 import './subscription-rkey.js'
+import './image-cache.js'
 import './feed-share-toggle.js'
 import './publish-consent-modal.js'
 

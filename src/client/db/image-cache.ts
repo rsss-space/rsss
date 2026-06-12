@@ -65,12 +65,22 @@ export async function cacheItemImages (
                 statusText: res.statusText,
                 headers: res.headers
             }))
-            await recordCachedImage(db, {
-                url,
-                feedId: item.feed_id,
-                itemId: item.id ?? null,
-                sizeBytes: buf.byteLength
-            })
+            try {
+                await recordCachedImage(db, {
+                    url,
+                    feedId: item.feed_id,
+                    itemId: item.id ?? null,
+                    sizeBytes: buf.byteLength
+                })
+            } catch (err) {
+                // DB row failed (e.g. SQLITE_FULL): don't leave an
+                // untracked blob in Cache Storage.
+                await bucket.delete(url).catch(() => {})
+                console.error(
+                    '[image-cache] recordCachedImage failed; rolled back blob',
+                    err instanceof Error ? err.message : ''
+                )
+            }
         } catch (err) {
             console.error(
                 '[image-cache] failed to cache image',
