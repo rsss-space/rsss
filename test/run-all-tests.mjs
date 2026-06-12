@@ -21,6 +21,13 @@ const commands = [
     'node test/isolation-headers-static.mjs',
     'node test/run-all-coverage.mjs',
 
+    // --- shared test helpers ---
+    [
+        'esbuild ./test/helpers/sql-fake.test.ts --bundle',
+        '--platform=node --format=esm',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+
     // --- consolidated browser tests: one esbuild bundle, one tapout
     // (one headless-browser spawn for the whole set). Running these as
     // ~35 separate `esbuild | tapout` commands meant ~35 browser spawns,
@@ -39,6 +46,15 @@ const commands = [
     'npm run test:bootstrap',
     'npm run test:api-router',
     'npm run test:sentry-wiring',
+    'npm run test:feeds-refresh-pool',
+    'npm run test:bluesky-follows',
+    'npm run test:graph-following',
+    'npm run test:list-remote-subscriptions',
+    'npm run test:subscription-reconcile',
+    'npm run test:do-id-params',
+    'npm run test:admin-auth',
+    'npm run test:admin-refresh-all',
+    'npm run test:recommendations-route',
 
     // --- node-platform tests (esbuild -> node -> tap-spec) ---
     [

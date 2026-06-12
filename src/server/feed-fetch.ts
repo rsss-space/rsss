@@ -226,7 +226,7 @@ export async function fetchValidatedResponse (
     }
 }
 
-function isBlockedHostname (hostname:string):boolean {
+export function isBlockedHostname (hostname:string):boolean {
     const normalized = hostname
         .toLowerCase()
         .replace(/^\[(.*)\]$/, '$1')

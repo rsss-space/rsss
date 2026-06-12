@@ -2,7 +2,7 @@ export interface GraphApiDeps {
     listFollowing:() => Promise<string[]>
     getFollowers:(did:string) => Promise<{
         dids:string[]
-        count:number
+        count:number|null
         available:boolean
     }>
 }
@@ -10,7 +10,7 @@ export interface GraphApiDeps {
 export interface GraphApiResponse {
     following:string[]
     followers:string[]
-    followersCount:number
+    followersCount:number|null
     constellationAvailable:boolean
 }
 

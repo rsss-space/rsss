@@ -18,6 +18,7 @@ import {
     CLIENT_GRACE_MS
 } from '../src/client/state.js'
 import type { Feed, Item, CountsResponse } from '../src/client/db/types.js'
+import { fakeResult } from './helpers/sql-fake.js'
 
 setTestMode(true, wasmUrl as string)
 
@@ -86,14 +87,10 @@ function createFetchHarness (opts:{
         exec (query:string, ...params:unknown[]) {
             sqlCalls.push({ query, params })
             if (query.includes('SELECT id FROM items')) {
-                return {
-                    toArray: () => [],
-                    one: () => null
-                }
+                return fakeResult([])
             }
             return {
                 toArray: () => [],
-                one: () => null,
                 rowsWritten: 0
             }
         }
@@ -239,12 +236,9 @@ test(
                     query.includes('SELECT id FROM feeds') &&
                     query.includes('last_status = 504')
                 ) {
-                    return {
-                        toArray: () => [{ id: 11 }, { id: 12 }],
-                        one: () => null
-                    }
+                    return fakeResult([{ id: 11 }, { id: 12 }])
                 }
-                return { toArray: () => [], one: () => null }
+                return fakeResult([])
             }
         }
         userDo.broadcast = (event, data) => {
@@ -335,22 +329,16 @@ test(
                 if (
                     query.includes('SELECT * FROM feeds WHERE id = ?')
                 ) {
-                    return {
-                        toArray: () => [feedRow],
-                        one: () => feedRow
-                    }
+                    return fakeResult([feedRow])
                 }
                 if (
                     query.includes('SELECT') &&
                     query.includes('FROM feeds WHERE id = ?')
                 ) {
                     // FEED_SYNC_COLUMNS projection
-                    return {
-                        toArray: () => [feedRow],
-                        one: () => feedRow
-                    }
+                    return fakeResult([feedRow])
                 }
-                return { toArray: () => [], one: () => null }
+                return fakeResult([])
             }
         }
         userDo.ctx = {

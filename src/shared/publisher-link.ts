@@ -39,3 +39,16 @@ export function sourceLinkLabel (link:string):string|null {
     if (!url) return null
     return 'Read this article on ' + publisherHost(url)
 }
+
+/**
+ * Returns the input URL string iff it parses and is http(s);
+ * else null. Used for validating subscription record URLs
+ * from untrusted sources.
+ */
+export function httpUrlOrNull (
+    link:string|null|undefined
+):string|null {
+    if (!link) return null
+    const url = tryParse(link)
+    return url ? link : null
+}

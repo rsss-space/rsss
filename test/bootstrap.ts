@@ -108,9 +108,11 @@ class PersistentSQLiteClient {
     db:PersistentDb|null = null
     filename:string|null = null
     private files:Map<string, PersistentDb>
+    private removed:string[]
 
-    constructor (files:Map<string, PersistentDb>) {
+    constructor (files:Map<string, PersistentDb>, removed:string[] = []) {
         this.files = files
+        this.removed = removed
     }
 
     async probe ():Promise<void> {}
@@ -157,6 +159,18 @@ class PersistentSQLiteClient {
             resultRows: rows
         })
         return rows as T[]
+    }
+
+    async remove (
+        options:{ did?:string; filename?:string; directory?:string } = {}
+    ):Promise<void> {
+        const filename = options.filename || (
+            options.did ? getOpfsFilename(options.did) : ''
+        )
+        if (filename) {
+            this.files.delete(filename)
+            this.removed.push(filename)
+        }
     }
 
     async close ():Promise<void> {
@@ -238,7 +252,7 @@ function setupPersistentLocalFirst (
     }
     setTestMode(false)
     setSQLiteWorkerClientFactoryForTests(() => (
-        new PersistentSQLiteClient(files) as unknown as SQLiteWorkerClient
+        new PersistentSQLiteClient(files, removed) as unknown as SQLiteWorkerClient
     ))
     Object.defineProperty(navigator, 'storage', {
         value: {
@@ -878,6 +892,14 @@ test('bootstrapLocalDb: failed bootstrap clears state and partial data',
         _resetSupportedCache()
         setSQLiteWorkerClientFactoryForTests(() => ({
             probe: async () => {},
+            remove: async (options:{ did?:string; filename?:string }) => {
+                const filename = options.filename || (
+                    options.did ? getOpfsFilename(options.did) : ''
+                )
+                if (filename) {
+                    removed.push(filename)
+                }
+            },
             dispose: () => {}
         } as unknown as SQLiteWorkerClient))
         Object.defineProperty(globalThis, 'crossOriginIsolated', {
@@ -957,6 +979,9 @@ test('resetLocalFirst closes worker db before removing OPFS data',
             },
             exec: async () => {},
             query: async () => [],
+            remove: async () => {
+                events.push('remove')
+            },
             close: async () => {
                 events.push('close')
             },
@@ -976,6 +1001,220 @@ test('resetLocalFirst closes worker db before removing OPFS data',
             t.ok(removeIndex >= 0, 'removes the OPFS data')
             t.ok(closeIndex < removeIndex,
                 'closes worker db before removing OPFS data')
+        } finally {
+            setSQLiteWorkerClientFactoryForTests(null)
+            setTestMode(true, wasmUrl as string)
+            clearBootstrappedDb()
+            _resetAdapterCache()
+            resetTabCoordinationForTests()
+        }
+    }
+)
+
+test('AC8.1: tab lock held through OPFS delete - success path',
+    async (t) => {
+        clearBootstrappedDb()
+        _resetSupportedCache()
+        _resetAdapterCache()
+        resetTabCoordinationForTests()
+        syncSubscriptions.value = true
+        billingStatus.value = {
+            entitled: true,
+            planId: 'local-first',
+            status: 'active',
+            refreshedAt: Date.now(),
+            useLive: false
+        }
+
+        // Track the order of removeOpfsDb execution relative to lock release.
+        // We verify that removeOpfsDb completes BEFORE releaseLocalTabLock
+        // is called by observing when the lock's released state changes.
+        const events:string[] = []
+        let removeOpfsDbResolve:() => void = () => {}
+        let stateDuringRemove:string|null = null
+        const { getTabCoordinationState } = await import(
+            '../src/client/db/tab-coordination.js'
+        )
+
+        Object.defineProperty(navigator, 'storage', {
+            value: {
+                getDirectory: async () => ({
+                    getDirectoryHandle: async () => ({
+                        removeEntry: async () => {}
+                    })
+                })
+            },
+            configurable: true
+        })
+        Object.defineProperty(globalThis, 'crossOriginIsolated', {
+            value: true,
+            configurable: true
+        })
+        Object.defineProperty(navigator, 'onLine', {
+            value: true,
+            configurable: true
+        })
+
+        setTestMode(false)
+        // removeOpfsDb now drives the worker `remove` RPC (SAH-pool unlink),
+        // not navigator.storage.removeEntry. Observe the lock state inside the
+        // worker remove: it must still be 'primary' (held) while the delete
+        // runs; release happens only after, in bootstrapLocalDb's finally.
+        setSQLiteWorkerClientFactoryForTests(() => ({
+            probe: async () => {},
+            open: async () => {},
+            exec: async () => {},
+            query: async () => [],
+            close: async () => {},
+            dispose: () => {},
+            remove: async () => {
+                events.push('removeOpfsDb-called')
+                stateDuringRemove = getTabCoordinationState()
+                await new Promise<void>((resolve) => {
+                    removeOpfsDbResolve = resolve
+                })
+                events.push('removeOpfsDb-completed')
+            }
+        } as unknown as SQLiteWorkerClient))
+
+        try {
+            // Start bootstrap, which will fail and trigger terminal reset
+            const bootstrapPromise = bootstrapLocalDb(
+                'did:test:ac8-lock-order',
+                makeFetch({ error: 'bad request' }, 400),
+                { confirmTerminalReset: async () => true }
+            )
+
+            // Wait for removeOpfsDb to be called
+            await new Promise<void>((resolve) => {
+                const check = () => {
+                    if (events.includes('removeOpfsDb-called')) {
+                        resolve()
+                    } else {
+                        setTimeout(check, 10)
+                    }
+                }
+                check()
+            })
+
+            // At this point removeOpfsDb is running and the lock should
+            // still be acquired (held). We can't directly check the lock
+            // state, but the code structure (lock in finally after
+            // removeOpfsDb) ensures this. Release the pause.
+            removeOpfsDbResolve()
+
+            // Wait for bootstrap to complete
+            await bootstrapPromise
+
+            // The lock was still held (primary) while removeOpfsDb ran —
+            // this is the ordering guarantee. If the lock were released
+            // before the delete (the bug), the state would be 'waiting'.
+            t.ok(
+                events.includes('removeOpfsDb-called'),
+                'removeOpfsDb was invoked during terminal reset'
+            )
+            t.equal(
+                stateDuringRemove,
+                'primary',
+                'tab lock still held while removeOpfsDb runs'
+            )
+            t.equal(
+                getTabCoordinationState(),
+                'waiting',
+                'tab lock released only after removeOpfsDb completed'
+            )
+            t.equal(syncSubscriptions.value, false,
+                'terminal reset disables syncSubscriptions')
+        } finally {
+            setSQLiteWorkerClientFactoryForTests(null)
+            setTestMode(true, wasmUrl as string)
+            clearBootstrappedDb()
+            _resetAdapterCache()
+            resetTabCoordinationForTests()
+        }
+    }
+)
+
+test('AC8.1: tab lock released even if OPFS delete throws',
+    async (t) => {
+        clearBootstrappedDb()
+        _resetSupportedCache()
+        _resetAdapterCache()
+        resetTabCoordinationForTests()
+        syncSubscriptions.value = true
+        billingStatus.value = {
+            entitled: true,
+            planId: 'local-first',
+            status: 'active',
+            refreshedAt: Date.now(),
+            useLive: false
+        }
+
+        // When removeOpfsDb throws, the finally block should still
+        // release the lock. We verify this by checking tab state after
+        // the error: if the lock were released before removeOpfsDb
+        // (the bug), the state would transition from 'primary' to
+        // 'waiting'. The finally block ensures release after the delete
+        // attempt, so we assert 'waiting' to confirm the release happened.
+        const { getTabCoordinationState } = await import(
+            '../src/client/db/tab-coordination.js'
+        )
+
+        Object.defineProperty(navigator, 'storage', {
+            value: {
+                getDirectory: async () => ({
+                    getDirectoryHandle: async () => ({
+                        removeEntry: async () => {}
+                    })
+                })
+            },
+            configurable: true
+        })
+        Object.defineProperty(globalThis, 'crossOriginIsolated', {
+            value: true,
+            configurable: true
+        })
+        Object.defineProperty(navigator, 'onLine', {
+            value: true,
+            configurable: true
+        })
+
+        setTestMode(false)
+        // The OPFS delete (worker `remove` RPC) throws; bootstrapLocalDb's
+        // finally must still release the tab lock afterward.
+        setSQLiteWorkerClientFactoryForTests(() => ({
+            probe: async () => {},
+            open: async () => {},
+            exec: async () => {},
+            query: async () => [],
+            close: async () => {},
+            dispose: () => {},
+            remove: async () => {
+                throw new Error('OPFS delete failed')
+            }
+        } as unknown as SQLiteWorkerClient))
+
+        try {
+            // Drive terminal reset which calls removeOpfsDb (will throw)
+            await bootstrapLocalDb(
+                'did:test:ac8-lock-error',
+                makeFetch({ error: 'bad request' }, 400),
+                { confirmTerminalReset: async () => true }
+            )
+
+            // After bootstrap completes despite the error, check that the
+            // lock was released. The tab state transitions from 'primary'
+            // (acquired) to 'waiting' (released) only when
+            // releaseLocalTabLock() is called.
+            const finalState = getTabCoordinationState()
+
+            t.equal(syncSubscriptions.value, false,
+                'terminal reset path disables syncSubscriptions')
+            t.equal(
+                finalState,
+                'waiting',
+                'lock released to waiting state even after delete throw'
+            )
         } finally {
             setSQLiteWorkerClientFactoryForTests(null)
             setTestMode(true, wasmUrl as string)
@@ -1042,21 +1281,9 @@ test('disableLocalFirst: aborts when pending writes cannot sync',
 test('disableLocalFirst: cancels in-flight sync without UI error',
     async (t) => {
         clearBootstrappedDb()
-        setupSupportedLocalFirst()
+        const files = new Map<string, PersistentDb>()
         const removed:string[] = []
-
-        Object.defineProperty(navigator, 'storage', {
-            value: {
-                getDirectory: async () => ({
-                    getDirectoryHandle: async () => ({
-                        removeEntry: async (name:string) => {
-                            removed.push(name)
-                        }
-                    })
-                })
-            },
-            configurable: true
-        })
+        setupPersistentLocalFirst(files, removed)
 
         await getAdapter('did:test:disable-cancel-safe')
         const db = getLocalDb('did:test:disable-cancel-safe')
@@ -1115,8 +1342,7 @@ test('disableLocalFirst: cancels in-flight sync without UI error',
         t.equal(syncSubscriptions.value, false, 'local-first is disabled')
 
         isLocalFirstActive.value = false
-        clearBootstrappedDb()
-        _resetAdapterCache()
+        teardownPersistentLocalFirst()
     }
 )
 
@@ -1165,5 +1391,92 @@ test('resetLocalFirst: requires explicit data-loss confirmation after failure',
 
         clearBootstrappedDb()
         _resetAdapterCache()
+    }
+)
+
+test('AC15.1: resetLocalFirst clears paint cache',
+    async (t) => {
+        clearBootstrappedDb()
+        _resetSupportedCache()
+        _resetAdapterCache()
+        resetTabCoordinationForTests()
+        syncSubscriptions.value = true
+        billingStatus.value = {
+            entitled: true,
+            planId: 'local-first',
+            status: 'active',
+            refreshedAt: Date.now(),
+            useLive: false
+        }
+
+        Object.defineProperty(navigator, 'storage', {
+            value: {
+                getDirectory: async () => ({
+                    getDirectoryHandle: async () => ({
+                        removeEntry: async () => {}
+                    })
+                })
+            },
+            configurable: true
+        })
+        Object.defineProperty(globalThis, 'crossOriginIsolated', {
+            value: true,
+            configurable: true
+        })
+        Object.defineProperty(navigator, 'onLine', {
+            value: true,
+            configurable: true
+        })
+
+        setTestMode(false)
+        setSQLiteWorkerClientFactoryForTests(() => ({
+            probe: async () => {},
+            open: async () => {},
+            exec: async () => {},
+            query: async () => [],
+            close: async () => {},
+            dispose: () => {}
+        } as unknown as SQLiteWorkerClient))
+
+        const did = 'did:test:reset-clear-paint'
+
+        try {
+            // Write a paint cache entry
+            const { writePaintCache } = await import(
+                '../src/client/paint-cache.js'
+            )
+            writePaintCache(did, {
+                feeds: [],
+                items: [],
+                counts: {
+                    total: 0,
+                    starred: 0,
+                    unread: 0,
+                    perFeed: {}
+                },
+                selectedFeedId: null
+            })
+
+            // Get adapter to bootstrap, then reset
+            await getAdapter(did)
+            await resetLocalFirst(did, makeFetch(syncPayload))
+
+            // After resetLocalFirst, the paint cache entry
+            // for this DID should be cleared
+            const { readPaintCache } = await import(
+                '../src/client/paint-cache.js'
+            )
+            const cacheAfterReset = readPaintCache(did)
+
+            t.equal(
+                cacheAfterReset,
+                null,
+                'paint cache entry is cleared after resetLocalFirst' +
+                ' (verifies clearPaintCache was called)'
+            )
+        } finally {
+            clearBootstrappedDb()
+            _resetAdapterCache()
+        }
     }
 )

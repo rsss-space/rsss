@@ -1,4 +1,5 @@
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface ItemRow {
@@ -8,18 +9,6 @@ interface ItemRow {
     full_content:string|null
     full_content_fetched_at:string|null
     full_content_status:string|null
-}
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] || null }
-    }
 }
 
 function makeItem (overrides:Partial<ItemRow> = {}):ItemRow {
@@ -44,7 +33,7 @@ function createSql (items:ItemRow[]) {
 
             if (q.includes('UPDATE user_state SET feed_version')) {
                 versionBumped = true
-                return result([{ feed_version: 1 }])
+                return fakeResult([{ feed_version: 1 }])
             }
 
             const fullUpdateMatch = q.match(
@@ -60,7 +49,7 @@ function createSql (items:ItemRow[]) {
                     item.full_content_fetched_at = fetchedAt
                     item.full_content_status = status
                 }
-                return result([])
+                return fakeResult([])
             }
 
             const failUpdateMatch = q.match(
@@ -73,7 +62,7 @@ function createSql (items:ItemRow[]) {
                     item.full_content_fetched_at = '2026-05-01 12:00:00'
                     item.full_content_status = status
                 }
-                return result([])
+                return fakeResult([])
             }
 
             throw new Error(`Unexpected SQL: ${q}`)

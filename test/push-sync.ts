@@ -548,10 +548,14 @@ test(
                 ]
             })
 
+            // Fail with 5xx for 9 attempts (below DEAD_LETTER_ATTEMPT_LIMIT)
+            // then recover on the 10th. A transient failure that recovers
+            // within the retry budget must NOT be dead-lettered. (At/over the
+            // cap, the row IS promoted to dead-letter — see the AC5.3 test.)
             let calls = 0
             const transientThenOk:FakeFetch = async () => {
                 calls += 1
-                const status = calls <= 10 ? 500 : 200
+                const status = calls <= 9 ? 500 : 200
                 return {
                     ok: status >= 200 && status < 300,
                     status,
@@ -559,7 +563,7 @@ test(
                 }
             }
 
-            for (let i = 0; i < 11; i += 1) {
+            for (let i = 0; i < 10; i += 1) {
                 await pushSync(db, transientThenOk)
             }
 
@@ -567,7 +571,8 @@ test(
             t.equal(
                 queryAll(db, 'SELECT * FROM dead_letter_outbox').length,
                 0,
-                'transient failures are not dead-lettered'
+                'transient failures that recover within budget ' +
+                'are not dead-lettered'
             )
         } finally {
             db.close()
@@ -669,6 +674,86 @@ test('pushSync: sequential dead letters do not collide on id', async (t) => {
         db.close()
     }
 })
+
+// ── AC5.3: 5xx retry cap promotion to dead-letter ────────────────────────────
+
+test(
+    'AC5.3: 5xx retry loop promotes to dead-letter at DEAD_LETTER_ATTEMPT_LIMIT',
+    async (t) => {
+        const db = await openLocalDb('did:test:ac5-3-dead-letter-5xx')
+        try {
+            // Seed an add_feed outbox row
+            const addFeedPayload = JSON.stringify({
+                url: 'https://example.com/new-feed',
+                title: 'New Feed'
+            })
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id, client_updated_at,
+                     attempts)
+                    VALUES (?, ?, ?, ?, ?, ?)`,
+                bind: [
+                    'add_feed',
+                    null,
+                    addFeedPayload,
+                    'op-uuid-5xx-retry',
+                    '2026-01-01 00:00:00',
+                    0
+                ]
+            })
+
+            // Drive through 5xx retries: simulate calling pushSync multiple times
+            // with 5xx responses. Each call increments attempts by 1.
+            // After DEAD_LETTER_ATTEMPT_LIMIT (10) attempts, the row should
+            // be in dead_letter_outbox.
+            for (let i = 0; i < DEAD_LETTER_ATTEMPT_LIMIT; i++) {
+                await pushSync(db, makeFetch(500))
+                const outboxRow = queryOne<{ attempts:number }>(
+                    db,
+                    'SELECT attempts FROM outbox WHERE client_op_id = ?',
+                    ['op-uuid-5xx-retry']
+                )
+                const deadRow = queryOne<{ attempts:number }>(
+                    db,
+                    'SELECT attempts FROM dead_letter_outbox' +
+                    ' WHERE client_op_id = ?',
+                    ['op-uuid-5xx-retry']
+                )
+                if (i < DEAD_LETTER_ATTEMPT_LIMIT - 1) {
+                    t.ok(outboxRow, `after ${i + 1} attempt(s): in outbox`)
+                    t.equal(deadRow, undefined, `after ${i + 1} attempt(s):` +
+                        ' not yet in dead_letter_outbox')
+                }
+            }
+
+            // After DEAD_LETTER_ATTEMPT_LIMIT attempts, row should be promoted
+            const finalOutbox = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM outbox WHERE client_op_id = ?',
+                ['op-uuid-5xx-retry']
+            )
+            const finalDead = queryOne<{ attempts:number }>(
+                db,
+                'SELECT attempts FROM dead_letter_outbox' +
+                ' WHERE client_op_id = ?',
+                ['op-uuid-5xx-retry']
+            )
+            t.equal(
+                finalOutbox,
+                undefined,
+                'row removed from outbox at cap'
+            )
+            t.ok(finalDead, 'row in dead_letter_outbox at cap')
+            t.equal(
+                finalDead?.attempts,
+                DEAD_LETTER_ATTEMPT_LIMIT,
+                'attempts count matches limit'
+            )
+        } finally {
+            db.close()
+        }
+    }
+)
 
 // ── 409 reconciliation ────────────────────────────────────────────────────────
 
@@ -1025,3 +1110,382 @@ test('pushSync: network error increments attempts', async (t) => {
         db.close()
     }
 })
+
+// ── 409 reconcile correctness ─────────────────────────────────────────────────
+
+test('AC12.1: delete_feed 409 re-insert restores feed items', async (t) => {
+    const db = await openLocalDb('did:test:push-delete-feed-409-items')
+    try {
+        const adapter = createLocalAdapter(db)
+        const feed = await adapter.addFeed(
+            'https://example.com/with-items.xml'
+        )
+
+        // Seed items in the feed
+        db.exec({
+            sql: `INSERT INTO items
+                (feed_id, guid, title, link, is_read, is_starred,
+                 created_at, updated_at)
+                VALUES
+                    (?, 'item-guid-1', 'Item 1',
+                     'https://example.com/item/1', 0, 0,
+                     '2026-01-01 00:00:00', '2026-01-01 00:00:00'),
+                    (?, 'item-guid-2', 'Item 2',
+                     'https://example.com/item/2', 0, 0,
+                     '2026-01-01 00:00:00', '2026-01-01 00:00:00')`,
+            bind: [feed.id, feed.id]
+        })
+
+        // Delete the feed locally
+        await adapter.deleteFeed(feed.id)
+
+        // Verify feed and items are gone locally
+        const localFeeds = queryAll(
+            db,
+            'SELECT * FROM feeds WHERE id = ?',
+            [feed.id]
+        )
+        t.equal(localFeeds.length, 0, 'feed deleted locally')
+
+        const localItems = queryAll(
+            db,
+            'SELECT * FROM items WHERE feed_id = ?',
+            [feed.id]
+        )
+        t.equal(localItems.length, 0, 'items deleted locally')
+
+        // Server returns 409 with the feed AND items in response
+        const serverFeed = {
+            id: feed.id,
+            url: 'https://example.com/with-items.xml',
+            title: 'Feed With Items',
+            description: null,
+            site_url: 'https://example.com',
+            last_fetched: '2026-01-03 00:00:00',
+            last_pulled_at: '2026-01-03 00:00:00',
+            last_error: null,
+            last_status: 200,
+            created_at: '2026-01-01 00:00:00',
+            updated_at: '2026-01-03 00:00:00'
+        }
+
+        const serverItems = [
+            {
+                id: 1,
+                feed_id: feed.id,
+                guid: 'item-guid-1',
+                title: 'Item 1',
+                link: 'https://example.com/item/1',
+                description: null,
+                content: 'Content 1',
+                author: null,
+                pub_date: null,
+                is_read: 0,
+                is_starred: 0,
+                created_at: '2026-01-01 00:00:00',
+                updated_at: '2026-01-01 00:00:00'
+            },
+            {
+                id: 2,
+                feed_id: feed.id,
+                guid: 'item-guid-2',
+                title: 'Item 2',
+                link: 'https://example.com/item/2',
+                description: null,
+                content: 'Content 2',
+                author: null,
+                pub_date: null,
+                is_read: 0,
+                is_starred: 0,
+                created_at: '2026-01-01 00:00:00',
+                updated_at: '2026-01-01 00:00:00'
+            }
+        ]
+
+        const serverResponse = {
+            feed: serverFeed,
+            items: serverItems
+        }
+
+        const fetch409:FakeFetch = async (url) => {
+            if (url === `/api/feeds/${feed.id}`) {
+                return {
+                    ok: false,
+                    status: 409,
+                    json: async () => serverResponse
+                }
+            }
+            return { ok: true, status: 200, json: async () => ({}) }
+        }
+
+        await pushSync(db, fetch409)
+
+        // Verify feed is restored
+        const restoredFeeds = queryAll<{ id:number; title:string }>(
+            db,
+            'SELECT id, title FROM feeds WHERE id = ?',
+            [feed.id]
+        )
+        t.equal(restoredFeeds.length, 1, 'feed is restored after 409')
+        t.equal(
+            restoredFeeds[0]?.title,
+            'Feed With Items',
+            'feed has correct title'
+        )
+
+        // Verify items are restored
+        const restoredItems = queryAll<{ guid:string; content:string|null }>(
+            db,
+            'SELECT guid, content FROM items WHERE feed_id = ? ORDER BY guid',
+            [feed.id]
+        )
+        t.equal(restoredItems.length, 2, 'both items are restored')
+        t.equal(restoredItems[0]?.guid, 'item-guid-1', 'first item restored')
+        t.equal(
+            restoredItems[0]?.content,
+            'Content 1',
+            'first item has content'
+        )
+        t.equal(restoredItems[1]?.guid, 'item-guid-2', 'second item restored')
+        t.equal(
+            restoredItems[1]?.content,
+            'Content 2',
+            'second item has content'
+        )
+    } finally {
+        db.close()
+    }
+})
+
+test('AC12.2: replaceOptimisticFeed writes sync-status columns', async (t) => {
+    const db = await openLocalDb(
+        'did:test:push-replace-optimistic-sync-status'
+    )
+    try {
+        const adapter = createLocalAdapter(db)
+        const optimisticFeed = await adapter.addFeed(
+            'https://example.com/sync-test.xml'
+        )
+
+        const serverFeed = {
+            id: optimisticFeed.id + 100,
+            url: 'https://example.com/sync-test.xml',
+            title: 'Feed With Sync Status',
+            description: 'A feed description',
+            site_url: 'https://example.com',
+            last_fetched: '2026-01-03 00:00:00',
+            last_pulled_at: '2026-01-03 12:00:00',
+            last_error: null,
+            last_status: 200,
+            created_at: '2026-01-01 00:00:00',
+            updated_at: '2026-01-03 00:00:00'
+        }
+
+        await pushSync(
+            db,
+            makeFetch(201, { feed: serverFeed })
+        )
+
+        const feedRow = queryOne<{
+            id:number
+            title:string
+            last_pulled_at:string|null
+            last_error:string|null
+            last_status:number|null
+        }>(db, 'SELECT id, title, last_pulled_at, last_error, last_status FROM feeds WHERE id = ?', [
+            serverFeed.id
+        ])
+
+        t.equal(
+            feedRow?.id,
+            serverFeed.id,
+            'feed has server ID after reconcile'
+        )
+        t.equal(
+            feedRow?.title,
+            'Feed With Sync Status',
+            'feed has correct title'
+        )
+        t.equal(
+            feedRow?.last_pulled_at,
+            '2026-01-03 12:00:00',
+            'last_pulled_at is written'
+        )
+        t.equal(feedRow?.last_error, null, 'last_error is written (null)')
+        t.equal(feedRow?.last_status, 200, 'last_status is written')
+    } finally {
+        db.close()
+    }
+})
+
+test(
+    'AC12.3a: upsertItemFromServer preserves content when cache disabled',
+    async (t) => {
+        const db = await openLocalDb(
+            'did:test:push-item-cache-disabled'
+        )
+        try {
+            const feedId = seedFeed(db)
+
+            // Seed an item with cached content
+            const itemId = seedItem(db, feedId)
+            db.exec({
+                sql: 'UPDATE items SET content = ?, description = ? WHERE id = ?',
+                bind: ['Cached content here', 'Cached description', itemId]
+            })
+
+            // Set cache policy to disabled (keepContent = false)
+            db.exec({
+                sql: `INSERT INTO feed_cache_policy
+                    (feed_id, content_enabled)
+                    VALUES (?, 0)`,
+                bind: [feedId]
+            })
+
+            // Server item with different content
+            const serverItem = {
+                id: itemId,
+                feed_id: feedId,
+                guid: 'guid-1',
+                title: 'Item 1',
+                link: 'https://example.com/1',
+                description: 'Server description',
+                content: 'Server content',
+                author: null,
+                pub_date: null,
+                is_read: 0,
+                is_starred: 0,
+                created_at: '2026-01-01 00:00:00',
+                updated_at: '2026-01-01 00:00:00'
+            }
+
+            // Insert an outbox row to trigger 409 reconcile
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id, client_updated_at)
+                    VALUES ('update_item', ?, ?, 'op-uuid-cache-test-1',
+                        '2026-01-01 00:00:00')`,
+                bind: [
+                    itemId,
+                    JSON.stringify({ id: itemId, is_read: true })
+                ]
+            })
+
+            const fetch409:FakeFetch = async () => ({
+                ok: false,
+                status: 409,
+                json: async () => ({ item: serverItem })
+            })
+
+            await pushSync(db, fetch409)
+
+            // With cache policy disabled, cached content should be preserved
+            const itemAfter = queryOne<{
+                content:string|null
+                description:string|null
+            }>(
+                db,
+                'SELECT content, description FROM items WHERE id = ?',
+                [itemId]
+            )
+            t.equal(
+                itemAfter?.content,
+                'Cached content here',
+                'cached content preserved when caching disabled'
+            )
+            t.equal(
+                itemAfter?.description,
+                'Cached description',
+                'cached description preserved when caching disabled'
+            )
+        } finally {
+            db.close()
+        }
+    }
+)
+
+test(
+    'AC12.3b: upsertItemFromServer writes content when cache enabled',
+    async (t) => {
+        const db = await openLocalDb(
+            'did:test:push-item-cache-enabled'
+        )
+        try {
+            const feedId = seedFeed(db)
+            const itemId = seedItem(db, feedId)
+            db.exec({
+                sql: 'UPDATE items SET content = ?, description = ? WHERE id = ?',
+                bind: [
+                    'Old cached content',
+                    'Old cached description',
+                    itemId
+                ]
+            })
+
+            // Cache policy enabled (content_enabled = 1)
+            db.exec({
+                sql: `INSERT INTO feed_cache_policy
+                    (feed_id, content_enabled)
+                    VALUES (?, 1)`,
+                bind: [feedId]
+            })
+
+            const serverItem = {
+                id: itemId,
+                feed_id: feedId,
+                guid: 'guid-2',
+                title: 'Item 2',
+                link: 'https://example.com/2',
+                description: 'New server description',
+                content: 'New server content',
+                author: null,
+                pub_date: null,
+                is_read: 0,
+                is_starred: 0,
+                created_at: '2026-01-01 00:00:00',
+                updated_at: '2026-01-01 00:00:00'
+            }
+
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id, client_updated_at)
+                    VALUES ('update_item', ?, ?, 'op-uuid-cache-test-2',
+                        '2026-01-01 00:00:00')`,
+                bind: [
+                    itemId,
+                    JSON.stringify({ id: itemId, is_read: true })
+                ]
+            })
+
+            const fetch409:FakeFetch = async () => ({
+                ok: false,
+                status: 409,
+                json: async () => ({ item: serverItem })
+            })
+
+            await pushSync(db, fetch409)
+
+            // With cache policy enabled, server content should be written
+            const itemAfter = queryOne<{
+                content:string|null
+                description:string|null
+            }>(
+                db,
+                'SELECT content, description FROM items WHERE id = ?',
+                [itemId]
+            )
+            t.equal(
+                itemAfter?.content,
+                'New server content',
+                'server content written when caching enabled'
+            )
+            t.equal(
+                itemAfter?.description,
+                'New server description',
+                'server description written when caching enabled'
+            )
+        } finally {
+            db.close()
+        }
+    }
+)

@@ -1,22 +1,7 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import { fakeResult } from './helpers/sql-fake.js'
 import { TABLES_SQL } from '../src/shared/schema.js'
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () {
-            return rows
-        },
-        one () {
-            return rows[0] || null
-        }
-    }
-}
 
 function createPatchRouteDo () {
     const feed = {
@@ -38,15 +23,15 @@ function createPatchRouteDo () {
     userDo.sql = {
         exec (query:string, ...params:unknown[]) {
             if (query.includes('SELECT id FROM feeds WHERE id = ?')) {
-                return result(params[0] === 1 ? [{ id: 1 }] : [])
+                return fakeResult(params[0] === 1 ? [{ id: 1 }] : [])
             }
 
             if (query.includes('SELECT * FROM feeds WHERE id = ?')) {
-                return result(params[0] === 1 ? [feed] : [])
+                return fakeResult(params[0] === 1 ? [feed] : [])
             }
 
             if (query.includes('UPDATE feeds SET is_locally_cached')) {
-                return result([])
+                return fakeResult([])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)

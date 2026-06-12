@@ -23,21 +23,25 @@ import {
     FeedFetchError,
     fetchFeedText,
     fetchOgImage,
-    validateFeedUrl
+    validateFeedUrl,
+    isBlockedHostname
 } from '../feed-fetch.js'
 import {
     deleteRecord,
     putRecord,
     createRecord
 } from '../auth/pds-write-client.js'
+import { reportError } from '../lib/report-error.js'
 import {
     feedSubscriptionLexicon,
     graphFollowLexicon,
     type FeedSubscriptionRecord,
     type GraphFollowRecord
 } from '../../shared/lexicons/index.js'
-import { subscriptionRkeyForFeedUrl } from
-    '../../shared/subscription-rkey.js'
+import {
+    subscriptionRkeyForFeedUrl,
+    canonicalizeFeedUrl
+} from '../../shared/subscription-rkey.js'
 import { fetchFullArticle } from '../article-fetch.js'
 import {
     blurhashCacheKey,
@@ -139,6 +143,7 @@ const FEED_XML_PARSER = new XMLParser({
     trimValues: true
 })
 const FEED_REFRESH_CONCURRENCY = 8
+const MAX_RECORD_PAGES = 50 // cap pagination to prevent stalled cursors
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
 const FEED_REFRESH_INTERVAL_MS = 60 * 60 * 1000
@@ -455,6 +460,23 @@ function manualRefreshRetryAfterSeconds (
  *   cost, and is re-armed on the user's next request.
  * - State persists in SQLite across hibernation cycles
  */
+
+// Parse and validate a numeric id parameter.
+// Returns null if the id is not finite, <= 0, or noncanonical.
+export function parseIdParam (raw:string):number|null {
+    const id = Number.parseInt(raw, 10)
+    if (!Number.isFinite(id) || id <= 0 || String(id) !== raw) return null
+    return id
+}
+
+// Parse and validate a query param (e.g., limit, offset).
+// Returns null if the param is not finite or negative.
+function parseNonNegativeInt (raw:string):number|null {
+    const n = Number.parseInt(raw, 10)
+    if (!Number.isFinite(n) || n < 0 || String(n) !== raw) return null
+    return n
+}
+
 export class RsssUserDO extends DurableObject<Env> {
     private app: Hono
     private sql: SqlStorage
@@ -517,14 +539,20 @@ export class RsssUserDO extends DurableObject<Env> {
         // pick up the newly-projected `last_pulled_at` column.
         // Guarded by its own storage key so it runs at most once
         // per RsssUserDO regardless of the schema migration version.
+        // Persist the guard flag BEFORE the UPDATE: if the DO cold-starts
+        // between the UPDATE and put, the flag is already set, so the
+        // UPDATE will not re-run on the next instantiation. This trades
+        // a missed one-time bump (harmless: feeds were already bumped once)
+        // for never re-bumping (the harmful case, which forces spurious
+        // full resyncs on every cold start until redeployed).
         const feedsBumpDone = await this.ctx.storage.get<boolean>(
             FEEDS_UPDATED_AT_BUMP_KEY
         )
         if (!feedsBumpDone) {
+            await this.ctx.storage.put(FEEDS_UPDATED_AT_BUMP_KEY, true)
             this.sql.exec(
                 "UPDATE feeds SET updated_at = datetime('now')"
             )
-            await this.ctx.storage.put(FEEDS_UPDATED_AT_BUMP_KEY, true)
         }
 
         // 3. Create indexes and triggers (shared schema) - idempotent
@@ -768,7 +796,7 @@ export class RsssUserDO extends DurableObject<Env> {
         createdAt:string
     ):FeedSubscriptionRecord {
         return {
-            feedUrl: feed.url,
+            feedUrl: canonicalizeFeedUrl(feed.url),
             createdAt,
             ...(feed.title ? { title: feed.title } : {}),
             ...(feed.site_url ? { siteUrl: feed.site_url } : {})
@@ -852,12 +880,31 @@ export class RsssUserDO extends DurableObject<Env> {
     ):Promise<Map<string, RemoteSubscription>> {
         const subscriptions = new Map<string, RemoteSubscription>()
         let cursor:string|undefined
+        let pageCount = 0
 
         do {
-            const response = await fetch(this.listRecordsUrl(
+            // Cap pagination to prevent stalled cursors (AC7.5)
+            if (pageCount >= MAX_RECORD_PAGES) {
+                reportError(
+                    new Error(
+                        'Pagination cap reached while listing AT Protocol records'
+                    ),
+                    'list-remote-subscriptions-max-pages',
+                    { did: credentials.did, pageCount }
+                )
+                break
+            }
+
+            // Validate PDS endpoint host against SSRF guard (AC20.1)
+            const url = new URL(this.listRecordsUrl(
                 credentials,
                 cursor
             ))
+            if (isBlockedHostname(url.hostname)) {
+                throw new Error('PDS endpoint host is not allowed')
+            }
+
+            const response = await fetch(url.href)
             if (!response.ok) {
                 throw new Error('Could not list AT Protocol records')
             }
@@ -867,21 +914,35 @@ export class RsssUserDO extends DurableObject<Env> {
                 body.records :
                 []
 
+            pageCount++
+
+            const newCursor = typeof body.cursor === 'string' ?
+                body.cursor :
+                undefined
+
+            // Cursor-stall detection: bail if cursor unchanged (AC7.5)
+            if (newCursor && newCursor === cursor) {
+                reportError(
+                    new Error('Cursor stall detected in listRemoteSubscriptions'),
+                    'list-remote-subscriptions-cursor-stall',
+                    { did: credentials.did, cursor: newCursor }
+                )
+                break
+            }
+
             for (const rawRecord of records) {
                 if (!this.isListedSubscriptionRecord(rawRecord)) continue
 
                 const remote = this.subscriptionFromRecord(rawRecord)
                 if (remote) {
                     subscriptions.set(
-                        remote.feedUrl,
+                        canonicalizeFeedUrl(remote.feedUrl),
                         remote.subscription
                     )
                 }
             }
 
-            cursor = typeof body.cursor === 'string' ?
-                body.cursor :
-                undefined
+            cursor = newCursor
         } while (cursor)
 
         return subscriptions
@@ -928,7 +989,7 @@ export class RsssUserDO extends DurableObject<Env> {
         let changed = 0
 
         for (const feed of feeds) {
-            const remote = remoteByUrl.get(feed.url)
+            const remote = remoteByUrl.get(canonicalizeFeedUrl(feed.url))
 
             if (remote) {
                 const publishedAt = remote.createdAt ??
@@ -1038,7 +1099,7 @@ export class RsssUserDO extends DurableObject<Env> {
             `SELECT ${FEED_SYNC_COLUMNS}
              FROM feeds WHERE id = ?`,
             feed.id
-        ).one() as Record<string, unknown> | null
+        ).toArray()[0] as Record<string, unknown> | undefined ?? null
 
         return { ok: true, feed: updated }
     }
@@ -1054,7 +1115,7 @@ export class RsssUserDO extends DurableObject<Env> {
                     `SELECT ${FEED_SYNC_COLUMNS}
                      FROM feeds WHERE id = ?`,
                     feed.id
-                ).one() as Record<string, unknown> | null
+                ).toArray()[0] as Record<string, unknown> | undefined ?? null
             }
         }
 
@@ -1111,7 +1172,7 @@ export class RsssUserDO extends DurableObject<Env> {
             `SELECT ${FEED_SYNC_COLUMNS}
              FROM feeds WHERE id = ?`,
             feed.id
-        ).one() as Record<string, unknown> | null
+        ).toArray()[0] as Record<string, unknown> | undefined ?? null
 
         return { ok: true, feed: updated }
     }
@@ -1123,7 +1184,7 @@ export class RsssUserDO extends DurableObject<Env> {
         const existing = this.sql.exec(
             'SELECT rkey FROM graph_follows WHERE subject_did = ?',
             targetDid
-        ).one() as { rkey:string } | null
+        ).toArray()[0] as { rkey:string } | undefined ?? null
 
         if (existing) {
             return { ok: true, alreadyFollowing: true }
@@ -1179,7 +1240,7 @@ export class RsssUserDO extends DurableObject<Env> {
         const existing = this.sql.exec(
             'SELECT rkey FROM graph_follows WHERE subject_did = ?',
             targetDid
-        ).one() as { rkey:string } | null
+        ).toArray()[0] as { rkey:string } | undefined ?? null
 
         if (!existing) {
             return { ok: true }
@@ -1347,7 +1408,7 @@ export class RsssUserDO extends DurableObject<Env> {
             const row = this.sql.exec(
                 'SELECT full_content_images FROM items WHERE id = ?',
                 id
-            ).one() as { full_content_images:string|null } | null
+            ).toArray()[0] as { full_content_images:string|null } | undefined ?? null
 
             if (!row) {
                 return c.json({ error: 'Item not found' }, 404)
@@ -1391,13 +1452,13 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const unreadRow = this.sql.exec(
                 'SELECT COUNT(*) as count FROM items WHERE is_read = 0'
-            ).one() as { count:number }
+            ).one() as { count:number } // guaranteed single row: COUNT(*)
             const starredRow = this.sql.exec(
                 'SELECT COUNT(*) as count FROM items WHERE is_starred = 1'
-            ).one() as { count:number }
+            ).one() as { count:number } // guaranteed single row: COUNT(*)
             const totalRow = this.sql.exec(
                 'SELECT COUNT(*) as count FROM items'
-            ).one() as { count:number }
+            ).one() as { count:number } // guaranteed single row: COUNT(*)
             const perFeedRows = this.sql.exec(
                 'SELECT feed_id, COUNT(*) as unread FROM items' +
                 ' WHERE is_read = 0 GROUP BY feed_id'
@@ -1523,7 +1584,7 @@ export class RsssUserDO extends DurableObject<Env> {
                     const existingFeed = this.sql.exec(
                         'SELECT * FROM feeds WHERE url = ?',
                         body.url
-                    ).one() as Record<string, unknown> | null
+                    ).toArray()[0] as Record<string, unknown> | undefined ?? null
                     if (
                         clientUpdatedAt !== undefined &&
                         existingFeed
@@ -1558,7 +1619,7 @@ export class RsssUserDO extends DurableObject<Env> {
                 const feed = this.sql.exec(
                     'SELECT * FROM feeds WHERE url = ?',
                     body.url
-                ).one()
+                ).toArray()[0] ?? null
                 console.log(
                     '[DO] Feed row:',
                     JSON.stringify(feed)
@@ -1591,7 +1652,7 @@ export class RsssUserDO extends DurableObject<Env> {
                     const updated = this.sql.exec(
                         'SELECT * FROM feeds WHERE id = ?',
                         (feed as { id:number }).id
-                    ).one()
+                    ).toArray()[0] ?? null
                     if (updated) {
                         respondedFeed = updated
                     }
@@ -1623,8 +1684,11 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Get a specific feed
         app.get('/feeds/:id', (c) => {
-            const id = parseInt(c.req.param('id'), 10)
-            const feed = this.sql.exec('SELECT * FROM feeds WHERE id = ?', id).one()
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
+            const feed = this.sql.exec('SELECT * FROM feeds WHERE id = ?', id).toArray()[0] ?? null
 
             if (!feed) {
                 return c.json({ error: 'Feed not found' }, 404)
@@ -1635,7 +1699,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Pending items for a feed (not yet pulled past last_pulled_at)
         app.get('/feeds/:id/pending', (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const rows = this.sql.exec(
                 `SELECT CAST(id AS TEXT) AS id,
                     COALESCE(title, '') AS title,
@@ -1660,11 +1727,14 @@ export class RsssUserDO extends DurableObject<Env> {
         })
 
         app.post('/feeds/:id/publish', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const feed = this.sql.exec(
                 'SELECT * FROM feeds WHERE id = ?',
                 id
-            ).one() as unknown as Feed | null
+            ).toArray()[0] as unknown as Feed | undefined ?? null
 
             if (!feed) {
                 return c.json({ error: 'Feed not found' }, 404)
@@ -1682,11 +1752,14 @@ export class RsssUserDO extends DurableObject<Env> {
         })
 
         app.delete('/feeds/:id/publish', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const feed = this.sql.exec(
                 'SELECT * FROM feeds WHERE id = ?',
                 id
-            ).one() as unknown as Feed | null
+            ).toArray()[0] as unknown as Feed | undefined ?? null
 
             if (!feed) {
                 return c.json({ error: 'Feed not found' }, 404)
@@ -1705,7 +1778,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Delete a feed
         app.delete('/feeds/:id', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const body:{
                 client_op_id?:string
                 client_updated_at?:string
@@ -1719,7 +1795,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const feed = this.sql.exec(
                 'SELECT * FROM feeds WHERE id = ?', id
-            ).one() as unknown as Feed | null
+            ).toArray()[0] as unknown as Feed | undefined ?? null
             if (!feed) {
                 if (body.client_op_id !== undefined) {
                     return c.json({ success: true })
@@ -1753,7 +1829,7 @@ export class RsssUserDO extends DurableObject<Env> {
         // Refresh a specific feed
         app.post('/feeds/:id/refresh', async (c) => {
             const id = parseInt(c.req.param('id'), 10)
-            const feed = this.sql.exec('SELECT * FROM feeds WHERE id = ?', id).one() as unknown as Feed | null
+            const feed = this.sql.exec('SELECT * FROM feeds WHERE id = ?', id).toArray()[0] as unknown as Feed | undefined ?? null
 
             if (!feed) {
                 return c.json({ error: 'Feed not found' }, 404)
@@ -1786,7 +1862,7 @@ export class RsssUserDO extends DurableObject<Env> {
                 `SELECT ${FEED_SYNC_COLUMNS}
                  FROM feeds WHERE id = ?`,
                 feed.id
-            ).one() as Record<string, unknown> | null
+            ).toArray()[0] as Record<string, unknown> | undefined ?? null
             return c.json({ feed: refreshed })
         })
 
@@ -1799,10 +1875,10 @@ export class RsssUserDO extends DurableObject<Env> {
                 .toArray() as unknown as Feed[]
 
             this.ctx.waitUntil((async () => {
-                await Promise.all(feeds.map(async feed => {
+                await this.runFeedPool(feeds, async feed => {
                     await this.fetchFeed(feed)
                     this.advanceFeedCursor(feed.id)
-                }))
+                })
                 this.broadcast('refresh-complete', {
                     refreshed: feeds.length
                 })
@@ -1816,8 +1892,13 @@ export class RsssUserDO extends DurableObject<Env> {
             const feedId = c.req.query('feed_id')
             const isRead = c.req.query('is_read')
             const isStarred = c.req.query('is_starred')
-            const limit = parseInt(c.req.query('limit') || '50', 10)
-            const offset = parseInt(c.req.query('offset') || '0', 10)
+            const limitParam = c.req.query('limit') || '50'
+            const offsetParam = c.req.query('offset') || '0'
+            const limit = parseNonNegativeInt(limitParam)
+            const offset = parseNonNegativeInt(offsetParam)
+            if (limit === null || offset === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
 
             // Reading-list cursor filter: only items whose feed has been
             // refreshed at least once and whose pub_date is at-or-before
@@ -1838,8 +1919,12 @@ export class RsssUserDO extends DurableObject<Env> {
             const params: (string | number)[] = []
 
             if (feedId) {
+                const parsedFeedId = parseIdParam(feedId)
+                if (parsedFeedId === null) {
+                    return c.json({ error: 'invalid_id' }, 400)
+                }
                 query += ' AND items.feed_id = ?'
-                params.push(parseInt(feedId, 10))
+                params.push(parsedFeedId)
             }
 
             if (isRead !== undefined) {
@@ -1866,8 +1951,14 @@ export class RsssUserDO extends DurableObject<Env> {
             const countParams: (string | number)[] = []
 
             if (feedId) {
+                // feedId already validated above; reuse result if present
                 countQuery += ' AND items.feed_id = ?'
-                countParams.push(parseInt(feedId, 10))
+                // We already validated feedId above in the first feedId block
+                const parsedFeedId = parseIdParam(feedId)
+                if (parsedFeedId === null) {
+                    return c.json({ error: 'invalid_id' }, 400)
+                }
+                countParams.push(parsedFeedId)
             }
             if (isRead !== undefined) {
                 countQuery += ' AND items.is_read = ?'
@@ -1878,7 +1969,7 @@ export class RsssUserDO extends DurableObject<Env> {
                 countParams.push(isStarred === 'true' ? 1 : 0)
             }
 
-            const countResult = this.sql.exec(countQuery, ...countParams).one() as { count: number }
+            const countResult = this.sql.exec(countQuery, ...countParams).one() as { count: number } // guaranteed single row: COUNT(*)
 
             return c.json({
                 items,
@@ -1919,7 +2010,7 @@ export class RsssUserDO extends DurableObject<Env> {
                  ORDER BY items.pub_date DESC, items.created_at DESC
                  LIMIT 1`,
                 ...routeCandidates
-            ).one()
+            ).toArray()[0] ?? null
 
             if (!item) {
                 return c.json({ error: 'Item not found' }, 404)
@@ -1929,9 +2020,9 @@ export class RsssUserDO extends DurableObject<Env> {
         })
 
         app.get('/items/count', (c) => {
-            const unread = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_read = 0').one() as { count: number }
-            const starred = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_starred = 1').one() as { count: number }
-            const total = this.sql.exec('SELECT COUNT(*) as count FROM items').one() as { count: number }
+            const unread = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_read = 0').one() as { count: number } // guaranteed single row: COUNT(*)
+            const starred = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_starred = 1').one() as { count: number } // guaranteed single row: COUNT(*)
+            const total = this.sql.exec('SELECT COUNT(*) as count FROM items').one() as { count: number } // guaranteed single row: COUNT(*)
             const perFeedRows = this.sql.exec(
                 'SELECT feed_id, COUNT(*) as unread FROM items' +
                 ' WHERE is_read = 0 GROUP BY feed_id'
@@ -1951,7 +2042,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Mark item as read/unread
         app.patch('/items/:id', async (c) => {
-            const id = parseInt(c.req.param('id'), 10)
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
+                return c.json({ error: 'invalid_id' }, 400)
+            }
             const body = await c.req.json<{
                 is_read?:boolean
                 is_starred?:boolean
@@ -1963,7 +2057,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const item = this.sql.exec(
                 `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`, id
-            ).one() as Record<string, unknown> | null
+            ).toArray()[0] as Record<string, unknown> | undefined ?? null
             if (!item) {
                 return c.json({ error: 'Item not found' }, 404)
             }
@@ -1994,7 +2088,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const updated = this.sql.exec(
                 `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`, id
-            ).one()
+            ).toArray()[0] ?? null
             return c.json({ item: updated })
         })
 
@@ -2105,10 +2199,10 @@ export class RsssUserDO extends DurableObject<Env> {
             // Get the latest updated_at timestamp for the client to store
             const latestFeed = this.sql.exec(
                 'SELECT MAX(updated_at) as latest FROM feeds'
-            ).one() as { latest: string | null }
+            ).one() as { latest: string | null } // guaranteed single row: MAX()
             const latestItem = this.sql.exec(
                 'SELECT MAX(updated_at) as latest FROM items'
-            ).one() as { latest: string | null }
+            ).one() as { latest: string | null } // guaranteed single row: MAX()
 
             // Use SQLite-compatible format so string
             // comparisons work for incremental sync.
@@ -2143,9 +2237,8 @@ export class RsssUserDO extends DurableObject<Env> {
         // the row after the attempt completed; the caller distinguishes
         // success vs failure by inspecting full_content_status.
         app.post('/items/:id/fetch-full', async (c) => {
-            const rawId = c.req.param('id')
-            const id = Number.parseInt(rawId, 10)
-            if (!Number.isFinite(id) || id <= 0 || String(id) !== rawId) {
+            const id = parseIdParam(c.req.param('id'))
+            if (id === null) {
                 return c.json({ error: 'invalid_id' }, 400)
             }
 
@@ -2165,7 +2258,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const item = this.sql.exec(
                 `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`, id
-            ).one() as Record<string, unknown> | null
+            ).toArray()[0] as Record<string, unknown> | undefined ?? null
             if (!item) {
                 return c.json({ error: 'Item not found' }, 404)
             }
@@ -2274,7 +2367,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
             const updated = this.sql.exec(
                 `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`, id
-            ).one()
+            ).toArray()[0] ?? null
             return c.json({ item: updated })
         })
 
@@ -2332,7 +2425,7 @@ export class RsssUserDO extends DurableObject<Env> {
             const row = this.sql.exec(
                 'SELECT rkey FROM graph_follows WHERE subject_did = ?',
                 targetDid
-            ).one()
+            ).toArray()[0] ?? null
             return c.json({ following: row !== null })
         })
 
@@ -2424,8 +2517,8 @@ export class RsssUserDO extends DurableObject<Env> {
             'SELECT COUNT(*) as unread FROM items ' +
             'WHERE feed_id = ? AND is_read = 0',
             feedId
-        ).one() as { unread:number } | null
-        return row?.unread ?? 0
+        ).one() as { unread:number } // guaranteed single row: COUNT(*)
+        return row.unread
     }
 
     private async awaitFetchOrTimeout (
@@ -2598,7 +2691,7 @@ export class RsssUserDO extends DurableObject<Env> {
                             WHERE feed_id = ? AND guid = ?`,
                             feed.id,
                             guid
-                        ).one() as { id:number } | null
+                        ).toArray()[0] as { id:number } | undefined ?? null
 
                         if (row) {
                             newItems.push({
@@ -2752,17 +2845,17 @@ export class RsssUserDO extends DurableObject<Env> {
             UPDATE user_state SET feed_version = feed_version + 1
             WHERE id = 1
             RETURNING feed_version
-        `).one() as { feed_version:number } | null
+        `).one() as { feed_version:number } // guaranteed single row: UPDATE ... RETURNING (user_state id=1)
 
-        return row?.feed_version ?? 0
+        return row.feed_version
     }
 
     private getFeedVersion ():number {
         const row = this.sql.exec(`
             SELECT feed_version FROM user_state WHERE id = 1
-        `).one() as { feed_version:number } | null
+        `).one() as { feed_version:number } // guaranteed single row: user_state id=1
 
-        return row?.feed_version ?? 0
+        return row.feed_version
     }
 
     private async updateNewItemThumbnails (
@@ -2820,11 +2913,11 @@ export class RsssUserDO extends DurableObject<Env> {
                 `SELECT content, description, full_content
                     FROM items WHERE id = ?`,
                 item.id
-            ).one() as {
+            ).toArray()[0] as {
                 content:string|null
                 description:string|null
                 full_content:string|null
-            } | null
+            } | undefined ?? null
 
             if (!row) continue
 
@@ -3664,17 +3757,29 @@ export class RsssUserDO extends DurableObject<Env> {
         ).toArray() as unknown as Feed[]
     }
 
-    private async refreshFeeds (feeds:Feed[]):Promise<void> {
-        let nextFeedIndex = 0
-        const workerCount = Math.min(FEED_REFRESH_CONCURRENCY, feeds.length)
-        const workers = Array.from({ length: workerCount }, async () => {
-            while (nextFeedIndex < feeds.length) {
-                const feed = feeds[nextFeedIndex]
-                nextFeedIndex++
-                if (feed) await this.fetchFeed(feed)
+    private async runFeedPool (
+        feeds:Feed[],
+        worker:(feed:Feed) => Promise<void>
+    ):Promise<void> {
+        let next = 0
+        const count = Math.min(FEED_REFRESH_CONCURRENCY, feeds.length)
+        const runners = Array.from({ length: count }, async () => {
+            while (next < feeds.length) {
+                const feed = feeds[next++]
+                if (!feed) continue
+                try {
+                    await worker(feed)
+                } catch (err) {
+                    // Isolate per-feed failure: log, continue pool
+                    reportError(err, 'refresh-feed', { feedId: feed.id })
+                }
             }
         })
 
-        await Promise.all(workers)
+        await Promise.all(runners)
+    }
+
+    private async refreshFeeds (feeds:Feed[]):Promise<void> {
+        await this.runFeedPool(feeds, f => this.fetchFeed(f))
     }
 }

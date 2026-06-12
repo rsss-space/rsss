@@ -40,6 +40,7 @@ interface SqliteWorkerNamespace {
     }
     installOpfsSAHPoolVfs:(opts:{ directory:string }) => Promise<{
         OpfsSAHPoolDb:WorkerDbConstructor
+        unlink:(name:string) => boolean
     }>
 }
 
@@ -61,6 +62,7 @@ let sqlitePromise:Promise<SqliteWorkerNamespace>|null = null
 let db:WorkerDb|null = null
 let opfsPoolDirectory:string|null = null
 let opfsPoolDb:WorkerDbConstructor|null = null
+let opfsPoolUnlink:((name:string) => boolean)|null = null
 
 workerScope.onmessage = (event) => {
     dispatch(event.data).catch((err) => {
@@ -91,17 +93,32 @@ async function handleRequest (
     switch (request.type) {
         case 'probe':
             await probeOpfs(request.directory)
-            return
+            break
         case 'open':
             await openDb(request)
-            return
+            break
         case 'exec':
             getOpenDb().exec(sqlExecArg(request.sql, request.bind))
-            return
+            break
         case 'query':
             return query(request.sql, request.bind)
         case 'close':
             closeDb()
+            break
+        case 'remove': {
+            const filename = request.filename || (
+                request.did ? getOpfsFilename(request.did) : ''
+            )
+            if (!filename) {
+                throw new Error('remove requires did or filename')
+            }
+            await getOpfsPoolDb(request.directory || 'rsss-db')
+            closeDb()
+            if (opfsPoolUnlink) {
+                opfsPoolUnlink(filename)
+            }
+            break
+        }
     }
 }
 
@@ -165,6 +182,7 @@ async function getOpfsPoolDb (
 
     opfsPoolDirectory = directory
     opfsPoolDb = pool.OpfsSAHPoolDb
+    opfsPoolUnlink = pool.unlink
     return opfsPoolDb
 }
 

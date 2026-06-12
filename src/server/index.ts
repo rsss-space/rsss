@@ -71,6 +71,15 @@ import {
     buildGraphResponse,
     type GraphApiDeps
 } from './graph-api.js'
+import {
+    computeRecommendations,
+    type RecommendationsDeps
+} from './recommendations.js'
+import {
+    getBlueskyFollows,
+    makeBlueskyFollowsDeps,
+    type BlueskyFollowsResult
+} from './bluesky-follows.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
@@ -748,6 +757,18 @@ app.post('/api/auth/callback', async (c) => {
             }, 400)
         }
 
+        // RFC 9207: bind iss to the authorization server resolved at the
+        // start of this flow. Strict !== fails closed — if authServer is
+        // undefined (old state from a deploy window) the callback rejects.
+        // The compare is byte-exact: neither iss nor authServer is
+        // canonicalized (no trailing-slash stripping), so both sides must
+        // already be in the same canonical form.
+        if (body.iss !== storedState.authServer) {
+            return c.json({
+                error: 'invalid_iss'
+            }, 400)
+        }
+
         const { clientId, redirectUri } = resolveOAuthClient(
             c.req.url,
             c.env.OAUTH_CLIENT_ID
@@ -894,15 +915,23 @@ const adminRateLimit = createRateLimitMiddleware<Env, Variables>({
 
 /**
  * Constant-time comparison for admin token verification.
- * Avoids early exit on mismatch to prevent timing leaks.
+ * Uses SHA-256 hashing to compare tokens without revealing length,
+ * preventing timing oracles on token length.
  */
-function timingSafeEqual (a:string, b:string):boolean {
-    if (a.length !== b.length) return false
-    let result = 0
-    for (let i = 0; i < a.length; i++) {
-        result |= a.charCodeAt(i) ^ b.charCodeAt(i)
-    }
-    return result === 0
+export async function constantTimeEqual (
+    a:string,
+    b:string
+):Promise<boolean> {
+    const enc = new TextEncoder()
+    const [ha, hb] = await Promise.all([
+        crypto.subtle.digest('SHA-256', enc.encode(a)),
+        crypto.subtle.digest('SHA-256', enc.encode(b))
+    ])
+    const va = new Uint8Array(ha)
+    const vb = new Uint8Array(hb)
+    let diff = 0
+    for (let i = 0; i < va.length; i++) diff |= va[i]! ^ vb[i]!
+    return diff === 0
 }
 
 /**
@@ -924,7 +953,12 @@ const requireAdmin = async (c:Context<{
     const match = header.match(/^Bearer\s+(.+)$/i)
     const provided = match ? match[1] : ''
 
-    if (!provided || !timingSafeEqual(provided, expected)) {
+    if (!provided) {
+        return c.json({ error: 'Unauthorized' }, 401)
+    }
+
+    const isAuthorized = await constantTimeEqual(provided, expected)
+    if (!isAuthorized) {
         return c.json({ error: 'Unauthorized' }, 401)
     }
 
@@ -1917,6 +1951,44 @@ app.post(
 )
 
 /**
+ * Get followers for a DID from Constellation.
+ * Derives available/count from the backing list call.
+ * Exported for testing.
+ */
+export async function getFollowers (
+    did:string,
+    constellation:ReturnType<typeof createConstellationClient>
+):Promise<{
+    dids:string[]
+    count:number|null
+    available:boolean
+}> {
+    const [backlinkRes, countRes] = await Promise.all([
+        constellation.getDistinct({
+            collection: 'space.rsss.graph.follow',
+            path: '.subject',
+            subject: did
+        }),
+        constellation.getBacklinksCount({
+            collection: 'space.rsss.graph.follow',
+            path: '.subject',
+            subject: did
+        })
+    ])
+
+    const listFailed = 'code' in backlinkRes
+    const countFailed = 'code' in countRes
+
+    const dids = listFailed ? [] : (backlinkRes as any).subjects.slice(0, 100)
+    // available reflects the call that actually backs `dids` (the list call).
+    const available = !listFailed
+    // unknown count when the count call failed — do NOT substitute capped length.
+    const count = countFailed ? null : (countRes as any).count
+
+    return { dids, count, available }
+}
+
+/**
  * Following/followers graph for the authenticated user.
  * Following is read from the user's DO SQLite. Followers
  * are fetched from Constellation (eventual consistency).
@@ -1941,33 +2013,7 @@ app.get('/api/graph', requireAuth, async (c) => {
                 return []
             }
         },
-        getFollowers: async (did:string) => {
-            const [backlinkRes, countRes] = await Promise.all([
-                constellation.getDistinct({
-                    collection: 'space.rsss.graph.follow',
-                    path: '.subject',
-                    subject: did
-                }),
-                constellation.getBacklinksCount({
-                    collection: 'space.rsss.graph.follow',
-                    path: '.subject',
-                    subject: did
-                })
-            ])
-
-            const available = !('code' in backlinkRes) ||
-                !('code' in countRes)
-
-            const dids = 'code' in backlinkRes ?
-                [] :
-                backlinkRes.subjects.slice(0, 100)
-
-            const count = 'code' in countRes ?
-                dids.length :
-                countRes.count
-
-            return { dids, count, available }
-        }
+        getFollowers: (did:string) => getFollowers(did, constellation)
     }
 
     try {
@@ -1976,6 +2022,85 @@ app.get('/api/graph', requireAuth, async (c) => {
     } catch (err) {
         reportError(err, 'graph', { route: '/api/graph' })
         return c.json({ error: 'graph_unavailable' }, 503)
+    }
+})
+
+/**
+ * Recommended users for the authenticated user (US-020).
+ * Returns users from the user's Bluesky follows who are in the
+ * rsss registry and whom the user does not already follow on rsss.
+ */
+app.get('/api/recommendations', requireAuth, async (c) => {
+    const session = c.get('session')!
+
+    // Build dependencies for computeRecommendations
+    const depsForBluesky = makeBlueskyFollowsDeps(c.env.SESSIONS, fetch)
+
+    // Fetch Bluesky follows once
+    let blueskyResult:BlueskyFollowsResult
+    try {
+        blueskyResult = await getBlueskyFollows(session.did, depsForBluesky)
+    } catch (err) {
+        reportError(err, 'recommendations', {
+            route: '/api/recommendations',
+            step: 'getBlueskyFollows'
+        })
+        return c.json({ error: 'recommendations_unavailable' }, 503)
+    }
+
+    // If Bluesky fetch failed, return 503
+    if (!blueskyResult.ok) {
+        return c.json({ error: 'recommendations_unavailable' }, 503)
+    }
+
+    const deps:RecommendationsDeps = {
+        getBlueskyFollows: async (_did:string) => blueskyResult,
+        listRsssFollowing: async () => {
+            try {
+                const stub = getRsssUserDO(c.env, session.did)
+                const res = await stub.fetch(
+                    new Request('http://do/graph/following')
+                )
+                if (!res.ok) return []
+                const body = await res.json() as { dids?:string[] }
+                return body.dids ?? []
+            } catch {
+                return []
+            }
+        },
+        batchLookupRegistry: async (dids:string[]) => {
+            const stub = getRegistryDO(c.env)
+            if (!stub) return []
+            try {
+                const res = await stub.fetch(
+                    new Request('http://registry/batch-lookup', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ dids })
+                    })
+                )
+                if (!res.ok) return []
+                const body = await res.json() as
+                    { users?:Array<{ did:string; handle:string; avatar:string|null }> }
+                return body.users ?? []
+            } catch {
+                return []
+            }
+        }
+    }
+
+    try {
+        const recommendations = await computeRecommendations(
+            session.did,
+            deps
+        )
+        return c.json(recommendations)
+    } catch (err) {
+        reportError(err, 'recommendations', {
+            route: '/api/recommendations',
+            step: 'computeRecommendations'
+        })
+        return c.json({ error: 'recommendations_unavailable' }, 503)
     }
 })
 
@@ -2268,11 +2393,14 @@ app.get('/admin/users', requireAdmin, async (c) => {
 /**
  * Admin: refresh all feeds for all tracked users.
  * Accepts optional `dids` array in body to refresh
- * specific users only.
+ * specific users only. Supports cursor/limit pagination
+ * via query params for handling large user counts.
  * Requires ADMIN_TOKEN bearer header.
  */
 app.post('/admin/refresh-all', requireAdmin, async (c) => {
     let dids:string[]
+    let listComplete = true
+    let nextCursor:string|undefined
 
     // Check if specific DIDs were provided
     const body = await c.req.json<{
@@ -2282,13 +2410,22 @@ app.post('/admin/refresh-all', requireAdmin, async (c) => {
     if (body.dids && body.dids.length > 0) {
         dids = body.dids
     } else {
-        // List all tracked users from KV
+        // List tracked users from KV with pagination support
+        const limit = c.req.query('limit')
+            ? parseInt(c.req.query('limit')!, 10)
+            : 100
+        const cursor = c.req.query('cursor') || undefined
+
         const result = await c.env.SESSIONS.list({
-            prefix: 'user:'
+            prefix: 'user:',
+            limit,
+            cursor
         })
         dids = result.keys.map(
             (key) => key.name.replace('user:', '')
         )
+        listComplete = result.list_complete
+        nextCursor = (result as { cursor?:string }).cursor
     }
 
     if (dids.length === 0) {
@@ -2331,7 +2468,12 @@ app.post('/admin/refresh-all', requireAdmin, async (c) => {
         }
     }
 
-    return c.json({ results })
+    const response:Record<string, unknown> = {
+        results,
+        list_complete: listComplete
+    }
+    if (nextCursor) response.cursor = nextCursor
+    return c.json(response)
 })
 
 /**

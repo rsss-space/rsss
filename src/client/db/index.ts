@@ -246,8 +246,12 @@ export function _resetAdapterCache ():void {
 }
 
 addBootstrapFailureCleanup(() => {
+    // Do NOT release the tab lock here. This cleanup runs (via
+    // runBootstrapFailureCleanups) BEFORE removeOpfsDb in the terminal-reset
+    // path, and the lock must be held through the OPFS delete to keep a second
+    // tab from opening the DB mid-delete (audit #7). bootstrapLocalDb releases
+    // the lock in a finally after removeOpfsDb.
     _resetAdapterCache()
-    releaseLocalTabLock()
 })
 
 async function pushPendingWritesBeforeRemoval (
@@ -286,8 +290,11 @@ export async function disableLocalFirst (
         await closeDb(db)
         clearBootstrappedDb()
         _resetAdapterCache()
-        await releaseLocalTabLock()
-        await removeOpfsDb(did)
+        try {
+            await removeOpfsDb(did)
+        } finally {
+            await releaseLocalTabLock()
+        }
         clearPaintCache(did)
         batch(() => {
             setSyncSubscriptions(false)
@@ -320,11 +327,15 @@ export async function resetLocalFirst (
             throw err
         }
     }
-    await closeDb(db)
-    clearBootstrappedDb()
-    _resetAdapterCache()
-    await releaseLocalTabLock()
-    await removeOpfsDb(did)
+    try {
+        await closeDb(db)
+        clearBootstrappedDb()
+        _resetAdapterCache()
+        await removeOpfsDb(did)
+        clearPaintCache(did)
+    } finally {
+        await releaseLocalTabLock()
+    }
     endLocalFirstDisable(db)
     await bootstrapLocalDb(did, fetchFn)
 }

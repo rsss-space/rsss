@@ -4,29 +4,19 @@
  *  - buildGraphResponse helper
  */
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import {
     buildGraphResponse,
     type GraphApiDeps
 } from '../src/server/graph-api.js'
+import { getFollowers } from '../src/server/index.js'
 
 // ---- DO harness (mirrors graph-follow.ts pattern) ----
 
 interface FollowRow {
     subject_did:string
     rkey:string
-}
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] ?? null }
-    }
 }
 
 function createFollowSql (initialFollows:FollowRow[] = []) {
@@ -38,13 +28,13 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
             if (query.includes(
                 'SELECT subject_did FROM graph_follows'
             )) {
-                return result(follows)
+                return fakeResult(follows)
             }
 
             if (query.includes(
                 'SELECT rkey FROM graph_follows WHERE subject_did = ?'
             )) {
-                return result(
+                return fakeResult(
                     follows.filter(f => f.subject_did === params[0])
                 )
             }
@@ -54,7 +44,7 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
                     subject_did: params[0] as string,
                     rkey: params[1] as string
                 })
-                return result([])
+                return fakeResult([])
             }
 
             if (query.includes(
@@ -64,10 +54,10 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
                     f => f.subject_did === params[0]
                 )
                 if (idx >= 0) follows.splice(idx, 1)
-                return result([])
+                return fakeResult([])
             }
 
-            return result([])
+            return fakeResult([])
         }
     }
 }
@@ -234,4 +224,50 @@ test('buildGraphResponse uses correct DID for followers lookup', async t => {
     }
     await buildGraphResponse('did:plc:target', deps)
     t.equal(capturedDid, 'did:plc:target', 'correct DID passed')
+})
+
+// AC11.1: list call returns error, count succeeds -> available false
+test('AC11.1: getFollowers with list error sets available false and empty dids', async t => {
+    // Test the real getFollowers function with mocked Constellation
+    const mockConstellation = {
+        getDistinct: async () => ({ code: 'backlink_error' }),
+        getBacklinksCount: async () => ({ count: 42 })
+    }
+
+    const deps:GraphApiDeps = {
+        listFollowing: async () => [],
+        getFollowers: (did:string) =>
+            getFollowers(did, mockConstellation as any)
+    }
+    const resp = await buildGraphResponse('did:plc:test', deps)
+    t.equal(resp.constellationAvailable, false,
+        'available is false when list fails')
+    t.equal(resp.followers.length, 0,
+        'dids empty when list fails')
+    t.equal(resp.followersCount, 42,
+        'count reflects successful count call')
+})
+
+// AC11.2: count call returns error, list succeeds -> count is null
+test('AC11.2: getFollowers with count error returns null count', async t => {
+    // Test the real getFollowers function with mocked Constellation
+    const mockConstellation = {
+        getDistinct: async () => ({
+            subjects: ['did:plc:a', 'did:plc:b', 'did:plc:c']
+        }),
+        getBacklinksCount: async () => ({ code: 'count_error' })
+    }
+
+    const deps:GraphApiDeps = {
+        listFollowing: async () => [],
+        getFollowers: (did:string) =>
+            getFollowers(did, mockConstellation as any)
+    }
+    const resp = await buildGraphResponse('did:plc:test', deps)
+    t.equal(resp.constellationAvailable, true,
+        'available is true when list succeeds')
+    t.equal(resp.followers.length, 3,
+        'dids populated from list')
+    t.equal(resp.followersCount, null,
+        'count is null when count call failed')
 })

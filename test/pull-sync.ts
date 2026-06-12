@@ -21,6 +21,17 @@ type ErrorCtor = new () => Error
 
 setTestMode(true, wasmUrl as string)
 
+// The tapout harness forwards each browser console message to the node
+// console via `console[msg.type()](text)`. Playwright reports a
+// `console.warn` as type 'warning', and `console.warning` is not a
+// function — so a single browser-side warn crashes the whole run. The
+// AC5.1 UNIQUE(url) collision path makes sqlite-wasm emit a warning-level
+// message for the (intentional, handled) constraint failure. Re-route
+// warns to console.log so they stay visible without crashing the harness.
+console.warn = (...args:unknown[]):void => {
+    console.log(...args)
+}
+
 const FEED = {
     id: 1,
     url: 'https://example.com/feed',
@@ -1315,6 +1326,162 @@ test(
             )
         } finally {
             globalThis.fetch = originalFetch
+            storeContent.value = true
+            db.close()
+        }
+    }
+)
+
+// ── AC5.1: per-feed SAVEPOINT isolation ──────────────────────────────────────
+
+test(
+    'AC5.1: SAVEPOINT isolates per-feed failures; page still commits',
+    async (t) => {
+        storeContent.value = true
+        const db = await openLocalDb('did:test:ac5-1-savepoint')
+        try {
+            // Seed a local feed row with id=1, url=U
+            db.exec({
+                sql: `INSERT INTO feeds
+                    (id, url, title, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)`,
+                bind: [
+                    1,
+                    'https://example.com/feed-U',
+                    'Local Feed U',
+                    '2026-01-01 00:00:00',
+                    '2026-01-01 00:00:00'
+                ]
+            })
+
+            // Pull a page where one feed will collide on URL
+            // The SAVEPOINT should isolate the error to that feed only
+            const syncData = {
+                feeds: [
+                    {
+                        id: 100,
+                        url: 'https://example.com/feed-U',
+                        title: 'Server Feed U',
+                        description: null,
+                        site_url: 'https://example.com',
+                        last_fetched: '2026-01-01 00:00:00',
+                        created_at: '2026-01-01 00:00:00',
+                        updated_at: '2026-01-01 00:00:00'
+                    },
+                    {
+                        id: 200,
+                        url: 'https://example.com/feed-V',
+                        title: 'Server Feed V',
+                        description: null,
+                        site_url: 'https://example.com',
+                        last_fetched: '2026-01-01 00:00:00',
+                        created_at: '2026-01-01 00:00:00',
+                        updated_at: '2026-01-01 00:00:00'
+                    }
+                ],
+                items: [],
+                syncedAt: '2026-01-02 00:00:00',
+                latestUpdatedAt: '2026-01-02 00:00:00',
+                isFullSync: false
+            }
+
+            await pullSync(db, makeFetch(syncData))
+
+            const feedV = queryOne<{ id:number; url:string }>(
+                db,
+                'SELECT id, url FROM feeds WHERE id = ?',
+                [200]
+            )
+            t.ok(feedV, 'server feed V inserted after collider')
+            t.equal(
+                feedV?.url,
+                'https://example.com/feed-V',
+                'feed V URL correct'
+            )
+
+            // The collision was isolated: the local row (id=1, url=U) is
+            // intact and the colliding server feed (id=100) was not inserted.
+            const localU = queryOne<{ id:number; title:string }>(
+                db,
+                'SELECT id, title FROM feeds WHERE id = ?',
+                [1]
+            )
+            t.equal(
+                localU?.title,
+                'Local Feed U',
+                'local feed U preserved (collider rolled back)'
+            )
+            const collider = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM feeds WHERE id = ?',
+                [100]
+            )
+            t.equal(collider, undefined, 'colliding server feed not inserted')
+        } finally {
+            storeContent.value = true
+            db.close()
+        }
+    }
+)
+
+// ── AC5.2: shouldSkipFeed by pending add_feed URL ────────────────────────────
+
+test(
+    'AC5.2: shouldSkipFeed skips server feed with pending add_feed url',
+    async (t) => {
+        storeContent.value = true
+        const db = await openLocalDb('did:test:ac5-2-skip-url')
+        try {
+            // Seed a pending add_feed outbox row for url U
+            const addFeedPayload = JSON.stringify({
+                url: 'https://example.com/pending-feed',
+                title: 'Pending Feed'
+            })
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id, client_updated_at)
+                    VALUES (?, ?, ?, ?, ?)`,
+                bind: [
+                    'add_feed',
+                    null, // optimistic (no local id yet)
+                    addFeedPayload,
+                    'op-uuid-pending-add',
+                    '2026-01-01 00:00:00'
+                ]
+            })
+
+            // Pull a page with a server feed matching the pending add_feed url
+            // but under a new id (srv-100)
+            const syncData = {
+                feeds: [
+                    {
+                        id: 100,
+                        url: 'https://example.com/pending-feed',
+                        title: 'Server Pending Feed',
+                        created_at: '2026-01-01 00:00:00',
+                        updated_at: '2026-01-01 00:00:00'
+                    }
+                ],
+                items: [],
+                syncedAt: '2026-01-02 00:00:00',
+                latestUpdatedAt: '2026-01-02 00:00:00',
+                isFullSync: false
+            }
+
+            await pullSync(db, makeFetch(syncData))
+
+            // Verify the server feed was NOT inserted (skipped)
+            const inserted = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM feeds WHERE url = ?',
+                ['https://example.com/pending-feed']
+            )
+            t.equal(
+                inserted,
+                undefined,
+                'server feed skipped (not inserted); push-sync will reconcile'
+            )
+        } finally {
             storeContent.value = true
             db.close()
         }

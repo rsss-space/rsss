@@ -1,4 +1,5 @@
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import type { FetchFullArticleResult } from '../src/server/article-fetch.js'
 
@@ -20,18 +21,6 @@ interface ItemRow {
     full_content:string|null
     full_content_fetched_at:string|null
     full_content_status:string|null
-}
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] || null }
-    }
 }
 
 function makeItem (overrides:Partial<ItemRow> = {}):ItemRow {
@@ -65,7 +54,7 @@ function createSql (items:ItemRow[]) {
 
             if (q.startsWith('SELECT') && q.includes('FROM items WHERE id = ?')) {
                 const id = params[0] as number
-                return result(items.filter(i => i.id === id))
+                return fakeResult(items.filter(i => i.id === id))
             }
 
             const updateMatch = q.match(/^UPDATE items SET (.+) WHERE id = \?$/)
@@ -73,7 +62,7 @@ function createSql (items:ItemRow[]) {
                 const setClause = updateMatch[1]
                 const id = params[params.length - 1] as number
                 const item = items.find(i => i.id === id)
-                if (!item) return result([])
+                if (!item) return fakeResult([])
 
                 // Parse "col = ?, col = ?, col = ?"
                 const assignments = setClause.split(',').map(s => s.trim())
@@ -91,7 +80,7 @@ function createSql (items:ItemRow[]) {
                     }
                     ;(item as unknown as Record<string, unknown>)[col] = value
                 }
-                return result([])
+                return fakeResult([])
             }
 
             throw new Error(`Unexpected SQL: ${q}`)

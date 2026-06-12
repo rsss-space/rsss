@@ -9,6 +9,10 @@ import {
     cacheItemImages,
     type FeedCachePolicyRow
 } from '../src/client/db/image-cache.js'
+import {
+    sumTotal,
+    sumByFeed
+} from '../src/client/db/cached-images.js'
 import { defaultCacheMode } from '../src/client/local-first-settings.js'
 import type { Sqlite3Db } from '../src/client/db/sqlite-init.js'
 
@@ -43,6 +47,20 @@ function makeMockCaches ():{ storage:Pick<CacheStorage, 'open'>; puts:string[] }
             } as unknown as Cache)
         },
         puts
+    }
+}
+
+// Deliberate-failure paths log via console.error, which the tapout
+// runner treats as a failed run; silence it for the expected call.
+async function silencingConsoleError<T> (
+    fn:() => Promise<T>
+):Promise<T> {
+    const orig = console.error
+    console.error = () => {}
+    try {
+        return await fn()
+    } finally {
+        console.error = orig
     }
 }
 
@@ -185,7 +203,7 @@ test('fetch errors do not write cached_images rows', async (t) => {
         }
         const { storage: cs, puts } = makeMockCaches()
 
-        await cacheItemImages(
+        await silencingConsoleError(() => cacheItemImages(
             db,
             {
                 id: 1,
@@ -196,7 +214,7 @@ test('fetch errors do not write cached_images rows', async (t) => {
             { cache_mode: 'text_images' },
             fetchFn,
             cs
-        )
+        ))
 
         t.equal(call, 1, 'fetch was attempted')
         t.equal(puts.length, 0, 'nothing stored in Cache Storage')
@@ -274,3 +292,221 @@ test('duplicate URLs in content are only fetched once', async (t) => {
         db.close()
     }
 })
+
+test('AC10.1: DB failure rolls back Cache Storage blob',
+    async (t) => {
+        // When recordCachedImage throws, the blob written to Cache Storage
+        // must be deleted so no orphan remains. We simulate this by
+        // creating a DB that will fail on an INSERT by making it read-only.
+        const db = await openLocalDb('did:test:ic-ac10-1-failure')
+        try {
+            seedFeed(db)
+
+            const puts:string[] = []
+            const deletes:string[] = []
+
+            // First, cache one image successfully
+            const storage:Pick<CacheStorage, 'open'> = {
+                open: async (_name:string) => ({
+                    put: async (url:string, _res:Response) => {
+                        puts.push(url)
+                    },
+                    match: async (_url:string) => undefined,
+                    delete: async (url:string) => {
+                        deletes.push(url)
+                        return true
+                    },
+                    keys: async () => [],
+                    addAll: async () => undefined,
+                    add: async () => undefined
+                } as unknown as Cache)
+            }
+
+            const fetchFn:typeof fetch = async (_url) => {
+                const buf = new Uint8Array(250).buffer
+                return new Response(buf, {
+                    status: 200,
+                    headers: { 'Content-Type': 'image/jpeg' }
+                })
+            }
+
+            // Cache one image successfully
+            await cacheItemImages(
+                db,
+                {
+                    id: 1,
+                    feed_id: 1,
+                    content: '<img src="https://example.com/good.jpg">',
+                    description: null
+                },
+                { cache_mode: 'text_images' },
+                fetchFn,
+                storage
+            )
+
+            // Now create a read-only wrapper that will fail on INSERT
+            const readOnlyDb = {
+                ...db,
+                exec: (arg:unknown) => {
+                    const sql = typeof arg === 'string' ? arg :
+                        typeof arg === 'object' && arg !== null &&
+                    'sql' in arg ? (arg as { sql:string }).sql :
+                            ''
+
+                    // Only fail on INSERT to cached_images (not SELECT)
+                    if (sql.trim().toUpperCase().startsWith(
+                        'INSERT'
+                    ) && sql.includes('cached_images')) {
+                        throw new Error('SQLITE_READONLY: attempt to ' +
+                        'write to a read-only database')
+                    }
+
+                    return (db as unknown as {
+                        exec:(arg:unknown) => void
+                    }).exec(arg)
+                }
+            } as Sqlite3Db
+
+            // Try to cache another image with the read-only DB;
+            // it will fail and should roll back
+            await silencingConsoleError(() => cacheItemImages(
+                readOnlyDb,
+                {
+                    id: 2,
+                    feed_id: 1,
+                    content: '<img src="https://example.com/fail.jpg">',
+                    description: null
+                },
+                { cache_mode: 'text_images' },
+                fetchFn,
+                storage
+            ))
+
+            // Verify two puts (one successful, one attempted but rolled back)
+            t.equal(puts.length, 2, 'two images put to Cache Storage')
+            // The second one should be deleted due to DB failure
+            t.equal(deletes.length, 1, 'failed image blob was deleted')
+            t.equal(deletes[0], 'https://example.com/fail.jpg',
+                'deleted the correct URL')
+
+            // Verify only the successful image has a DB row
+            const rows:Array<{ url:string }> = []
+            db.exec({
+                sql: 'SELECT url FROM cached_images ORDER BY url',
+                rowMode: 'object',
+                resultRows: rows
+            })
+            t.equal(rows.length, 1, 'only one image recorded in DB')
+            t.equal(rows[0].url, 'https://example.com/good.jpg',
+                'successful image has a row; failed image does not')
+        } finally {
+            db.close()
+        }
+    }
+)
+
+test('AC10.2: eviction accounting ignores rolled-back blobs',
+    async (t) => {
+        // After a DB failure that rolls back the blob, eviction accounting
+        // should NOT include the rolled-back image.
+        const db = await openLocalDb('did:test:ic-ac10-2-accounting')
+        try {
+            seedFeed(db)
+
+            const puts:string[] = []
+            const deletes:string[] = []
+
+            const storage:Pick<CacheStorage, 'open'> = {
+                open: async (_name:string) => ({
+                    put: async (url:string, _res:Response) => {
+                        puts.push(url)
+                    },
+                    match: async (_url:string) => undefined,
+                    delete: async (url:string) => {
+                        deletes.push(url)
+                        return true
+                    },
+                    keys: async () => [],
+                    addAll: async () => undefined,
+                    add: async () => undefined
+                } as unknown as Cache)
+            }
+
+            const fetchFn:typeof fetch = async (_url) => {
+                const buf = new Uint8Array(300).buffer
+                return new Response(buf, {
+                    status: 200,
+                    headers: { 'Content-Type': 'image/jpeg' }
+                })
+            }
+
+            // Cache one image successfully
+            await cacheItemImages(
+                db,
+                {
+                    id: 1,
+                    feed_id: 1,
+                    content: '<img src="https://example.com/good.jpg">',
+                    description: null
+                },
+                { cache_mode: 'text_images' },
+                fetchFn,
+                storage
+            )
+
+            // Create a read-only wrapper for the second attempt
+            const readOnlyDb = {
+                ...db,
+                exec: (arg:unknown) => {
+                    const sql = typeof arg === 'string' ? arg :
+                        typeof arg === 'object' && arg !== null &&
+                    'sql' in arg ? (arg as { sql:string }).sql :
+                            ''
+
+                    // Only fail on INSERT to cached_images
+                    if (sql.trim().toUpperCase().startsWith(
+                        'INSERT'
+                    ) && sql.includes('cached_images')) {
+                        throw new Error('SQLITE_READONLY: attempt to ' +
+                        'write to a read-only database')
+                    }
+
+                    return (db as unknown as {
+                        exec:(arg:unknown) => void
+                    }).exec(arg)
+                }
+            } as Sqlite3Db
+
+            // Try to cache another image; it will fail and roll back
+            await silencingConsoleError(() => cacheItemImages(
+                readOnlyDb,
+                {
+                    id: 2,
+                    feed_id: 1,
+                    content: '<img src="https://example.com/bad.jpg">',
+                    description: null
+                },
+                { cache_mode: 'text_images' },
+                fetchFn,
+                storage
+            ))
+
+            // Verify two puts (one successful, one attempted but rolled back)
+            t.equal(puts.length, 2, 'two images put to Cache Storage')
+            // The second one was deleted due to DB failure
+            t.equal(deletes.length, 1, 'failed image was deleted')
+
+            // Accounting should only count the successful image (300 bytes)
+            // The rolled-back blob is not in the DB, so it's not counted
+            const totalBytes = await sumTotal(db)
+            const feedBytes = await sumByFeed(db, 1)
+
+            t.equal(totalBytes, 300,
+                'total accounting = 300 (only the successful image)')
+            t.equal(feedBytes, 300,
+                'feed accounting = 300 (only the successful image)')
+        } finally {
+            db.close()
+        }
+    }
+)

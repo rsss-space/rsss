@@ -2,7 +2,8 @@ import { test } from '@substrate-system/tapzero'
 import {
     publisherLinkLabel,
     publisherLinkHref,
-    sourceLinkLabel
+    sourceLinkLabel,
+    httpUrlOrNull
 } from '../src/shared/publisher-link.js'
 
 test('publisherLinkLabel - basic host', t => {
@@ -188,4 +189,62 @@ test('item-reader rendering decision (null when helpers return null)', t => {
             `${JSON.stringify(c.link)} renders=${c.shouldRender}`
         )
     }
+})
+
+test('httpUrlOrNull - https valid URLs pass through', t => {
+    t.equal(
+        httpUrlOrNull('https://x.example'),
+        'https://x.example',
+        'https URL returns input unchanged'
+    )
+    t.equal(
+        httpUrlOrNull('https://example.com/path?query=1'),
+        'https://example.com/path?query=1',
+        'https with path/query returns input unchanged'
+    )
+})
+
+test('httpUrlOrNull - http valid URLs pass through', t => {
+    t.equal(
+        httpUrlOrNull('http://x.example'),
+        'http://x.example',
+        'http URL returns input unchanged'
+    )
+})
+
+test('httpUrlOrNull - non-http(s) protocols return null', t => {
+    t.equal(
+        httpUrlOrNull('javascript:alert(1)'),
+        null,
+        'javascript: → null'
+    )
+    t.equal(
+        httpUrlOrNull('mailto:a@b'),
+        null,
+        'mailto: → null'
+    )
+    t.equal(
+        httpUrlOrNull('data:text/html,<script>alert(1)</script>'),
+        null,
+        'data: → null'
+    )
+})
+
+test('httpUrlOrNull - empty, null, undefined return null', t => {
+    t.equal(httpUrlOrNull(''), null, 'empty string → null')
+    t.equal(httpUrlOrNull(null), null, 'null → null')
+    t.equal(httpUrlOrNull(undefined), null, 'undefined → null')
+})
+
+test('httpUrlOrNull - malformed URLs return null', t => {
+    t.equal(
+        httpUrlOrNull('not a url'),
+        null,
+        'malformed string → null'
+    )
+    t.equal(
+        httpUrlOrNull('ht!tp://invalid'),
+        null,
+        'invalid URL format → null'
+    )
 })

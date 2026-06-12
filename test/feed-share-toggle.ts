@@ -145,6 +145,19 @@ test('FeedNav share toggle shows progress and stores returned feed row',
 
             box.checked = true
             box.dispatchEvent(new Event('change', { bubbles: true }))
+            await nextTick()
+
+            const modal = document.querySelector(
+                'modal-window.publish-consent-modal'
+            )
+            t.ok(modal, 'consent modal opens before publishing')
+            const confirmBtn = modal?.querySelector(
+                'button.consent-confirm'
+            ) as HTMLButtonElement|null
+            t.ok(confirmBtn, 'confirm button is present')
+            if (!confirmBtn) return
+
+            confirmBtn.click()
             await fetchStarted
             await nextTick()
 

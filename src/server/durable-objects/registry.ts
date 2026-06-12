@@ -77,7 +77,7 @@ export class RsssRegistryDO extends DurableObject<RegistryEnv> {
             const row = this.sql.exec(
                 'SELECT did, handle, avatar FROM known_users WHERE did = ?',
                 did
-            ).one() as unknown as KnownUser|null
+            ).toArray()[0] as unknown as KnownUser | undefined ?? null
 
             if (!row) {
                 return c.json({ known: false }, 200)

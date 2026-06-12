@@ -1,26 +1,11 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import { fakeResult } from './helpers/sql-fake.js'
 import {
     INDEXES_SQL,
     TABLES_SQL,
     USER_STATE_SQL
 } from '../src/shared/schema.js'
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[] = []):QueryResult {
-    return {
-        toArray () {
-            return rows
-        },
-        one () {
-            return rows[0] || null
-        }
-    }
-}
 
 function createConstructorContext (storedVersion:number | null) {
     const statements:string[] = []
@@ -33,7 +18,7 @@ function createConstructorContext (storedVersion:number | null) {
                 exec (query:string) {
                     statements.push(query)
                     if (query.includes('PRAGMA table_info(feeds)')) {
-                        return result([
+                        return fakeResult([
                             { name: 'updated_at' },
                             { name: 'last_error' },
                             { name: 'last_status' },
@@ -45,7 +30,7 @@ function createConstructorContext (storedVersion:number | null) {
                         ])
                     }
                     if (query.includes('PRAGMA table_info(items)')) {
-                        return result([
+                        return fakeResult([
                             { name: 'updated_at' },
                             { name: 'thumbnail_url' },
                             { name: 'full_content' },
@@ -53,7 +38,7 @@ function createConstructorContext (storedVersion:number | null) {
                             { name: 'full_content_status' }
                         ])
                     }
-                    return result()
+                    return fakeResult()
                 }
             },
             get: async () => {
@@ -140,7 +125,7 @@ test('RsssUserDO migrates missing item thumbnail column', async t => {
 
     setup.ctx.storage.sql.exec = ((query:string) => {
         if (query.includes('PRAGMA table_info(items)')) {
-            return result([{ name: 'updated_at' }])
+            return fakeResult([{ name: 'updated_at' }])
         }
 
         return originalExec(query)
@@ -271,14 +256,14 @@ test('RsssUserDO reads and bumps feed version through user_state', t => {
             statements.push({ query, params })
 
             if (query.includes('SELECT feed_version FROM user_state')) {
-                return result([{ feed_version: 4 }])
+                return fakeResult([{ feed_version: 4 }])
             }
 
             if (query.includes('UPDATE user_state SET')) {
-                return result([{ feed_version: 5 }])
+                return fakeResult([{ feed_version: 5 }])
             }
 
-            return result()
+            return fakeResult([])
         }
     }
 
@@ -306,7 +291,7 @@ test('RsssUserDO migrates missing item image metadata columns', async t => {
 
     setup.ctx.storage.sql.exec = ((query:string) => {
         if (query.includes('PRAGMA table_info(items)')) {
-            return result([
+            return fakeResult([
                 { name: 'updated_at' },
                 { name: 'thumbnail_url' },
                 { name: 'full_content' },
@@ -345,7 +330,7 @@ test('RsssUserDO migrates missing feed publish state columns', async t => {
 
     setup.ctx.storage.sql.exec = ((query:string) => {
         if (query.includes('PRAGMA table_info(feeds)')) {
-            return result([
+            return fakeResult([
                 { name: 'updated_at' },
                 { name: 'last_error' },
                 { name: 'last_status' },
@@ -374,3 +359,99 @@ test('RsssUserDO migrates missing feed publish state columns', async t => {
         )
     }
 })
+
+// AC14.1: FEEDS_UPDATED_AT_BUMP_KEY guard cannot re-run the bump on
+// a cold start (flag persisted before the UPDATE).
+test('RsssUserDO does not re-run updated_at bump when flag is already set',
+    async t => {
+        // Simulate a cold start where the bump flag was already set
+        // from a previous instantiation
+        const setup = createConstructorContext(8)
+        let bumpUpdateRan = false
+
+        // Override ctx.storage.get to return the bump flag as already set
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const originalGet = (setup.ctx.storage.get as any).bind(
+            setup.ctx.storage
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(setup.ctx.storage.get as any) = async (key:string|string[]) => {
+            if (key === 'feeds_updated_at_bump_for_last_pulled_at') {
+                return true
+            }
+            return originalGet(key)
+        }
+
+        // Override sql.exec to track whether the bump UPDATE ran
+        const originalExec = setup.ctx.storage.sql.exec.bind(
+            setup.ctx.storage.sql
+        )
+        setup.ctx.storage.sql.exec = ((query:string) => {
+            if (query === "UPDATE feeds SET updated_at = datetime('now')") {
+                bumpUpdateRan = true
+            }
+            return originalExec(query)
+        }) as typeof setup.ctx.storage.sql.exec
+
+        const userDo = new RsssUserDO(setup.ctx, {} as never)
+        await setup.ready()
+
+        t.ok(userDo, 'Durable Object constructed successfully')
+        t.equal(bumpUpdateRan, false,
+            'updated_at bump UPDATE does not run when flag is already set')
+    })
+
+// AC14.1 (ordering): the bump flag must be persisted BEFORE the UPDATE, so a
+// cold start between them cannot re-run the one-time bump. Flag is unset here,
+// so the guarded block runs; we record the order of the flag put vs the UPDATE.
+test('RsssUserDO persists the updated_at bump flag before running the bump',
+    async t => {
+        const setup = createConstructorContext(8)
+        const order:string[] = []
+        const BUMP_KEY = 'feeds_updated_at_bump_for_last_pulled_at'
+
+        // Flag unset -> the bump block runs.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const originalGet = (setup.ctx.storage.get as any).bind(
+            setup.ctx.storage
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(setup.ctx.storage.get as any) = async (key:string|string[]) => {
+            if (key === BUMP_KEY) return undefined
+            return originalGet(key)
+        }
+
+        // Record when the bump flag is persisted.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const originalPut = (setup.ctx.storage.put as any).bind(
+            setup.ctx.storage
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(setup.ctx.storage.put as any) = async (key:string, value:unknown) => {
+            if (key === BUMP_KEY) order.push('put-flag')
+            return originalPut(key, value)
+        }
+
+        // Record when the bump UPDATE runs.
+        const originalExec = setup.ctx.storage.sql.exec.bind(
+            setup.ctx.storage.sql
+        )
+        setup.ctx.storage.sql.exec = ((query:string) => {
+            if (query === "UPDATE feeds SET updated_at = datetime('now')") {
+                order.push('bump-update')
+            }
+            return originalExec(query)
+        }) as typeof setup.ctx.storage.sql.exec
+
+        const userDo = new RsssUserDO(setup.ctx, {} as never)
+        await setup.ready()
+
+        t.ok(userDo, 'Durable Object constructed successfully')
+        const putIdx = order.indexOf('put-flag')
+        const updateIdx = order.indexOf('bump-update')
+        t.ok(putIdx >= 0, 'bump flag is persisted')
+        t.ok(updateIdx >= 0, 'bump UPDATE runs when flag is unset')
+        t.ok(putIdx < updateIdx,
+            'flag is persisted BEFORE the bump UPDATE (idempotent on crash)')
+    })
+

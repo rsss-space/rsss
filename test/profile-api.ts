@@ -6,6 +6,7 @@
  *    profileApiHandler exported from src/server/profile-api.ts)
  */
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import {
     createSlingshotClient,
@@ -13,6 +14,7 @@ import {
 } from '../src/server/microcosm-client.js'
 import {
     buildProfileResponse,
+    parseSubscriptionRecord,
     type ProfileApiDeps
 } from '../src/server/profile-api.js'
 
@@ -21,18 +23,6 @@ import {
 interface FollowRow {
     subject_did:string
     rkey:string
-}
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
-
-function result (rows:unknown[]):QueryResult {
-    return {
-        toArray () { return rows },
-        one () { return rows[0] ?? null }
-    }
 }
 
 function createFollowSql (initialFollows:FollowRow[] = []) {
@@ -44,12 +34,12 @@ function createFollowSql (initialFollows:FollowRow[] = []) {
             if (query.includes(
                 'SELECT rkey FROM graph_follows WHERE subject_did = ?'
             )) {
-                return result(
+                return fakeResult(
                     follows.filter(f => f.subject_did === params[0])
                 )
             }
             // Absorb DDL and other queries
-            return result([])
+            return fakeResult([])
         }
     }
 }
@@ -349,3 +339,108 @@ test('buildProfileResponse returns empty subscriptions on list error',
         t.equal(profile.subscriptions.length, 0)
     }
 )
+
+// ---- correctness-audit.AC4: URL validation tests ----
+
+test('AC4.1: siteUrl with javascript: protocol → parsed sub has siteUrl === null',
+    t => {
+        const result = parseSubscriptionRecord(
+            'at://did:plc:alice/space.rsss.feed.subscription/rk1',
+            {
+                feedUrl: 'https://example.com/feed',
+                siteUrl: 'javascript:alert(1)',
+                title: 'Malicious Sub'
+            }
+        )
+
+        t.ok(result, 'record parsed (feedUrl valid)')
+        t.equal(result?.siteUrl, null, 'malicious siteUrl nulled')
+        t.equal(result?.feedUrl, 'https://example.com/feed',
+            'feedUrl preserved')
+        t.equal(result?.title, 'Malicious Sub', 'title preserved')
+        t.equal(result?.uri,
+            'at://did:plc:alice/space.rsss.feed.subscription/rk1',
+            'uri preserved')
+    }
+)
+
+test('AC4.2: feedUrl with non-http(s) protocol → parseSubscriptionRecord returns null',
+    t => {
+        const testCases = [
+            {
+                feedUrl: 'javascript:alert(1)',
+                desc: 'javascript:'
+            },
+            {
+                feedUrl: 'data:text/html,<script>alert(1)</script>',
+                desc: 'data:'
+            },
+            {
+                feedUrl: 'mailto:attacker@evil.com',
+                desc: 'mailto:'
+            }
+        ]
+
+        for (const testCase of testCases) {
+            const result = parseSubscriptionRecord(
+                'at://did:plc:alice/space.rsss.feed.subscription/rk1',
+                {
+                    feedUrl: testCase.feedUrl,
+                    siteUrl: 'https://example.com',
+                    title: 'Sub with bad feed'
+                }
+            )
+            t.equal(result, null,
+                `${testCase.desc} feedUrl → null`)
+        }
+    }
+)
+
+test('AC4.3: valid http(s) feedUrl + siteUrl pass through unchanged', t => {
+    const result = parseSubscriptionRecord(
+        'at://did:plc:alice/space.rsss.feed.subscription/rk1',
+        {
+            feedUrl: 'https://feeds.example.com/rss',
+            siteUrl: 'https://example.com',
+            title: 'Example Feed'
+        }
+    )
+
+    t.ok(result, 'record parsed')
+    t.equal(result?.feedUrl, 'https://feeds.example.com/rss',
+        'feedUrl unchanged')
+    t.equal(result?.siteUrl, 'https://example.com',
+        'siteUrl unchanged')
+    t.equal(result?.title, 'Example Feed', 'title unchanged')
+})
+
+test('AC4.3: http feedUrl valid (not just https)', t => {
+    const result = parseSubscriptionRecord(
+        'at://did:plc:alice/space.rsss.feed.subscription/rk2',
+        {
+            feedUrl: 'http://example.com/feed',
+            siteUrl: 'http://example.com'
+        }
+    )
+
+    t.ok(result, 'record parsed')
+    t.equal(result?.feedUrl, 'http://example.com/feed',
+        'http feedUrl accepted')
+    t.equal(result?.siteUrl, 'http://example.com',
+        'http siteUrl accepted')
+})
+
+test('AC4.1: missing siteUrl → parsed sub has siteUrl === null', t => {
+    const result = parseSubscriptionRecord(
+        'at://did:plc:alice/space.rsss.feed.subscription/rk3',
+        {
+            feedUrl: 'https://example.com/feed',
+            title: 'Feed without site'
+        }
+    )
+
+    t.ok(result, 'record parsed')
+    t.equal(result?.siteUrl, null, 'missing siteUrl → null')
+    t.equal(result?.feedUrl, 'https://example.com/feed',
+        'feedUrl preserved')
+})

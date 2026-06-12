@@ -54,6 +54,12 @@ export class SQLiteWorkerClient {
         return this.send<T[]>({ type: 'query', sql, bind })
     }
 
+    remove (
+        options:{ did?:string; filename?:string; directory?:string } = {}
+    ):Promise<void> {
+        return this.send<void>({ type: 'remove', ...options })
+    }
+
     async close ():Promise<void> {
         if (this.closed) return
         try {

@@ -1,5 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import { fakeResult } from './helpers/sql-fake.js'
 
 const pollerStorage = new Map<string, unknown>()
 
@@ -443,10 +444,7 @@ test('fetchFeed stores og image for newly inserted items', async t => {
             }
 
             if (query.includes('SELECT id FROM items')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ id: 42 })
-                }
+                return fakeResult([{ id: 42 }])
             }
 
             if (query.includes('UPDATE items SET') &&
@@ -471,10 +469,7 @@ test('fetchFeed stores og image for newly inserted items', async t => {
             }
 
             if (query.includes('UPDATE user_state SET feed_version')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: 1 })
-                }
+                return fakeResult([{ feed_version: 1 }])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)
@@ -581,10 +576,7 @@ test('fetchFeed stores article og:image in og_image_url', async t => {
             }
 
             if (query.includes('SELECT id FROM items')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ id: 43 })
-                }
+                return fakeResult([{ id: 43 }])
             }
 
             if (query.includes('UPDATE items SET') &&
@@ -609,10 +601,7 @@ test('fetchFeed stores article og:image in og_image_url', async t => {
             }
 
             if (query.includes('UPDATE user_state SET feed_version')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: 1 })
-                }
+                return fakeResult([{ feed_version: 1 }])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)
@@ -752,10 +741,7 @@ test('fetchFeed writes cached blurhash metadata without queueing',
                 }
 
                 if (query.includes('SELECT id FROM items')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ id: 44 })
-                    }
+                    return fakeResult([{ id: 44 }])
                 }
 
                 if (query.includes('UPDATE items SET') &&
@@ -781,10 +767,7 @@ test('fetchFeed writes cached blurhash metadata without queueing',
 
                 if (query.includes('UPDATE user_state SET feed_version')) {
                     feedVersionBumps++
-                    return {
-                        toArray: () => [],
-                        one: () => ({ feed_version: feedVersionBumps })
-                    }
+                    return fakeResult([{ feed_version: feedVersionBumps }])
                 }
 
                 if (query.includes('SELECT feeds.id FROM feeds')) {
@@ -796,13 +779,6 @@ test('fetchFeed writes cached blurhash metadata without queueing',
                     query.includes('GROUP BY feeds.id')
                 ) {
                     return { toArray: () => [] }
-                }
-
-                if (query.includes('UPDATE user_state SET feed_version')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ feed_version: 1 })
-                    }
                 }
 
                 throw new Error(`Unexpected SQL: ${query}`)
@@ -968,10 +944,7 @@ test('fetchFeed enqueues blurhash job on cache miss', async t => {
             }
 
             if (query.includes('SELECT id FROM items')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ id: 45 })
-                }
+                return fakeResult([{ id: 45 }])
             }
 
             if (query.includes('UPDATE items SET') &&
@@ -987,10 +960,7 @@ test('fetchFeed enqueues blurhash job on cache miss', async t => {
 
             if (query.includes('UPDATE user_state SET feed_version')) {
                 feedVersionBumps++
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: feedVersionBumps })
-                }
+                return fakeResult([{ feed_version: feedVersionBumps }])
             }
 
             if (query.includes('SELECT feeds.id FROM feeds')) {
@@ -1002,13 +972,6 @@ test('fetchFeed enqueues blurhash job on cache miss', async t => {
                 query.includes('GROUP BY feeds.id')
             ) {
                 return { toArray: () => [] }
-            }
-
-            if (query.includes('UPDATE user_state SET feed_version')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: 1 })
-                }
             }
 
             throw new Error(`Unexpected SQL: ${query}`)
@@ -1112,11 +1075,7 @@ test('fetchFeed caps concurrent og image requests at four', async t => {
 
             if (query.includes('SELECT id FROM items')) {
                 const id = nextItemId++
-
-                return {
-                    toArray: () => [],
-                    one: () => ({ id })
-                }
+                return fakeResult([{ id }])
             }
 
             if (query.includes('UPDATE items SET') &&
@@ -1137,10 +1096,7 @@ test('fetchFeed caps concurrent og image requests at four', async t => {
             }
 
             if (query.includes('UPDATE user_state SET feed_version')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: 1 })
-                }
+                return fakeResult([{ feed_version: 1 }])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)
@@ -1255,10 +1211,7 @@ test('fetchFeed silently handles og failures, uses parser image', async t => {
             }
 
             if (query.includes('SELECT id FROM items')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ id: 77 })
-                }
+                return fakeResult([{ id: 77 }])
             }
 
             if (query.includes('UPDATE items SET') &&
@@ -1292,10 +1245,7 @@ test('fetchFeed silently handles og failures, uses parser image', async t => {
             }
 
             if (query.includes('UPDATE user_state SET feed_version')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: 1 })
-                }
+                return fakeResult([{ feed_version: 1 }])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)
@@ -1431,10 +1381,7 @@ test('fetchFeed records non-duplicate item insert failures', async t => {
             }
 
             if (query.includes('UPDATE user_state SET feed_version')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: 1 })
-                }
+                return fakeResult([{ feed_version: 1 }])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)
@@ -1528,10 +1475,7 @@ test('fetchFeed stays quiet when article URL exceeds redirect budget',
                 }
 
                 if (query.includes('SELECT id FROM items')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ id: 88 })
-                    }
+                    return fakeResult([{ id: 88 }])
                 }
 
                 if (query.includes('UPDATE items SET') &&
@@ -1551,10 +1495,7 @@ test('fetchFeed stays quiet when article URL exceeds redirect budget',
                 }
 
                 if (query.includes('UPDATE user_state SET feed_version')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ feed_version: 1 })
-                    }
+                    return fakeResult([{ feed_version: 1 }])
                 }
 
                 throw new Error(`Unexpected SQL: ${query}`)
@@ -1664,10 +1605,7 @@ test('fetchFeed resolves og image after multi-hop article redirects',
                 }
 
                 if (query.includes('SELECT id FROM items')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ id: 101 })
-                    }
+                    return fakeResult([{ id: 101 }])
                 }
 
                 if (query.includes('UPDATE items SET') &&
@@ -1691,10 +1629,7 @@ test('fetchFeed resolves og image after multi-hop article redirects',
                 }
 
                 if (query.includes('UPDATE user_state SET feed_version')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ feed_version: 1 })
-                    }
+                    return fakeResult([{ feed_version: 1 }])
                 }
 
                 throw new Error(`Unexpected SQL: ${query}`)
@@ -1813,10 +1748,7 @@ test('fetchFeed falls back to feed image when article redirects loop',
                 }
 
                 if (query.includes('SELECT id FROM items')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ id: 202 })
-                    }
+                    return fakeResult([{ id: 202 }])
                 }
 
                 if (query.includes('UPDATE items SET') &&
@@ -1840,10 +1772,7 @@ test('fetchFeed falls back to feed image when article redirects loop',
                 }
 
                 if (query.includes('UPDATE user_state SET feed_version')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ feed_version: 1 })
-                    }
+                    return fakeResult([{ feed_version: 1 }])
                 }
 
                 throw new Error(`Unexpected SQL: ${query}`)
@@ -1952,10 +1881,7 @@ test('fetchFeed leaves thumbnail null when article loops and feed has none',
                 }
 
                 if (query.includes('SELECT id FROM items')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ id: 303 })
-                    }
+                    return fakeResult([{ id: 303 }])
                 }
 
                 if (query.includes('UPDATE items SET') &&
@@ -1976,10 +1902,7 @@ test('fetchFeed leaves thumbnail null when article loops and feed has none',
                 }
 
                 if (query.includes('UPDATE user_state SET feed_version')) {
-                    return {
-                        toArray: () => [],
-                        one: () => ({ feed_version: 1 })
-                    }
+                    return fakeResult([{ feed_version: 1 }])
                 }
 
                 throw new Error(`Unexpected SQL: ${query}`)
@@ -2098,10 +2021,7 @@ test('fetchFeed loudly reports feed-XML redirect overflow', async t => {
             }
 
             if (query.includes('UPDATE user_state SET feed_version')) {
-                return {
-                    toArray: () => [],
-                    one: () => ({ feed_version: 1 })
-                }
+                return fakeResult([{ feed_version: 1 }])
             }
 
             throw new Error(`Unexpected SQL: ${query}`)

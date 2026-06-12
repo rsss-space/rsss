@@ -8,11 +8,7 @@
  */
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
-
-interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
-}
+import { fakeResult } from './helpers/sql-fake.js'
 
 interface FakeStorage {
     get:<T>(key:string) => Promise<T | undefined>
@@ -25,13 +21,6 @@ interface FakeStorage {
 interface FakeKv {
     get:(key:string) => Promise<string|null>
     delete:(key:string) => Promise<void>
-}
-
-function emptyResult ():QueryResult {
-    return {
-        toArray () { return [] },
-        one () { return null }
-    }
 }
 
 function createDeletionDo (initial:{
@@ -48,7 +37,7 @@ function createDeletionDo (initial:{
     let refreshedFeeds = false
 
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
+        sql:{ exec:(query:string, ...params:unknown[]) => ReturnType<typeof fakeResult> }
         ctx:{ storage:FakeStorage }
         env:{ SESSIONS:FakeKv } & Record<string, unknown>
         alarm:() => Promise<void>
@@ -57,7 +46,7 @@ function createDeletionDo (initial:{
     userDo.sql = {
         exec (query:string) {
             sqlExecutions.push(query)
-            return emptyResult()
+            return fakeResult([])
         }
     }
 

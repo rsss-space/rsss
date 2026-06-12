@@ -1,4 +1,7 @@
-import { describeLocalDbError } from './sqlite-init.js'
+import {
+    classifyLocalDbError,
+    describeLocalDbError
+} from './sqlite-init.js'
 import {
     execDb,
     queryDb,
@@ -48,6 +51,7 @@ interface PendingOutboxRefs {
     itemIds:Set<number>
     markAllReadFeedIds:Set<number>
     markAllReadAll:boolean
+    urls:Set<string>
 }
 
 async function getLastPullAt (db:Sqlite3Db):Promise<string|null> {
@@ -294,9 +298,13 @@ export async function upsertItem (
 async function getPendingOutboxRefs (
     db:Sqlite3Db
 ):Promise<PendingOutboxRefs> {
-    const rows = await queryDb<{ op:string; target_id:number|null }>(
+    const rows = await queryDb<{
+        op:string
+        target_id:number|null
+        payload:string
+    }>(
         db,
-        `SELECT op, target_id
+        `SELECT op, target_id, payload
          FROM outbox
          WHERE op IN (
             'add_feed',
@@ -310,7 +318,8 @@ async function getPendingOutboxRefs (
         feedIds: new Set(),
         itemIds: new Set(),
         markAllReadFeedIds: new Set(),
-        markAllReadAll: false
+        markAllReadAll: false,
+        urls: new Set()
     }
 
     for (const row of rows) {
@@ -319,7 +328,20 @@ async function getPendingOutboxRefs (
             row.target_id !== null
         ) {
             refs.feedIds.add(row.target_id)
-        } else if (row.op === 'update_item' && row.target_id !== null) {
+        }
+        if (row.op === 'add_feed') {
+            try {
+                const parsed = JSON.parse(row.payload) as {
+                    url?:string
+                }
+                if (parsed.url) {
+                    refs.urls.add(parsed.url)
+                }
+            } catch {
+                // ignore malformed payload
+            }
+        }
+        if (row.op === 'update_item' && row.target_id !== null) {
             refs.itemIds.add(row.target_id)
         } else if (row.op === 'mark_all_read') {
             if (row.target_id === null) {
@@ -337,7 +359,8 @@ function shouldSkipFeed (
     feed:Record<string, unknown>,
     refs:PendingOutboxRefs
 ):boolean {
-    return refs.feedIds.has(feed.id as number)
+    return refs.feedIds.has(feed.id as number) ||
+        refs.urls.has(feed.url as string)
 }
 
 function shouldSkipItem (
@@ -439,9 +462,54 @@ export async function pullSync (
                     skippedRows = true
                     continue
                 }
-                await upsertFeed(db, feed)
-                feedCount++
-                opts.onFeedUpserted?.(feedCount)
+                let upserted = false
+                try {
+                    await execDb(db, 'SAVEPOINT feed_upsert')
+                    try {
+                        await upsertFeed(db, feed)
+                        await execDb(db, 'RELEASE feed_upsert')
+                        upserted = true
+                    } catch (err) {
+                        try {
+                            await execDb(db, 'ROLLBACK TO feed_upsert')
+                        } catch {
+                            //  ignore rollback errors
+                        }
+                        try {
+                            await execDb(db, 'RELEASE feed_upsert')
+                        } catch {
+                            // ignore release errors
+                        }
+                        // Storage exhaustion is database-wide, not a
+                        // per-feed conflict: abort the pull so the quota
+                        // failure reaches the sync/bootstrap UI signals.
+                        if (classifyLocalDbError(err) === 'quota') {
+                            throw err
+                        }
+                        // url collision (or other per-feed failure): skip this
+                        // feed this pull. Mark skippedRows so the cursor is not
+                        // advanced — it will be reconciled by push-sync
+                        // (optimistic add) or re-pulled next sync.
+                        skippedRows = true
+                    }
+                } catch (err) {
+                    // Let the quota rethrow from the inner catch (and
+                    // quota failures creating the SAVEPOINT) abort the
+                    // pull instead of being skipped like a per-feed
+                    // conflict.
+                    if (classifyLocalDbError(err) === 'quota') {
+                        throw err
+                    }
+                    // SAVEPOINT creation failed - skip this feed
+                    skippedRows = true
+                }
+                // Run success side-effects only after the savepoint is fully
+                // released, so a throwing onFeedUpserted callback is not
+                // misattributed to a feed-upsert failure above.
+                if (upserted) {
+                    feedCount++
+                    opts.onFeedUpserted?.(feedCount)
+                }
             }
             let itemCount = 0
             for (const item of data.items) {

@@ -5,6 +5,8 @@
  * minus the user themselves and people they already follow on rsss.
  */
 
+import type { BlueskyFollowsResult } from './bluesky-follows.js'
+
 export interface RegistryUser {
     did:string
     handle:string
@@ -20,7 +22,7 @@ export interface RecommendedUser {
 }
 
 export interface RecommendationsDeps {
-    getBlueskyFollows(did:string):Promise<Array<{ did:string; handle:string }>>
+    getBlueskyFollows(did:string):Promise<BlueskyFollowsResult>
     batchLookupRegistry(dids:string[]):Promise<RegistryUser[]>
     listRsssFollowing():Promise<string[]>
 }
@@ -29,7 +31,9 @@ export async function computeRecommendations (
     userDid:string,
     deps:RecommendationsDeps
 ):Promise<RecommendedUser[]> {
-    const blueskyFollows = await deps.getBlueskyFollows(userDid)
+    const result = await deps.getBlueskyFollows(userDid)
+    // Phase 8: surface result.ok distinctly (e.g. 503)
+    const blueskyFollows = result.follows
     if (blueskyFollows.length === 0) return []
 
     const followDids = blueskyFollows.map(f => f.did)

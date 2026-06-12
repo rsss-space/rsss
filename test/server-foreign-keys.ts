@@ -1,4 +1,5 @@
 import { test } from '@substrate-system/tapzero'
+import { fakeResult } from './helpers/sql-fake.js'
 // esbuild --loader:.wasm=dataurl inlines the binary as a base64 data URL
 // @ts-expect-error -- no type declarations for .wasm imports
 import wasmUrl from '@sqlite.org/sqlite-wasm/sqlite3.wasm'
@@ -24,18 +25,6 @@ type SqliteModule = (opts:{
     }
 }>
 
-function createFakeSqlResult (rows:Row[]) {
-    return {
-        toArray ():Row[] {
-            return rows
-        },
-
-        one ():Row|null {
-            return rows[0] ?? null
-        }
-    }
-}
-
 function createFakeSqlStorage (execSql:SqliteExec) {
     return {
         exec (sql:string, ...bind:unknown[]) {
@@ -46,7 +35,7 @@ function createFakeSqlStorage (execSql:SqliteExec) {
                 rowMode: 'object',
                 resultRows: rows
             })
-            return createFakeSqlResult(rows)
+            return fakeResult(rows)
         }
     }
 }

@@ -8,7 +8,7 @@ import './graph.css'
 interface GraphData {
     following:string[]
     followers:string[]
-    followersCount:number
+    followersCount:number|null
     constellationAvailable:boolean
 }
 
@@ -120,7 +120,9 @@ export const GraphRoute:FunctionComponent<{
             <section class="graph-section">
                 <h2>
                     Followers
-                    <span class="graph-count">${data.followersCount}</span>
+                    ${data.followersCount !== null && html`
+                        <span class="graph-count">${data.followersCount}</span>
+                    `}
                     ${!data.constellationAvailable && html`
                         <span class="graph-degraded">(counts may be delayed)</span>
                     `}
