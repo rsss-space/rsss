@@ -49,6 +49,7 @@ const commands = [
     'npm run test:feeds-refresh-pool',
     'npm run test:bluesky-follows',
     'npm run test:list-remote-subscriptions',
+    'npm run test:subscription-reconcile',
 
     // --- node-platform tests (esbuild -> node -> tap-spec) ---
     [
