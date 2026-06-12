@@ -345,7 +345,7 @@ test('listRemoteSubscriptions rejects blocked PDS hosts (AC20.1)',
                     did: 'did:plc:test',
                     pdsEndpoint: 'http://127.0.0.1:8080'
                 })
-            } catch (err) {
+            } catch (_err) {
                 threw = true
             }
 
