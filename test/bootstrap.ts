@@ -1123,11 +1123,12 @@ test('AC8.1: tab lock released even if OPFS delete throws',
         }
 
         // When removeOpfsDb throws, the finally block should still
-        // release the lock. The code structure guarantees this:
-        // releaseLocalTabLock is in the finally block after removeOpfsDb.
-        // We verify by ensuring bootstrap completes without hanging,
-        // and we check that the lock revision increased (mark of release).
-        const { localTabLockRevision } = await import(
+        // release the lock. We verify this by checking tab state after
+        // the error: if the lock were released before removeOpfsDb
+        // (the bug), the state would transition from 'primary' to
+        // 'waiting'. The finally block ensures release after the delete
+        // attempt, so we assert 'waiting' to confirm the release happened.
+        const { getTabCoordinationState } = await import(
             '../src/client/db/tab-coordination.js'
         )
 
@@ -1163,9 +1164,6 @@ test('AC8.1: tab lock released even if OPFS delete throws',
         } as unknown as SQLiteWorkerClient))
 
         try {
-            // Record lock revision before bootstrap
-            const revisionBefore = localTabLockRevision.value
-
             // Drive terminal reset which calls removeOpfsDb (will throw)
             await bootstrapLocalDb(
                 'did:test:ac8-lock-error',
@@ -1173,16 +1171,18 @@ test('AC8.1: tab lock released even if OPFS delete throws',
                 { confirmTerminalReset: async () => true }
             )
 
-            // After bootstrap completes, check that the lock was released.
-            // Lock release increments localTabLockRevision, marking the
-            // transition from 'primary' to 'released' state.
-            const revisionAfter = localTabLockRevision.value
+            // After bootstrap completes despite the error, check that the
+            // lock was released. The tab state transitions from 'primary'
+            // (acquired) to 'waiting' (released) only when
+            // releaseLocalTabLock() is called.
+            const finalState = getTabCoordinationState()
 
             t.equal(syncSubscriptions.value, false,
                 'terminal reset path disables syncSubscriptions')
-            t.ok(
-                revisionAfter > revisionBefore,
-                'lock revision increased, indicating lock was released'
+            t.equal(
+                finalState,
+                'waiting',
+                'lock released to waiting state even after delete throw'
             )
         } finally {
             setSQLiteWorkerClientFactoryForTests(null)

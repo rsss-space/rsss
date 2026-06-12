@@ -148,11 +148,18 @@ test('AC9.2: reconcile matches records with canonical URL',
                 subscriptionFromRecord(
                     record:ListedSubscriptionRecord
                 ):{ feedUrl:string; subscription:RemoteSubscription }|null
+                getOAuthCredentials():Promise<
+                    OAuthCredentialRecord|null
+                >
+                shouldRunPublishReconcile():Promise<boolean>
                 reconcilePublishedFeeds():Promise<{
                     ok:boolean
                     changed:number
                     error?:string
                 }>
+                sql:{
+                    exec(query:string, ...params:unknown[]):unknown
+                }
             }
 
             // Set up a mock for listRemoteSubscriptions.
@@ -284,6 +291,92 @@ test('AC9.2: reconcile matches records with canonical URL',
             t.ok(
                 altFoundRecord,
                 'lookup on alternate canonical form also finds the record'
+            )
+
+            // Now test the real reconcilePublishedFeeds with a seeded feed:
+            // The feed's raw URL differs from remote by fragment/query-order,
+            // but canonicalizes to the same form, so reconcile should match it.
+            // Use a non-canonical form to test that canonical lookup is required.
+            const feedRawUrl = (
+                'https://example.com/feed.xml?b=2&a=1#section'
+            )
+            const feedId = 1
+            const updatesSql:string[] = []
+            const updateParams:unknown[][] = []
+
+            // Stub the sql object to return a feed and capture updates
+            userDo.sql = {
+                exec (query:string, ...params:unknown[]) {
+                    if (query === 'SELECT * FROM feeds') {
+                        return {
+                            toArray: () => [
+                                {
+                                    id: feedId,
+                                    url: feedRawUrl,
+                                    title: 'Test Feed',
+                                    description: null,
+                                    site_url: null,
+                                    last_fetched: null,
+                                    last_error: null,
+                                    last_status: null,
+                                    published: 0,
+                                    published_rkey: null,
+                                    published_at: null,
+                                    publish_error: null,
+                                    created_at: '2024-01-01T00:00:00Z',
+                                    updated_at: '2024-01-01T00:00:00Z'
+                                } as Feed
+                            ]
+                        }
+                    }
+                    if (query.includes('UPDATE feeds SET')) {
+                        updatesSql.push(query)
+                        updateParams.push(params)
+                        return {}
+                    }
+                    if (query.includes('UPDATE user_state')) {
+                        return {
+                            one: () => ({ feed_version: 2 })
+                        }
+                    }
+                    return {}
+                }
+            }
+
+            // Stub OAuth and reconcile-run checks
+            userDo.getOAuthCredentials = async () => ({
+                did: 'did:plc:test',
+                pdsEndpoint: 'https://pds.example.com/'
+            })
+
+            userDo.shouldRunPublishReconcile = async () => true
+
+            // Call reconcilePublishedFeeds
+            const result = await userDo.reconcilePublishedFeeds()
+
+            t.equal(result.ok, true, 'reconcilePublishedFeeds succeeded')
+            t.equal(
+                result.changed,
+                1,
+                'reconcile detected one changed feed (matched by canonical URL)'
+            )
+
+            // Verify that the UPDATE was called with the correct rkey
+            t.equal(
+                updatesSql.length,
+                1,
+                'exactly one UPDATE feeds was executed'
+            )
+            const updateParams0 = updateParams[0]
+            t.equal(
+                updateParams0[0],
+                remoteRkey,
+                'UPDATE called with remote rkey from canonical lookup'
+            )
+            t.equal(
+                updateParams0[2],
+                feedId,
+                'UPDATE applied to the correct feed'
             )
         } finally {
             globalThis.fetch = originalFetch
