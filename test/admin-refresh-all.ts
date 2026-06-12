@@ -1,12 +1,13 @@
 /**
  * Tests for AC19.1: /admin/refresh-all pagination
- * Verifies that the endpoint accepts cursor/limit query params and
- * processes only one page without attempting to fetch all users.
+ * Verifies that the REAL /admin/refresh-all route accepts cursor/limit query
+ * params, processes only one page of users, and returns pagination state.
  */
 import { test } from '@substrate-system/tapzero'
-import { Hono } from 'hono'
+import app from '../src/server/index.js'
 
 const TEST_ADMIN_TOKEN = 'secret-admin-token-abc123'
+const TEST_CSRF_TOKEN = 'test-csrf-token-12345'
 
 interface KVListResult {
     keys:Array<{ name:string; expiration?:number }>
@@ -14,117 +15,63 @@ interface KVListResult {
     cursor?:string
 }
 
-// Mock the constantTimeEqual since we need it for requireAdmin
-async function constantTimeEqual (a:string, b:string):Promise<boolean> {
-    const enc = new TextEncoder()
-    const [ha, hb] = await Promise.all([
-        crypto.subtle.digest('SHA-256', enc.encode(a)),
-        crypto.subtle.digest('SHA-256', enc.encode(b))
-    ])
-    const va = new Uint8Array(ha)
-    const vb = new Uint8Array(hb)
-    let diff = 0
-    for (let i = 0; i < va.length; i++) diff |= va[i]! ^ vb[i]!
-    return diff === 0
+class MockKvNamespace {
+    private data = new Map<string, string>()
+    private kvListImpl:(opts:{
+        prefix?:string
+        limit?:number
+        cursor?:string
+    }) => Promise<KVListResult>
+
+    constructor (kvListImpl:(opts:{
+        prefix?:string
+        limit?:number
+        cursor?:string
+    }) => Promise<KVListResult>) {
+        this.kvListImpl = kvListImpl
+    }
+
+    async get (key:string):Promise<string|null> {
+        return this.data.get(key) ?? null
+    }
+
+    async put (key:string, value:string):Promise<void> {
+        this.data.set(key, value)
+    }
+
+    async list (opts:{
+        prefix?:string
+        limit?:number
+        cursor?:string
+    }):Promise<KVListResult> {
+        return this.kvListImpl(opts)
+    }
 }
 
-function makeRouter (kvList:(opts:{
-    prefix?:string
-    limit?:number
-    cursor?:string
-}) => Promise<KVListResult>) {
-    const router = new Hono()
-
-    // Add requireAdmin middleware
-    router.use('*', async (c, next) => {
-        const expected = TEST_ADMIN_TOKEN
-        if (!expected) {
-            return c.json({ error: 'admin_disabled' }, 503)
-        }
-        const header = c.req.header('authorization') || ''
-        const match = header.match(/^Bearer\s+(.+)$/i)
-        const provided = match ? match[1] : ''
-        if (!provided) {
-            return c.json({ error: 'unauthorized' }, 401)
-        }
-        const isAuthorized = await constantTimeEqual(provided, expected)
-        if (!isAuthorized) {
-            return c.json({ error: 'unauthorized' }, 401)
-        }
-        await next()
-    })
-
-    // Add the /admin/refresh-all route
-    router.post('/admin/refresh-all', async (c) => {
-        const body = await c.req.json<{
-            dids?:string[]
-        }>().catch(() => ({ dids: undefined }))
-
-        if (body.dids && body.dids.length > 0) {
-            const dids = body.dids
-            const results:Record<string, unknown>[] = []
-            for (const did of dids) {
-                results.push({
-                    did,
-                    handle: `handle-${did.slice(-1)}`,
-                    success: true
-                })
-            }
-            return c.json({
-                results,
-                list_complete: true
+function makeEnv (
+    kvList:(opts:{
+        prefix?:string
+        limit?:number
+        cursor?:string
+    }) => Promise<KVListResult>
+) {
+    const kv = new MockKvNamespace(kvList)
+    return {
+        ADMIN_TOKEN: TEST_ADMIN_TOKEN,
+        APP_ORIGIN: 'http://localhost:3000',
+        SESSIONS: kv as unknown as KVNamespace,
+        USER_DO: {
+            idFromName: () => 'id',
+            get: () => ({
+                fetch: async (_request:Request) => {
+                    return new Response(JSON.stringify({
+                        success: true
+                    }), { status: 200 })
+                }
             })
-        }
-
-        // This is the key part: accept limit and cursor from query
-        const limit = c.req.query('limit')
-            ? parseInt(c.req.query('limit')!, 10)
-            : 100
-        const cursor = c.req.query('cursor') || undefined
-
-        // List users from KV with pagination params
-        const result = await kvList({
-            prefix: 'user:',
-            limit,
-            cursor
-        })
-
-        const dids = result.keys.map(
-            (key) => key.name.replace('user:', '')
-        )
-
-        if (dids.length === 0) {
-            return c.json({
-                error: 'No users found. Log in first.',
-                results: []
-            }, 404)
-        }
-
-        // Process only this page's DIDs (don't loop)
-        const results:Record<string, unknown>[] = []
-        for (const did of dids) {
-            results.push({
-                did,
-                handle: `handle-${did.slice(-1)}`,
-                success: true
-            })
-        }
-
-        // Return the response WITH cursor and list_complete
-        const response:Record<string, unknown> = {
-            results,
-            list_complete: result.list_complete
-        }
-
-        // Include cursor if one exists
-        if (result.cursor) {
-            response.cursor = result.cursor
-        }
-
-        return c.json(response)
-    })
-
-    return router
+        },
+        NODE_ENV: 'test'
+    }
 }
 
 test('AC19.1: returns cursor and list_complete when more users exist', async (t) => {
@@ -144,16 +91,21 @@ test('AC19.1: returns cursor and list_complete when more users exist', async (t)
         }
     }
 
-    const router = makeRouter(mockKvList)
+    const env = makeEnv(mockKvList)
 
     // Test with default limit
-    const response = await router.request(
-        new Request('http://localhost/admin/refresh-all', {
+    const response = await app.request(
+        'http://localhost:3000/admin/refresh-all',
+        {
             method: 'POST',
             headers: {
-                authorization: `Bearer ${TEST_ADMIN_TOKEN}`
+                authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+                origin: 'http://localhost:3000',
+                cookie: `csrf_token=${TEST_CSRF_TOKEN}`,
+                'x-csrf-token': TEST_CSRF_TOKEN
             }
-        })
+        },
+        env
     )
 
     t.equal(response.status, 200, 'returns 200')
@@ -194,18 +146,20 @@ test('AC19.1: respects custom limit query param', async (t) => {
         }
     }
 
-    const router = makeRouter(mockKvList)
+    const env = makeEnv(mockKvList)
 
-    const response = await router.request(
-        new Request(
-            'http://localhost/admin/refresh-all?limit=50',
-            {
-                method: 'POST',
-                headers: {
-                    authorization: `Bearer ${TEST_ADMIN_TOKEN}`
-                }
+    const response = await app.request(
+        'http://localhost:3000/admin/refresh-all?limit=50',
+        {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+                origin: 'http://localhost:3000',
+                cookie: `csrf_token=${TEST_CSRF_TOKEN}`,
+                'x-csrf-token': TEST_CSRF_TOKEN
             }
-        )
+        },
+        env
     )
 
     t.equal(response.status, 200, 'returns 200')
@@ -233,18 +187,20 @@ test('AC19.1: forwards cursor to KV.list', async (t) => {
         }
     }
 
-    const router = makeRouter(mockKvList)
+    const env = makeEnv(mockKvList)
 
-    const response = await router.request(
-        new Request(
-            'http://localhost/admin/refresh-all?cursor=from-prev-page',
-            {
-                method: 'POST',
-                headers: {
-                    authorization: `Bearer ${TEST_ADMIN_TOKEN}`
-                }
+    const response = await app.request(
+        'http://localhost:3000/admin/refresh-all?cursor=from-prev-page',
+        {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+                origin: 'http://localhost:3000',
+                cookie: `csrf_token=${TEST_CSRF_TOKEN}`,
+                'x-csrf-token': TEST_CSRF_TOKEN
             }
-        )
+        },
+        env
     )
 
     t.equal(response.status, 200, 'returns 200')

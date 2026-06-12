@@ -1,151 +1,219 @@
 /**
- * Tests for AC18.1, AC18.2: GET /api/recommendations route wiring
- * Verifies that the route is reachable, requires auth, and returns
- * computed recommendations.
+ * AC18.1 / AC18.2: GET /api/recommendations route wiring.
+ *
+ * These drive the REAL Hono `app` route (not computeRecommendations
+ * directly): a forged-but-valid session cookie exercises requireAuth + the
+ * session middleware, stubbed USER_DO / REGISTRY_DO back the route's deps, and
+ * globalThis.fetch is mocked for the public Bluesky getFollows call. This way
+ * the route's dep assembly, the getBlueskyFollows ok:false -> 503 branch, and
+ * the requireAuth gate are all exercised through production code.
  */
 import { test } from '@substrate-system/tapzero'
-import {
-    computeRecommendations,
-    type RecommendationsDeps,
-    type RegistryUser
-} from '../src/server/recommendations.js'
-import {
-    type BlueskyFollowsResult,
-    type BlueskyFollow
-} from '../src/server/bluesky-follows.js'
+import app from '../src/server/index.js'
+import { createSessionCookie } from '../src/server/auth/oauth.js'
 
-const TEST_SESSION = {
-    did: 'did:plc:testuser',
-    handle: 'testuser.bsky.social'
+const SECRET = 'test-recommendations-secret-0123456789abcdef'
+const READER_DID = 'did:plc:reader'
+
+class MemoryKv {
+    data = new Map<string, string>()
+    async get (k:string):Promise<string|null> {
+        return this.data.get(k) ?? null
+    }
+
+    async put (k:string, v:string):Promise<void> {
+        this.data.set(k, v)
+    }
+
+    async delete (k:string):Promise<void> {
+        this.data.delete(k)
+    }
 }
 
-test('AC18.1: GET /api/recommendations returns computed recommendations', async (t) => {
-    // Setup: mock deps for computeRecommendations
-    const blueskyFollows:BlueskyFollow[] = [
-        { did: 'did:plc:alice', handle: 'alice.bsky.social' },
-        { did: 'did:plc:bob', handle: 'bob.bsky.social' },
-        { did: 'did:plc:charlie', handle: 'charlie.bsky.social' }
-    ]
-
-    const registryUsers:RegistryUser[] = [
-        {
-            did: 'did:plc:alice',
-            handle: 'alice.bsky.social',
-            avatar: null
-        },
-        {
-            did: 'did:plc:bob',
-            handle: 'bob.bsky.social',
-            avatar: 'http://example.com/bob.jpg'
-        },
-        {
-            did: 'did:plc:charlie',
-            handle: 'charlie.bsky.social',
-            avatar: null
-        }
-    ]
-
-    const rsssFollowing:string[] = ['did:plc:bob'] // User already follows Bob
-
-    const deps:RecommendationsDeps = {
-        getBlueskyFollows: async (_did:string):Promise<BlueskyFollowsResult> => ({
-            follows: blueskyFollows,
-            ok: true
-        }),
-        batchLookupRegistry: async (_dids:string[]):Promise<RegistryUser[]> =>
-            registryUsers,
-        listRsssFollowing: async ():Promise<string[]> =>
-            rsssFollowing
-    }
-
-    const recommendations = await computeRecommendations(
-        TEST_SESSION.did,
-        deps
-    )
-
-    // Verify recommendations
-    t.equal(
-        recommendations.length,
-        2,
-        'excludes self and already-following (Bob)'
-    )
-
-    const alice = recommendations.find(r => r.did === 'did:plc:alice')
-    t.equal(alice?.did, 'did:plc:alice')
-    t.equal(alice?.handle, 'alice.bsky.social')
-    t.equal(alice?.displayName, null)
-    t.equal(alice?.avatar, null)
-
-    const charlie = recommendations.find(r => r.did === 'did:plc:charlie')
-    t.equal(charlie?.did, 'did:plc:charlie')
-    t.equal(charlie?.handle, 'charlie.bsky.social')
-    t.equal(charlie?.avatar, null)
-
-    // Bob should be excluded
-    const bob = recommendations.find(r => r.did === 'did:plc:bob')
-    t.equal(bob, undefined, 'excludes already-following Bob')
-})
-
-test('AC18.1: empty Bluesky follows returns empty recommendations', async (t) => {
-    const deps:RecommendationsDeps = {
-        getBlueskyFollows: async (_did:string):Promise<BlueskyFollowsResult> => ({
-            follows: [],
-            ok: true
-        }),
-        batchLookupRegistry: async (_dids:string[]):Promise<RegistryUser[]> => [],
-        listRsssFollowing: async ():Promise<string[]> => []
-    }
-
-    const recommendations = await computeRecommendations(
-        TEST_SESSION.did,
-        deps
-    )
-
-    t.equal(
-        recommendations.length,
-        0,
-        'returns empty array when no Bluesky follows'
-    )
-})
-
-test('AC18.1: recommendations has correct shape (RecommendedUser[])', async (t) => {
-    const deps:RecommendationsDeps = {
-        getBlueskyFollows: async ():Promise<BlueskyFollowsResult> => ({
-            follows: [{ did: 'did:plc:test', handle: 'test.bsky.social' }],
-            ok: true
-        }),
-        batchLookupRegistry: async ():Promise<RegistryUser[]> => [
-            {
-                did: 'did:plc:test',
-                handle: 'test.bsky.social',
-                avatar: 'http://example.com/test.jpg'
+function userDoStub (dids:string[]) {
+    return {
+        idFromName: () => 'id',
+        get: () => ({
+            fetch: async (req:Request) => {
+                const path = new URL(req.url).pathname
+                if (path === '/graph/following') {
+                    return new Response(JSON.stringify({ dids }), {
+                        status: 200,
+                        headers: { 'content-type': 'application/json' }
+                    })
+                }
+                return new Response(null, { status: 404 })
             }
-        ],
-        listRsssFollowing: async ():Promise<string[]> => []
+        })
     }
+}
 
-    const recommendations = await computeRecommendations(
-        TEST_SESSION.did,
-        deps
-    )
+function registryDoStub (
+    users:Array<{ did:string; handle:string; avatar:string|null }>
+) {
+    return {
+        idFromName: () => 'id',
+        get: () => ({
+            fetch: async (req:Request) => {
+                const path = new URL(req.url).pathname
+                if (path === '/batch-lookup') {
+                    return new Response(JSON.stringify({ users }), {
+                        status: 200,
+                        headers: { 'content-type': 'application/json' }
+                    })
+                }
+                return new Response(null, { status: 404 })
+            }
+        })
+    }
+}
 
-    t.equal(recommendations.length, 1)
-    const user = recommendations[0]!
-    t.ok('did' in user, 'has did field')
-    t.ok('handle' in user, 'has handle field')
-    t.ok('displayName' in user, 'has displayName field')
-    t.ok('avatar' in user, 'has avatar field')
-    // sharedFeedsCount is optional, should not be present (not computed)
-    t.equal(
-        'sharedFeedsCount' in user && user.sharedFeedsCount,
-        false,
-        'sharedFeedsCount not populated'
-    )
-})
+function makeEnv (
+    kv:MemoryKv,
+    following:string[],
+    registryUsers:Array<{ did:string; handle:string; avatar:string|null }>
+) {
+    return {
+        SESSION_SECRET: SECRET,
+        SESSIONS: kv as unknown as KVNamespace,
+        USER_DO: userDoStub(following),
+        REGISTRY_DO: registryDoStub(registryUsers),
+        NODE_ENV: 'test'
+    } as unknown as Parameters<typeof app.request>[2]
+}
 
-test('AC18.2: unauthenticated request should be rejected by requireAuth', async (t) => {
-    // This is a conceptual test showing that the route uses requireAuth.
-    // In practice, requireAuth is a middleware that would be tested
-    // against the real Hono app. This test verifies the expectation.
-    t.ok(true, 'requireAuth middleware should reject unauthenticated requests')
-})
+// Mock the public Bluesky getFollows endpoint. `responder` decides each call.
+function withMockedFetch (
+    responder:(url:string) => Response,
+    run:() => Promise<void>
+):Promise<void> {
+    const original = globalThis.fetch
+    globalThis.fetch = (async (input:RequestInfo|URL) => {
+        const url = typeof input === 'string' ?
+            input :
+            input instanceof URL ? input.href : input.url
+        return responder(url)
+    }) as typeof fetch
+    return run().finally(() => {
+        globalThis.fetch = original
+    })
+}
+
+function followsResponse (
+    follows:Array<{ did:string; handle:string }>
+):Response {
+    return new Response(JSON.stringify({ follows }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+    })
+}
+
+test('AC18.1: GET /api/recommendations returns computed recommendations',
+    async (t) => {
+        const kv = new MemoryKv()
+        const cookie = await createSessionCookie(
+            { did: READER_DID, handle: 'reader.example' },
+            SECRET,
+            kv as unknown as KVNamespace
+        )
+
+        // Bluesky follows: alice (already followed on rsss), bob (rsss user,
+        // recommendable), and reader (self — must be excluded).
+        const env = makeEnv(
+            kv,
+            ['did:plc:alice'],
+            [{ did: 'did:plc:bob', handle: 'bob.example', avatar: null }]
+        )
+
+        await withMockedFetch(
+            (url) => {
+                if (url.includes('app.bsky.graph.getFollows')) {
+                    return followsResponse([
+                        { did: 'did:plc:alice', handle: 'alice.example' },
+                        { did: 'did:plc:bob', handle: 'bob.example' },
+                        { did: READER_DID, handle: 'reader.example' }
+                    ])
+                }
+                return new Response(null, { status: 404 })
+            },
+            async () => {
+                const res = await app.request(
+                    'https://rsss.space/api/recommendations',
+                    { method: 'GET', headers: { cookie: `session=${cookie}` } },
+                    env
+                )
+
+                t.equal(res.status, 200, 'authenticated request returns 200')
+                const body = await res.json() as Array<{ did:string }>
+                t.ok(Array.isArray(body), 'response is an array')
+                const dids = body.map((u) => u.did)
+                t.ok(dids.includes('did:plc:bob'),
+                    'recommends bob (rsss user not yet followed)')
+                t.ok(!dids.includes('did:plc:alice'),
+                    'excludes alice (already followed on rsss)')
+                t.ok(!dids.includes(READER_DID),
+                    'excludes the session user themselves')
+            }
+        )
+    })
+
+test('AC18.1: GET /api/recommendations returns 503 when Bluesky fetch fails',
+    async (t) => {
+        const kv = new MemoryKv()
+        const cookie = await createSessionCookie(
+            { did: READER_DID, handle: 'reader.example' },
+            SECRET,
+            kv as unknown as KVNamespace
+        )
+        const env = makeEnv(kv, [], [])
+
+        await withMockedFetch(
+            (url) => {
+                if (url.includes('app.bsky.graph.getFollows')) {
+                    // Upstream failure -> getBlueskyFollows returns ok:false.
+                    return new Response('upstream error', { status: 502 })
+                }
+                return new Response(null, { status: 404 })
+            },
+            async () => {
+                const res = await app.request(
+                    'https://rsss.space/api/recommendations',
+                    { method: 'GET', headers: { cookie: `session=${cookie}` } },
+                    env
+                )
+                t.equal(res.status, 503,
+                    'Bluesky fetch failure surfaces as 503, not empty list')
+                const body = await res.json() as { error?:string }
+                t.equal(body.error, 'recommendations_unavailable',
+                    'returns recommendations_unavailable')
+            }
+        )
+    })
+
+test('AC18.2: GET /api/recommendations rejects an unauthenticated request',
+    async (t) => {
+        const kv = new MemoryKv()
+        const env = makeEnv(kv, [], [])
+
+        // No session cookie -> requireAuth must reject before any work.
+        let blueskyCalled = false
+        await withMockedFetch(
+            (url) => {
+                if (url.includes('app.bsky.graph.getFollows')) {
+                    blueskyCalled = true
+                }
+                return new Response(null, { status: 404 })
+            },
+            async () => {
+                const res = await app.request(
+                    'https://rsss.space/api/recommendations',
+                    { method: 'GET' },
+                    env
+                )
+                t.equal(res.status, 401,
+                    'unauthenticated request is rejected by requireAuth')
+                t.equal(blueskyCalled, false,
+                    'no recommendations work runs for an unauthed request')
+            }
+        )
+    })
