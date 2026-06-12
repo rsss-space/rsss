@@ -19,8 +19,13 @@ export interface RecommendedUser {
     sharedFeedsCount?:number
 }
 
+export interface BlueskyFollowsResult {
+    follows:Array<{ did:string; handle:string }>
+    ok:boolean
+}
+
 export interface RecommendationsDeps {
-    getBlueskyFollows(did:string):Promise<Array<{ did:string; handle:string }>>
+    getBlueskyFollows(did:string):Promise<BlueskyFollowsResult>
     batchLookupRegistry(dids:string[]):Promise<RegistryUser[]>
     listRsssFollowing():Promise<string[]>
 }
@@ -29,7 +34,9 @@ export async function computeRecommendations (
     userDid:string,
     deps:RecommendationsDeps
 ):Promise<RecommendedUser[]> {
-    const blueskyFollows = await deps.getBlueskyFollows(userDid)
+    const result = await deps.getBlueskyFollows(userDid)
+    // Phase 8: surface result.ok distinctly (e.g. 503)
+    const blueskyFollows = result.follows
     if (blueskyFollows.length === 0) return []
 
     const followDids = blueskyFollows.map(f => f.did)

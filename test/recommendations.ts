@@ -7,20 +7,26 @@ import { test } from '@substrate-system/tapzero'
 import {
     computeRecommendations,
     type RecommendationsDeps,
-    type RegistryUser
+    type RegistryUser,
+    type BlueskyFollowsResult
 } from '../src/server/recommendations.js'
 
 function makeDeps (opts:{
     blueskyFollows?:Array<{ did:string; handle:string }>
     registryUsers?:RegistryUser[]
     rsssFollowing?:string[]
+    blueskyFollowsOk?:boolean
 } = {}):RecommendationsDeps {
     const blueskyFollows = opts.blueskyFollows ?? []
     const registryUsers = opts.registryUsers ?? []
     const rsssFollowing = opts.rsssFollowing ?? []
+    const blueskyFollowsOk = opts.blueskyFollowsOk !== false
 
     return {
-        getBlueskyFollows: async (_did:string) => blueskyFollows,
+        getBlueskyFollows: async (_did:string):Promise<BlueskyFollowsResult> => ({
+            follows: blueskyFollows,
+            ok: blueskyFollowsOk
+        }),
         batchLookupRegistry: async (_dids:string[]) => registryUsers,
         listRsssFollowing: async () => rsssFollowing
     }
@@ -160,10 +166,13 @@ test('excludes all already-followed users', async (t) => {
 test('passes only Bluesky follow DIDs to batchLookupRegistry', async (t) => {
     let lookupDids:string[] = []
     const deps:RecommendationsDeps = {
-        getBlueskyFollows: async () => [
-            { did: 'did:plc:x', handle: 'x.test' },
-            { did: 'did:plc:y', handle: 'y.test' }
-        ],
+        getBlueskyFollows: async ():Promise<BlueskyFollowsResult> => ({
+            follows: [
+                { did: 'did:plc:x', handle: 'x.test' },
+                { did: 'did:plc:y', handle: 'y.test' }
+            ],
+            ok: true
+        }),
         batchLookupRegistry: async (dids:string[]) => {
             lookupDids = dids
             return []
@@ -179,7 +188,10 @@ test('passes only Bluesky follow DIDs to batchLookupRegistry', async (t) => {
 test('skips registry call when Bluesky follows list is empty', async (t) => {
     let registryCalled = false
     const deps:RecommendationsDeps = {
-        getBlueskyFollows: async () => [],
+        getBlueskyFollows: async ():Promise<BlueskyFollowsResult> => ({
+            follows: [],
+            ok: true
+        }),
         batchLookupRegistry: async () => {
             registryCalled = true
             return []
