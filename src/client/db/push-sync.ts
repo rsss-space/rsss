@@ -11,6 +11,10 @@ import {
     isLocalFirstActive
 } from './sync-status.js'
 import { ensureItemFullContentColumns } from './pull-sync.js'
+import {
+    getFeedCachePolicy,
+    isContentCachedForPolicy
+} from './feed-cache-policy.js'
 
 export const DEAD_LETTER_ATTEMPT_LIMIT = 10
 
@@ -215,6 +219,9 @@ async function replaceOptimisticFeed (
                   description = ?,
                   site_url = ?,
                   last_fetched = ?,
+                  last_pulled_at = ?,
+                  last_error = ?,
+                  last_status = ?,
                   published = ?,
                   published_rkey = ?,
                   published_at = ?,
@@ -229,6 +236,9 @@ async function replaceOptimisticFeed (
             (feed.description as string|null) ?? null,
             (feed.site_url as string|null) ?? null,
             (feed.last_fetched as string|null) ?? null,
+            (feed.last_pulled_at as string|null) ?? null,
+            (feed.last_error as string|null) ?? null,
+            (feed.last_status as number|null) ?? null,
             (feed.published as number) ?? 0,
             (feed.published_rkey as string|null) ?? null,
             (feed.published_at as string|null) ?? null,
@@ -326,6 +336,29 @@ async function upsertItemFromServer (
     item:Record<string, unknown>
 ):Promise<void> {
     await ensureItemFullContentColumns(db)
+
+    const feedId = item.feed_id as number
+    const policy = await getFeedCachePolicy(db, feedId)
+    const keepContent = isContentCachedForPolicy(policy)
+
+    const bodySetClause = keepContent ?
+        `description = excluded.description,
+                content = excluded.content,
+                full_content = excluded.full_content,
+                full_content_fetched_at = excluded.full_content_fetched_at,
+                full_content_status = excluded.full_content_status` :
+        `description = COALESCE(description, excluded.description),
+                content = COALESCE(content, excluded.content),
+                full_content = COALESCE(full_content, excluded.full_content),
+                full_content_fetched_at = COALESCE(
+                    full_content_fetched_at,
+                    excluded.full_content_fetched_at
+                ),
+                full_content_status = COALESCE(
+                    full_content_status,
+                    excluded.full_content_status
+                )`
+
     await execDb(db, {
         sql: `INSERT INTO items
             (id, feed_id, guid, title, link, description, content,
@@ -340,8 +373,7 @@ async function upsertItemFromServer (
                 guid = excluded.guid,
                 title = excluded.title,
                 link = excluded.link,
-                description = excluded.description,
-                content = excluded.content,
+                ${bodySetClause},
                 author = excluded.author,
                 pub_date = excluded.pub_date,
                 thumbnail_url = excluded.thumbnail_url,
@@ -351,10 +383,7 @@ async function upsertItemFromServer (
                 image_height = excluded.image_height,
                 is_read = excluded.is_read,
                 is_starred = excluded.is_starred,
-                updated_at = excluded.updated_at,
-                full_content = excluded.full_content,
-                full_content_fetched_at = excluded.full_content_fetched_at,
-                full_content_status = excluded.full_content_status`,
+                updated_at = excluded.updated_at`,
         bind: [
             item.id as number,
             item.feed_id as number,
@@ -516,7 +545,12 @@ export async function pushSync (
                         )
                     } else if (row.op === 'delete_feed') {
                         const feed = extractFeed(body)
-                        if (feed) await upsertFeedFromServer(db, feed)
+                        if (feed) {
+                            await upsertFeedFromServer(db, feed)
+                            for (const item of extractItems(body)) {
+                                await upsertItemFromServer(db, item)
+                            }
+                        }
                     } else if (
                         row.op === 'update_item' ||
                         row.op === 'mark_all_read'
