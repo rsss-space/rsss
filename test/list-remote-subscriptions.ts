@@ -7,6 +7,7 @@
  */
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
+import { feedSubscriptionLexicon } from '../src/shared/lexicons/index.js'
 
 interface OAuthCredentialRecord {
     did:string
@@ -95,13 +96,18 @@ test('listRemoteSubscriptions stops at MAX_RECORD_PAGES cap (AC7.5)',
                     base
                 )
                 url.searchParams.set('repo', creds.did)
-                url.searchParams.set('collection', 'app.bsky.feed.subscribe')
+                url.searchParams.set(
+                    'collection',
+                    feedSubscriptionLexicon.id
+                )
                 url.searchParams.set('limit', '100')
                 if (cursor) url.searchParams.set('cursor', cursor)
                 return url.href
             }
 
-            userDo.isListedSubscriptionRecord = (value) => {
+            userDo.isListedSubscriptionRecord = (
+                value
+            ):value is ListedSubscriptionRecord => {
                 if (typeof value !== 'object' || value === null) return false
                 if (Array.isArray(value)) return false
                 const record = value as Partial<ListedSubscriptionRecord>
@@ -192,13 +198,18 @@ test('listRemoteSubscriptions bails on cursor stall (AC7.5)',
                     base
                 )
                 url.searchParams.set('repo', creds.did)
-                url.searchParams.set('collection', 'app.bsky.feed.subscribe')
+                url.searchParams.set(
+                    'collection',
+                    feedSubscriptionLexicon.id
+                )
                 url.searchParams.set('limit', '100')
                 if (cursor) url.searchParams.set('cursor', cursor)
                 return url.href
             }
 
-            userDo.isListedSubscriptionRecord = (value) => {
+            userDo.isListedSubscriptionRecord = (
+                value
+            ):value is ListedSubscriptionRecord => {
                 if (typeof value !== 'object' || value === null) return false
                 if (Array.isArray(value)) return false
                 const record = value as Partial<ListedSubscriptionRecord>

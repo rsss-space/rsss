@@ -2,7 +2,7 @@ import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import { fakeResult } from './helpers/sql-fake.js'
 
-interface FeedRow {
+interface Feed {
     id:number
     url:string
     title:string|null
@@ -13,7 +13,7 @@ interface FeedRow {
     updated_at:string
 }
 
-function createFeed (id:number, url = `https://example.com/${id}.xml`) {
+function createFeed (id:number, url = `https://example.com/${id}.xml`):Feed {
     return {
         id,
         url,
@@ -27,8 +27,8 @@ function createFeed (id:number, url = `https://example.com/${id}.xml`) {
 }
 
 function createRefreshDo (
-    feeds:FeedRow[],
-    fetchFeedFn:(feed:FeedRow) => Promise<void>,
+    feeds:Feed[],
+    fetchFeedFn:(feed:Feed) => Promise<void>,
     advanceCursorFn:(feedId:number) => void
 ) {
     const broadcasts:Array<{event:string; data:unknown}> = []
@@ -36,12 +36,12 @@ function createRefreshDo (
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
         ctx:{ waitUntil:(promise:Promise<void>) => void }
-        fetchFeed:(feed:FeedRow) => Promise<void>
+        fetchFeed:(feed:Feed) => Promise<void>
         advanceFeedCursor:(feedId:number) => void
         broadcast:(event:string, data:unknown) => void
         runFeedPool:(
-            items:FeedRow[],
-            worker:(feed:FeedRow) => Promise<void>
+            items:Feed[],
+            worker:(feed:Feed) => Promise<void>
         ) => Promise<void>
     }
 
@@ -66,7 +66,15 @@ function createRefreshDo (
     }
 
     // Bind the real runFeedPool from the prototype
-    userDo.runFeedPool = RsssUserDO.prototype.runFeedPool
+    // Cast to access private method for testing purposes
+    userDo.runFeedPool = (
+        RsssUserDO.prototype as unknown as {
+            runFeedPool:(
+                items:Feed[],
+                worker:(feed:Feed) => Promise<void>
+            ) => Promise<void>
+        }
+    ).runFeedPool
 
     return { userDo, broadcasts }
 }
