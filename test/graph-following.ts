@@ -10,6 +10,7 @@ import {
     buildGraphResponse,
     type GraphApiDeps
 } from '../src/server/graph-api.js'
+import { getFollowers } from '../src/server/index.js'
 
 // ---- DO harness (mirrors graph-follow.ts pattern) ----
 
@@ -227,54 +228,46 @@ test('buildGraphResponse uses correct DID for followers lookup', async t => {
 
 // AC11.1: list call returns error, count succeeds -> available false
 test('AC11.1: getFollowers with list error sets available false and empty dids', async t => {
-    // Test the getFollowers function directly with mocked Constellation
-    const mockGetFollowers = async (_did:string) => {
-        const backlinkRes = { code: 'backlink_error' }
-        const countRes = { count: 42 }
-
-        const listFailed = 'code' in backlinkRes
-        const countFailed = 'code' in countRes
-
-        const dids = listFailed ? [] : (backlinkRes as any).subjects.slice(0, 100)
-        const available = !listFailed
-        const count = countFailed ? null : (countRes as any).count
-
-        return { dids, count, available }
+    // Test the real getFollowers function with mocked Constellation
+    const mockConstellation = {
+        getDistinct: async () => ({ code: 'backlink_error' }),
+        getBacklinksCount: async () => ({ count: 42 })
     }
 
     const deps:GraphApiDeps = {
         listFollowing: async () => [],
-        getFollowers: mockGetFollowers
+        getFollowers: (did:string) =>
+            getFollowers(did, mockConstellation as any)
     }
     const resp = await buildGraphResponse('did:plc:test', deps)
-    t.equal(resp.constellationAvailable, false, 'available is false when list fails')
-    t.equal(resp.followers.length, 0, 'dids empty when list fails')
-    t.equal(resp.followersCount, 42, 'count reflects successful count call')
+    t.equal(resp.constellationAvailable, false,
+        'available is false when list fails')
+    t.equal(resp.followers.length, 0,
+        'dids empty when list fails')
+    t.equal(resp.followersCount, 42,
+        'count reflects successful count call')
 })
 
 // AC11.2: count call returns error, list succeeds -> count is null
 test('AC11.2: getFollowers with count error returns null count', async t => {
-    // Test the getFollowers function directly with mocked Constellation
-    const mockGetFollowers = async (_did:string) => {
-        const backlinkRes = { subjects: ['did:plc:a', 'did:plc:b', 'did:plc:c'] }
-        const countRes = { code: 'count_error' }
-
-        const listFailed = 'code' in backlinkRes
-        const countFailed = 'code' in countRes
-
-        const dids = listFailed ? [] : backlinkRes.subjects.slice(0, 100)
-        const available = !listFailed
-        const count = countFailed ? null : (countRes as any).count
-
-        return { dids, count, available }
+    // Test the real getFollowers function with mocked Constellation
+    const mockConstellation = {
+        getDistinct: async () => ({
+            subjects: ['did:plc:a', 'did:plc:b', 'did:plc:c']
+        }),
+        getBacklinksCount: async () => ({ code: 'count_error' })
     }
 
     const deps:GraphApiDeps = {
         listFollowing: async () => [],
-        getFollowers: mockGetFollowers
+        getFollowers: (did:string) =>
+            getFollowers(did, mockConstellation as any)
     }
     const resp = await buildGraphResponse('did:plc:test', deps)
-    t.equal(resp.constellationAvailable, true, 'available is true when list succeeds')
-    t.equal(resp.followers.length, 3, 'dids populated from list')
-    t.equal(resp.followersCount, null, 'count is null when count call failed')
+    t.equal(resp.constellationAvailable, true,
+        'available is true when list succeeds')
+    t.equal(resp.followers.length, 3,
+        'dids populated from list')
+    t.equal(resp.followersCount, null,
+        'count is null when count call failed')
 })

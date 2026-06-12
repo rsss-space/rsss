@@ -48,6 +48,7 @@ const commands = [
     'npm run test:sentry-wiring',
     'npm run test:feeds-refresh-pool',
     'npm run test:bluesky-follows',
+    'npm run test:graph-following',
     'npm run test:list-remote-subscriptions',
     'npm run test:subscription-reconcile',
 

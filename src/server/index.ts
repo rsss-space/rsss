@@ -1929,6 +1929,44 @@ app.post(
 )
 
 /**
+ * Get followers for a DID from Constellation.
+ * Derives available/count from the backing list call.
+ * Exported for testing.
+ */
+export async function getFollowers (
+    did:string,
+    constellation:ReturnType<typeof createConstellationClient>
+):Promise<{
+    dids:string[]
+    count:number|null
+    available:boolean
+}> {
+    const [backlinkRes, countRes] = await Promise.all([
+        constellation.getDistinct({
+            collection: 'space.rsss.graph.follow',
+            path: '.subject',
+            subject: did
+        }),
+        constellation.getBacklinksCount({
+            collection: 'space.rsss.graph.follow',
+            path: '.subject',
+            subject: did
+        })
+    ])
+
+    const listFailed = 'code' in backlinkRes
+    const countFailed = 'code' in countRes
+
+    const dids = listFailed ? [] : (backlinkRes as any).subjects.slice(0, 100)
+    // available reflects the call that actually backs `dids` (the list call).
+    const available = !listFailed
+    // unknown count when the count call failed — do NOT substitute capped length.
+    const count = countFailed ? null : (countRes as any).count
+
+    return { dids, count, available }
+}
+
+/**
  * Following/followers graph for the authenticated user.
  * Following is read from the user's DO SQLite. Followers
  * are fetched from Constellation (eventual consistency).
@@ -1953,31 +1991,7 @@ app.get('/api/graph', requireAuth, async (c) => {
                 return []
             }
         },
-        getFollowers: async (did:string) => {
-            const [backlinkRes, countRes] = await Promise.all([
-                constellation.getDistinct({
-                    collection: 'space.rsss.graph.follow',
-                    path: '.subject',
-                    subject: did
-                }),
-                constellation.getBacklinksCount({
-                    collection: 'space.rsss.graph.follow',
-                    path: '.subject',
-                    subject: did
-                })
-            ])
-
-            const listFailed = 'code' in backlinkRes
-            const countFailed = 'code' in countRes
-
-            const dids = listFailed ? [] : backlinkRes.subjects.slice(0, 100)
-            // available reflects the call that actually backs `dids` (the list call).
-            const available = !listFailed
-            // unknown count when the count call failed — do NOT substitute capped length.
-            const count = countFailed ? null : countRes.count
-
-            return { dids, count, available }
-        }
+        getFollowers: (did:string) => getFollowers(did, constellation)
     }
 
     try {
