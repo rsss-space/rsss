@@ -5,6 +5,8 @@
  * minus the user themselves and people they already follow on rsss.
  */
 
+import type { BlueskyFollowsResult } from './bluesky-follows.js'
+
 export interface RegistryUser {
     did:string
     handle:string
@@ -17,11 +19,6 @@ export interface RecommendedUser {
     displayName:string|null
     avatar:string|null
     sharedFeedsCount?:number
-}
-
-export interface BlueskyFollowsResult {
-    follows:Array<{ did:string; handle:string }>
-    ok:boolean
 }
 
 export interface RecommendationsDeps {
