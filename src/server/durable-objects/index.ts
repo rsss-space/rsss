@@ -140,6 +140,7 @@ const FEED_XML_PARSER = new XMLParser({
     trimValues: true
 })
 const FEED_REFRESH_CONCURRENCY = 8
+const MAX_RECORD_PAGES = 50 // cap pagination to prevent stalled cursors
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
 const FEED_REFRESH_INTERVAL_MS = 60 * 60 * 1000
@@ -853,8 +854,21 @@ export class RsssUserDO extends DurableObject<Env> {
     ):Promise<Map<string, RemoteSubscription>> {
         const subscriptions = new Map<string, RemoteSubscription>()
         let cursor:string|undefined
+        let pageCount = 0
 
         do {
+            // Cap pagination to prevent stalled cursors (AC7.5)
+            if (pageCount >= MAX_RECORD_PAGES) {
+                reportError(
+                    new Error(
+                        'Pagination cap reached while listing AT Protocol records'
+                    ),
+                    'list-remote-subscriptions-max-pages',
+                    { did: credentials.did, pageCount }
+                )
+                break
+            }
+
             const response = await fetch(this.listRecordsUrl(
                 credentials,
                 cursor
@@ -868,6 +882,22 @@ export class RsssUserDO extends DurableObject<Env> {
                 body.records :
                 []
 
+            pageCount++
+
+            const newCursor = typeof body.cursor === 'string' ?
+                body.cursor :
+                undefined
+
+            // Cursor-stall detection: bail if cursor unchanged (AC7.5)
+            if (newCursor && newCursor === cursor) {
+                reportError(
+                    new Error('Cursor stall detected in listRemoteSubscriptions'),
+                    'list-remote-subscriptions-cursor-stall',
+                    { did: credentials.did, cursor: newCursor }
+                )
+                break
+            }
+
             for (const rawRecord of records) {
                 if (!this.isListedSubscriptionRecord(rawRecord)) continue
 
@@ -880,9 +910,7 @@ export class RsssUserDO extends DurableObject<Env> {
                 }
             }
 
-            cursor = typeof body.cursor === 'string' ?
-                body.cursor :
-                undefined
+            cursor = newCursor
         } while (cursor)
 
         return subscriptions
