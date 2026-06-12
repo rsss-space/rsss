@@ -50,6 +50,20 @@ function makeMockCaches ():{ storage:Pick<CacheStorage, 'open'>; puts:string[] }
     }
 }
 
+// Deliberate-failure paths log via console.error, which the tapout
+// runner treats as a failed run; silence it for the expected call.
+async function silencingConsoleError<T> (
+    fn:() => Promise<T>
+):Promise<T> {
+    const orig = console.error
+    console.error = () => {}
+    try {
+        return await fn()
+    } finally {
+        console.error = orig
+    }
+}
+
 function makeMockFetch (
     sizeBytes = 100
 ): { fn:typeof fetch; calls:string[] } {
@@ -189,7 +203,7 @@ test('fetch errors do not write cached_images rows', async (t) => {
         }
         const { storage: cs, puts } = makeMockCaches()
 
-        await cacheItemImages(
+        await silencingConsoleError(() => cacheItemImages(
             db,
             {
                 id: 1,
@@ -200,7 +214,7 @@ test('fetch errors do not write cached_images rows', async (t) => {
             { cache_mode: 'text_images' },
             fetchFn,
             cs
-        )
+        ))
 
         t.equal(call, 1, 'fetch was attempted')
         t.equal(puts.length, 0, 'nothing stored in Cache Storage')
@@ -355,7 +369,7 @@ test('AC10.1: DB failure rolls back Cache Storage blob',
 
             // Try to cache another image with the read-only DB;
             // it will fail and should roll back
-            await cacheItemImages(
+            await silencingConsoleError(() => cacheItemImages(
                 readOnlyDb,
                 {
                     id: 2,
@@ -366,7 +380,7 @@ test('AC10.1: DB failure rolls back Cache Storage blob',
                 { cache_mode: 'text_images' },
                 fetchFn,
                 storage
-            )
+            ))
 
             // Verify two puts (one successful, one attempted but rolled back)
             t.equal(puts.length, 2, 'two images put to Cache Storage')
@@ -464,7 +478,7 @@ test('AC10.2: eviction accounting ignores rolled-back blobs',
             } as Sqlite3Db
 
             // Try to cache another image; it will fail and roll back
-            await cacheItemImages(
+            await silencingConsoleError(() => cacheItemImages(
                 readOnlyDb,
                 {
                     id: 2,
@@ -475,7 +489,7 @@ test('AC10.2: eviction accounting ignores rolled-back blobs',
                 { cache_mode: 'text_images' },
                 fetchFn,
                 storage
-            )
+            ))
 
             // Verify two puts (one successful, one attempted but rolled back)
             t.equal(puts.length, 2, 'two images put to Cache Storage')

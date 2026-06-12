@@ -1,4 +1,7 @@
-import { describeLocalDbError } from './sqlite-init.js'
+import {
+    classifyLocalDbError,
+    describeLocalDbError
+} from './sqlite-init.js'
 import {
     execDb,
     queryDb,
@@ -466,7 +469,7 @@ export async function pullSync (
                         await upsertFeed(db, feed)
                         await execDb(db, 'RELEASE feed_upsert')
                         upserted = true
-                    } catch {
+                    } catch (err) {
                         try {
                             await execDb(db, 'ROLLBACK TO feed_upsert')
                         } catch {
@@ -477,13 +480,26 @@ export async function pullSync (
                         } catch {
                             // ignore release errors
                         }
+                        // Storage exhaustion is database-wide, not a
+                        // per-feed conflict: abort the pull so the quota
+                        // failure reaches the sync/bootstrap UI signals.
+                        if (classifyLocalDbError(err) === 'quota') {
+                            throw err
+                        }
                         // url collision (or other per-feed failure): skip this
                         // feed this pull. Mark skippedRows so the cursor is not
                         // advanced — it will be reconciled by push-sync
                         // (optimistic add) or re-pulled next sync.
                         skippedRows = true
                     }
-                } catch {
+                } catch (err) {
+                    // Let the quota rethrow from the inner catch (and
+                    // quota failures creating the SAVEPOINT) abort the
+                    // pull instead of being skipped like a per-feed
+                    // conflict.
+                    if (classifyLocalDbError(err) === 'quota') {
+                        throw err
+                    }
                     // SAVEPOINT creation failed - skip this feed
                     skippedRows = true
                 }
