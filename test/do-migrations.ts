@@ -401,3 +401,57 @@ test('RsssUserDO does not re-run updated_at bump when flag is already set',
             'updated_at bump UPDATE does not run when flag is already set')
     })
 
+// AC14.1 (ordering): the bump flag must be persisted BEFORE the UPDATE, so a
+// cold start between them cannot re-run the one-time bump. Flag is unset here,
+// so the guarded block runs; we record the order of the flag put vs the UPDATE.
+test('RsssUserDO persists the updated_at bump flag before running the bump',
+    async t => {
+        const setup = createConstructorContext(8)
+        const order:string[] = []
+        const BUMP_KEY = 'feeds_updated_at_bump_for_last_pulled_at'
+
+        // Flag unset -> the bump block runs.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const originalGet = (setup.ctx.storage.get as any).bind(
+            setup.ctx.storage
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(setup.ctx.storage.get as any) = async (key:string|string[]) => {
+            if (key === BUMP_KEY) return undefined
+            return originalGet(key)
+        }
+
+        // Record when the bump flag is persisted.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const originalPut = (setup.ctx.storage.put as any).bind(
+            setup.ctx.storage
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(setup.ctx.storage.put as any) = async (key:string, value:unknown) => {
+            if (key === BUMP_KEY) order.push('put-flag')
+            return originalPut(key, value)
+        }
+
+        // Record when the bump UPDATE runs.
+        const originalExec = setup.ctx.storage.sql.exec.bind(
+            setup.ctx.storage.sql
+        )
+        setup.ctx.storage.sql.exec = ((query:string) => {
+            if (query === "UPDATE feeds SET updated_at = datetime('now')") {
+                order.push('bump-update')
+            }
+            return originalExec(query)
+        }) as typeof setup.ctx.storage.sql.exec
+
+        const userDo = new RsssUserDO(setup.ctx, {} as never)
+        await setup.ready()
+
+        t.ok(userDo, 'Durable Object constructed successfully')
+        const putIdx = order.indexOf('put-flag')
+        const updateIdx = order.indexOf('bump-update')
+        t.ok(putIdx >= 0, 'bump flag is persisted')
+        t.ok(updateIdx >= 0, 'bump UPDATE runs when flag is unset')
+        t.ok(putIdx < updateIdx,
+            'flag is persisted BEFORE the bump UPDATE (idempotent on crash)')
+    })
+
