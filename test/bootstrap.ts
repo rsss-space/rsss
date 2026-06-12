@@ -1281,21 +1281,9 @@ test('disableLocalFirst: aborts when pending writes cannot sync',
 test('disableLocalFirst: cancels in-flight sync without UI error',
     async (t) => {
         clearBootstrappedDb()
-        setupSupportedLocalFirst()
+        const files = new Map<string, PersistentDb>()
         const removed:string[] = []
-
-        Object.defineProperty(navigator, 'storage', {
-            value: {
-                getDirectory: async () => ({
-                    getDirectoryHandle: async () => ({
-                        removeEntry: async (name:string) => {
-                            removed.push(name)
-                        }
-                    })
-                })
-            },
-            configurable: true
-        })
+        setupPersistentLocalFirst(files, removed)
 
         await getAdapter('did:test:disable-cancel-safe')
         const db = getLocalDb('did:test:disable-cancel-safe')
@@ -1354,8 +1342,7 @@ test('disableLocalFirst: cancels in-flight sync without UI error',
         t.equal(syncSubscriptions.value, false, 'local-first is disabled')
 
         isLocalFirstActive.value = false
-        clearBootstrappedDb()
-        _resetAdapterCache()
+        teardownPersistentLocalFirst()
     }
 )
 
