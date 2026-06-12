@@ -459,13 +459,13 @@ export async function pullSync (
                     skippedRows = true
                     continue
                 }
+                let upserted = false
                 try {
                     await execDb(db, 'SAVEPOINT feed_upsert')
                     try {
                         await upsertFeed(db, feed)
                         await execDb(db, 'RELEASE feed_upsert')
-                        feedCount++
-                        opts.onFeedUpserted?.(feedCount)
+                        upserted = true
                     } catch {
                         try {
                             await execDb(db, 'ROLLBACK TO feed_upsert')
@@ -486,6 +486,13 @@ export async function pullSync (
                 } catch {
                     // SAVEPOINT creation failed - skip this feed
                     skippedRows = true
+                }
+                // Run success side-effects only after the savepoint is fully
+                // released, so a throwing onFeedUpserted callback is not
+                // misattributed to a feed-upsert failure above.
+                if (upserted) {
+                    feedCount++
+                    opts.onFeedUpserted?.(feedCount)
                 }
             }
             let itemCount = 0

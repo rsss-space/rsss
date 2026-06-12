@@ -1398,6 +1398,25 @@ test(
                 'https://example.com/feed-V',
                 'feed V URL correct'
             )
+
+            // The collision was isolated: the local row (id=1, url=U) is
+            // intact and the colliding server feed (id=100) was not inserted.
+            const localU = queryOne<{ id:number; title:string }>(
+                db,
+                'SELECT id, title FROM feeds WHERE id = ?',
+                [1]
+            )
+            t.equal(
+                localU?.title,
+                'Local Feed U',
+                'local feed U preserved (collider rolled back)'
+            )
+            const collider = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM feeds WHERE id = ?',
+                [100]
+            )
+            t.equal(collider, undefined, 'colliding server feed not inserted')
         } finally {
             storeContent.value = true
             db.close()
