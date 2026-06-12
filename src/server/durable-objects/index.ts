@@ -463,7 +463,7 @@ function manualRefreshRetryAfterSeconds (
 
 // Parse and validate a numeric id parameter.
 // Returns null if the id is not finite, <= 0, or noncanonical.
-function parseIdParam (raw:string):number|null {
+export function parseIdParam (raw:string):number|null {
     const id = Number.parseInt(raw, 10)
     if (!Number.isFinite(id) || id <= 0 || String(id) !== raw) return null
     return id

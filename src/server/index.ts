@@ -77,7 +77,8 @@ import {
 } from './recommendations.js'
 import {
     getBlueskyFollows,
-    makeBlueskyFollowsDeps
+    makeBlueskyFollowsDeps,
+    type BlueskyFollowsResult
 } from './bluesky-follows.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
@@ -917,7 +918,10 @@ const adminRateLimit = createRateLimitMiddleware<Env, Variables>({
  * Uses SHA-256 hashing to compare tokens without revealing length,
  * preventing timing oracles on token length.
  */
-async function constantTimeEqual (a:string, b:string):Promise<boolean> {
+export async function constantTimeEqual (
+    a:string,
+    b:string
+):Promise<boolean> {
     const enc = new TextEncoder()
     const [ha, hb] = await Promise.all([
         crypto.subtle.digest('SHA-256', enc.encode(a)),
@@ -2032,18 +2036,25 @@ app.get('/api/recommendations', requireAuth, async (c) => {
     // Build dependencies for computeRecommendations
     const depsForBluesky = makeBlueskyFollowsDeps(c.env.SESSIONS, fetch)
 
+    // Fetch Bluesky follows once
+    let blueskyResult:BlueskyFollowsResult
+    try {
+        blueskyResult = await getBlueskyFollows(session.did, depsForBluesky)
+    } catch (err) {
+        reportError(err, 'recommendations', {
+            route: '/api/recommendations',
+            step: 'getBlueskyFollows'
+        })
+        return c.json({ error: 'recommendations_unavailable' }, 503)
+    }
+
+    // If Bluesky fetch failed, return 503
+    if (!blueskyResult.ok) {
+        return c.json({ error: 'recommendations_unavailable' }, 503)
+    }
+
     const deps:RecommendationsDeps = {
-        getBlueskyFollows: async (did:string) => {
-            const result = await getBlueskyFollows(did, depsForBluesky)
-            // If Bluesky fetch failed, surface as 503 (not zero recommendations)
-            if (!result.ok) {
-                return {
-                    follows: [],
-                    ok: false
-                }
-            }
-            return result
-        },
+        getBlueskyFollows: async (_did:string) => blueskyResult,
         listRsssFollowing: async () => {
             try {
                 const stub = getRsssUserDO(c.env, session.did)
@@ -2079,15 +2090,6 @@ app.get('/api/recommendations', requireAuth, async (c) => {
     }
 
     try {
-        // Check that Bluesky follows fetch succeeded
-        const blueskyResult = await getBlueskyFollows(
-            session.did,
-            depsForBluesky
-        )
-        if (!blueskyResult.ok) {
-            return c.json({ error: 'recommendations_unavailable' }, 503)
-        }
-
         const recommendations = await computeRecommendations(
             session.did,
             deps
@@ -2095,7 +2097,8 @@ app.get('/api/recommendations', requireAuth, async (c) => {
         return c.json(recommendations)
     } catch (err) {
         reportError(err, 'recommendations', {
-            route: '/api/recommendations'
+            route: '/api/recommendations',
+            step: 'computeRecommendations'
         })
         return c.json({ error: 'recommendations_unavailable' }, 503)
     }
