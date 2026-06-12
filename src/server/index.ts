@@ -906,15 +906,20 @@ const adminRateLimit = createRateLimitMiddleware<Env, Variables>({
 
 /**
  * Constant-time comparison for admin token verification.
- * Avoids early exit on mismatch to prevent timing leaks.
+ * Uses SHA-256 hashing to compare tokens without revealing length,
+ * preventing timing oracles on token length.
  */
-function timingSafeEqual (a:string, b:string):boolean {
-    if (a.length !== b.length) return false
-    let result = 0
-    for (let i = 0; i < a.length; i++) {
-        result |= a.charCodeAt(i) ^ b.charCodeAt(i)
-    }
-    return result === 0
+async function constantTimeEqual (a:string, b:string):Promise<boolean> {
+    const enc = new TextEncoder()
+    const [ha, hb] = await Promise.all([
+        crypto.subtle.digest('SHA-256', enc.encode(a)),
+        crypto.subtle.digest('SHA-256', enc.encode(b))
+    ])
+    const va = new Uint8Array(ha)
+    const vb = new Uint8Array(hb)
+    let diff = 0
+    for (let i = 0; i < va.length; i++) diff |= va[i]! ^ vb[i]!
+    return diff === 0
 }
 
 /**
@@ -936,7 +941,12 @@ const requireAdmin = async (c:Context<{
     const match = header.match(/^Bearer\s+(.+)$/i)
     const provided = match ? match[1] : ''
 
-    if (!provided || !timingSafeEqual(provided, expected)) {
+    if (!provided) {
+        return c.json({ error: 'Unauthorized' }, 401)
+    }
+
+    const isAuthorized = await constantTimeEqual(provided, expected)
+    if (!isAuthorized) {
         return c.json({ error: 'Unauthorized' }, 401)
     }
 

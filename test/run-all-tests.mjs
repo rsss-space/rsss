@@ -51,6 +51,7 @@ const commands = [
     'npm run test:graph-following',
     'npm run test:list-remote-subscriptions',
     'npm run test:subscription-reconcile',
+    'npm run test:admin-auth',
 
     // --- node-platform tests (esbuild -> node -> tap-spec) ---
     [
