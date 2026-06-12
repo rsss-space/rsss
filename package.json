@@ -37,6 +37,7 @@
     "test:registry": "node test/run-registry.mjs",
     "test:tab-coordination": "esbuild test/tab-coordination.ts --bundle | tapout",
     "test:api-router": "esbuild test/api-router.ts --bundle --loader:.wasm=dataurl --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts | tapout",
+    "test:feeds-refresh-pool": "esbuild test/feeds-refresh-pool.ts --bundle --loader:.wasm=dataurl --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts | tapout",
     "test:sentry-wiring": "esbuild ./test/sentry-wiring.ts --bundle --loader:.wasm=dataurl --alias:cloudflare:workers=./test/cloudflare-workers-stub.ts --alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts | tapout",
     "test:report-error": "node test/run-report-error.mjs",
     "test:lazy-html": "esbuild ./test/lazy-html.ts --bundle | tapout",

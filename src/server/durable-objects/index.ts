@@ -30,6 +30,7 @@ import {
     putRecord,
     createRecord
 } from '../auth/pds-write-client.js'
+import { reportError } from '../lib/report-error.js'
 import {
     feedSubscriptionLexicon,
     graphFollowLexicon,
@@ -1799,10 +1800,10 @@ export class RsssUserDO extends DurableObject<Env> {
                 .toArray() as unknown as Feed[]
 
             this.ctx.waitUntil((async () => {
-                await Promise.all(feeds.map(async feed => {
+                await this.runFeedPool(feeds, async feed => {
                     await this.fetchFeed(feed)
                     this.advanceFeedCursor(feed.id)
-                }))
+                })
                 this.broadcast('refresh-complete', {
                     refreshed: feeds.length
                 })
@@ -3664,17 +3665,29 @@ export class RsssUserDO extends DurableObject<Env> {
         ).toArray() as unknown as Feed[]
     }
 
-    private async refreshFeeds (feeds:Feed[]):Promise<void> {
-        let nextFeedIndex = 0
-        const workerCount = Math.min(FEED_REFRESH_CONCURRENCY, feeds.length)
-        const workers = Array.from({ length: workerCount }, async () => {
-            while (nextFeedIndex < feeds.length) {
-                const feed = feeds[nextFeedIndex]
-                nextFeedIndex++
-                if (feed) await this.fetchFeed(feed)
+    private async runFeedPool (
+        feeds:Feed[],
+        worker:(feed:Feed) => Promise<void>
+    ):Promise<void> {
+        let next = 0
+        const count = Math.min(FEED_REFRESH_CONCURRENCY, feeds.length)
+        const runners = Array.from({ length: count }, async () => {
+            while (next < feeds.length) {
+                const feed = feeds[next++]
+                if (!feed) continue
+                try {
+                    await worker(feed)
+                } catch (err) {
+                    // Isolate per-feed failure: log, continue pool
+                    reportError(err, 'refresh-feed', { feedId: feed.id })
+                }
             }
         })
 
-        await Promise.all(workers)
+        await Promise.all(runners)
+    }
+
+    private async refreshFeeds (feeds:Feed[]):Promise<void> {
+        await this.runFeedPool(feeds, f => this.fetchFeed(f))
     }
 }
