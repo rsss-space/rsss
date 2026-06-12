@@ -90,18 +90,35 @@ export async function evictByFeedSizeCap (
         const policy = await getFeedCachePolicy(db, feed.id)
         const { maxSizeBytes } = resolveEffectivePolicy(policy)
 
-        const textRow = await queryOneDb<{ total:number|null }>(
-            db,
+        let textSql =
             'SELECT SUM(COALESCE(LENGTH(content), 0) +' +
             ' COALESCE(LENGTH(description), 0)) AS total' +
-            ' FROM items WHERE feed_id = ?',
-            [feed.id]
+            ' FROM items WHERE feed_id = ?'
+        let imageSql =
+            'SELECT SUM(size_bytes) AS total FROM cached_images' +
+            ' WHERE feed_id = ?'
+        const textBind:[number] = [feed.id]
+        const imageBind:[number] = [feed.id]
+
+        // Exclude open item from size total to match candidate set.
+        // Only count evictable bytes in the target calculation.
+        if (openItemId !== null) {
+            textSql += ' AND id != ?'
+            imageSql += ' AND item_id IN' +
+                ' (SELECT id FROM items WHERE feed_id = ? AND id != ?)'
+            textBind.push(openItemId)
+            imageBind.push(feed.id, openItemId)
+        }
+
+        const textRow = await queryOneDb<{ total:number|null }>(
+            db,
+            textSql,
+            textBind
         )
         const imageRow = await queryOneDb<{ total:number|null }>(
             db,
-            'SELECT SUM(size_bytes) AS total FROM cached_images' +
-            ' WHERE feed_id = ?',
-            [feed.id]
+            imageSql,
+            imageBind
         )
         let currentSize = (textRow?.total ?? 0) + (imageRow?.total ?? 0)
         if (currentSize <= maxSizeBytes) continue

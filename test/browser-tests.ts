@@ -64,6 +64,7 @@ import './subscription-rkey.js'
 import './image-cache.js'
 import './feed-share-toggle.js'
 import './publish-consent-modal.js'
+import './cache-eviction.js'
 
 test('all done', () => {
     if (window) {

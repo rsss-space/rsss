@@ -517,6 +517,121 @@ test(
     }
 )
 
+test(
+    'AC13.1: evictByFeedSizeCap does not over-evict with open item' +
+    ' images in cache',
+    async (t) => {
+        _resetOpenItemRegistry()
+        const db = await openLocalDb('did:test:ac13.1-no-over-evict')
+        try {
+            db.exec(`
+                INSERT INTO feeds (url, title, created_at, updated_at)
+                VALUES ('https://a.com/feed', 'A',
+                        '${BASE_DATE}', '${BASE_DATE}')
+            `)
+            // Insert 3 items: open item A, other items B and C
+            db.exec(`
+                INSERT INTO items
+                    (feed_id, guid, title, link, content, description,
+                     created_at, updated_at)
+                VALUES
+                    (1, 'gA', 'Open', 'http://a1', 'open', NULL,
+                     '${BASE_DATE}', '${BASE_DATE}'),
+                    (1, 'gB', 'B', 'http://a2', 'hello', NULL,
+                     '${OLD_DATE}', '${OLD_DATE}'),
+                    (1, 'gC', 'C', 'http://a3', 'world', NULL,
+                     '${OLD_DATE}', '${OLD_DATE}')
+            `)
+
+            const idRows: Array<{ id:number; guid:string }> = []
+            db.exec({
+                sql: 'SELECT id, guid FROM items ORDER BY guid ASC',
+                rowMode: 'object',
+                resultRows: idRows
+            })
+            const openId = idRows[0].id // gA
+            const itemBId = idRows[1].id // gB
+            const itemCId = idRows[2].id // gC
+            setCurrentlyOpenItemId(openId)
+
+            // Record images for all 3 items; open item has 100 bytes,
+            // others have 50 each. Total: 200 bytes text + 200 bytes
+            // images = 400 bytes.
+            await recordCachedImage(db, {
+                url: 'img://open-a.jpg',
+                feedId: 1,
+                itemId: openId,
+                sizeBytes: 100
+            })
+            await recordCachedImage(db, {
+                url: 'img://open-b.jpg',
+                feedId: 1,
+                itemId: openId,
+                sizeBytes: 100
+            })
+            await recordCachedImage(db, {
+                url: 'img://b.jpg',
+                feedId: 1,
+                itemId: itemBId,
+                sizeBytes: 50
+            })
+            await recordCachedImage(db, {
+                url: 'img://c.jpg',
+                feedId: 1,
+                itemId: itemCId,
+                sizeBytes: 50
+            })
+
+            // Set feed cap to 150 bytes: only evictable images (B+C) + text
+            // (gB + gC) must fit. The fix ensures currentSize excludes the
+            // open item's images (200 bytes), so currentSize = 50+50+5+5
+            // = 110 bytes, no eviction needed. Without the fix,
+            // currentSize would be 200 (open images) + 110 (other bytes) =
+            // 310, requiring 160 bytes of eviction, over-evicting B+C.
+            await upsertFeedCachePolicy(db, 1, {
+                cache_mode: null,
+                max_size_bytes: 150,
+                max_age_seconds: null
+            })
+
+            const { storage } = mockCacheStorage()
+            const result = await evictByFeedSizeCap(db, storage)
+
+            // With the fix: no eviction needed (110 < 150).
+            // Without: would evict all of B and C to make room for
+            // protected open-item bytes.
+            t.equal(result.feedsTrimmed, 0, 'no eviction needed')
+            t.equal(result.bytesFreed, 0, 'no bytes freed')
+
+            const rows: Array<{ guid:string; content:string|null }> = []
+            db.exec({
+                sql: 'SELECT guid, content FROM items' +
+                    ' ORDER BY guid ASC',
+                rowMode: 'object',
+                resultRows: rows
+            })
+            t.equal(
+                rows[0].content,
+                'open',
+                'open item A preserved'
+            )
+            t.equal(
+                rows[1].content,
+                'hello',
+                'item B preserved (no over-eviction)'
+            )
+            t.equal(
+                rows[2].content,
+                'world',
+                'item C preserved (no over-eviction)'
+            )
+        } finally {
+            _resetOpenItemRegistry()
+            db.close()
+        }
+    }
+)
+
 // --- evictByAccountSizeCap tests ---
 
 test(
