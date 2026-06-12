@@ -64,4 +64,78 @@ TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 
 <!-- MANUAL ADDITIONS START -->
+
+## Correctness Conventions
+
+Last verified: 2026-06-12
+
+These are project-wide invariants confirmed by the correctness audit. They
+are durable contracts, not implementation notes — keep them true.
+
+### Durable Object SQLite: no bare `.one()`
+
+`SqlStorageCursor.one()` throws unless the result set has exactly one row.
+For any query that can legitimately return zero rows (lookups by id,
+optional-row reads), use `.toArray()[0] ?? null` instead of `.one()`. Bare
+`.one()` is reserved for queries guaranteed to return exactly one row
+(e.g. `SELECT count(*)`).
+
+DO tests model this with the shared fake at `test/helpers/sql-fake.ts`
+(`fakeResult(rows)`). Its `one()` throws on a non-singleton result set, so a
+test that exercises an optional-row path through `.one()` fails loudly. Use
+this fake — not an ad-hoc stub — when testing DO SQL handlers, so optional-row
+regressions are caught.
+
+### `parseIdParam` for numeric route params
+
+`parseIdParam` (exported from `src/server/durable-objects/index.ts`) is the
+single validator for `:id`-style numeric path params. It returns `null` for
+anything that is not a positive integer whose canonical string equals the
+input (rejects `1.5`, `0`, `-1`, `01`, `1e3`, trailing junk). Route handlers
+return `400` when it returns `null`; never pass an unvalidated id into a DO
+SQL bind.
+
+### Security invariants
+
+- **OAuth `iss` binding (RFC 9207):** `OAuthState` persists the `authServer`
+  resolved at flow start; the callback rejects (`invalid_iss`) when the
+  returned `iss` is not byte-exactly equal to it. Fails closed.
+- **Admin token compare is constant-time:** admin auth uses
+  `constantTimeEqual` (exported from `src/server/index.ts`), never `===`, to
+  avoid timing leaks.
+- **Untrusted URLs are http(s)-validated:** subscription-record `feedUrl`/
+  `siteUrl` (and other URLs from remote sources) pass through
+  `httpUrlOrNull` (`src/shared/publisher-link.ts`) at parse time;
+  `listRemoteSubscriptions` SSRF-guards its PDS fetch.
+
+### Sync / outbox contracts
+
+- **Subscription identity is the canonical feed URL.** Record, reconcile, and
+  the local subscription row all key on the canonical (normalized) URL, not
+  the raw input — a feed has one identity across push, pull, and reconcile.
+- **Outbox dead-letters after `DEAD_LETTER_ATTEMPT_LIMIT` (10) transient
+  failures.** Transient (5xx/network) failures now count toward the cap, not
+  just permanent ones; an op that keeps failing transiently is dead-lettered
+  rather than retried forever. (Constant in `src/client/db/push-sync.ts`.)
+- **Push-sync 409 reconcile is cache-policy-aware.** When the server reports a
+  conflict it restores items and writes the sync-status columns; body columns
+  are only overwritten when the per-feed cache policy says to keep content
+  (`isContentCachedForPolicy`), otherwise `COALESCE`-preserved.
+- **`getBlueskyFollows` / `listRemoteSubscriptions` are pagination-bounded**
+  and report truncation. `getBlueskyFollows` returns `{ follows, ok }` where
+  `ok:false` signals a fetch error, page cap, or cursor stall truncated the
+  result; callers must treat a partial list as incomplete.
+
+### Cache-storage / OPFS atomicity
+
+- **Image cache writes are atomic across two stores.** On a DB-write failure
+  the Cache Storage blob is rolled back, so a cached image never exists in one
+  store without its row in the other.
+- **Cache eviction excludes the currently-open item** from the size total so
+  the item being read is never evicted out from under the reader.
+- **OPFS deletion holds the tab lock through the delete** and unlinks via the
+  sqlite worker's SAH-pool `remove` RPC. The worker protocol gained a
+  `remove` request (`src/client/db/sqlite-worker-protocol.ts`); local-first
+  reset also clears the per-DID paint cache.
+
 <!-- MANUAL ADDITIONS END -->
