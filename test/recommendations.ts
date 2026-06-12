@@ -7,9 +7,9 @@ import { test } from '@substrate-system/tapzero'
 import {
     computeRecommendations,
     type RecommendationsDeps,
-    type RegistryUser,
-    type BlueskyFollowsResult
+    type RegistryUser
 } from '../src/server/recommendations.js'
+import type { BlueskyFollowsResult } from '../src/server/bluesky-follows.js'
 
 function makeDeps (opts:{
     blueskyFollows?:Array<{ did:string; handle:string }>
