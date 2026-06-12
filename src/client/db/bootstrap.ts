@@ -174,20 +174,33 @@ export async function bootstrapLocalDb (
         })
         _bootstrappedDb = null
         await closeDb(openedDb)
-        if (lockAcquired) {
-            await releaseLocalTabLock()
+
+        if (isTransient) {
+            if (lockAcquired) {
+                await releaseLocalTabLock()
+            }
+            return
         }
 
-        if (isTransient) return
+        try {
+            const confirmed = opts.confirmTerminalReset ?
+                await opts.confirmTerminalReset(msg) :
+                false
+            if (!confirmed) {
+                if (lockAcquired) {
+                    await releaseLocalTabLock()
+                }
+                return
+            }
 
-        const confirmed = opts.confirmTerminalReset ?
-            await opts.confirmTerminalReset(msg) :
-            false
-        if (!confirmed) return
-
-        runBootstrapFailureCleanups()
-        setSyncSubscriptions(false)
-        saveLocalFirstSettings()
-        await removeOpfsDb(did)
+            runBootstrapFailureCleanups()
+            setSyncSubscriptions(false)
+            saveLocalFirstSettings()
+            await removeOpfsDb(did)
+        } finally {
+            if (lockAcquired) {
+                await releaseLocalTabLock()
+            }
+        }
     }
 }

@@ -286,8 +286,11 @@ export async function disableLocalFirst (
         await closeDb(db)
         clearBootstrappedDb()
         _resetAdapterCache()
-        await releaseLocalTabLock()
-        await removeOpfsDb(did)
+        try {
+            await removeOpfsDb(did)
+        } finally {
+            await releaseLocalTabLock()
+        }
         clearPaintCache(did)
         batch(() => {
             setSyncSubscriptions(false)
@@ -320,11 +323,14 @@ export async function resetLocalFirst (
             throw err
         }
     }
-    await closeDb(db)
-    clearBootstrappedDb()
-    _resetAdapterCache()
-    await releaseLocalTabLock()
-    await removeOpfsDb(did)
+    try {
+        await closeDb(db)
+        clearBootstrappedDb()
+        _resetAdapterCache()
+        await removeOpfsDb(did)
+    } finally {
+        await releaseLocalTabLock()
+    }
     endLocalFirstDisable(db)
     await bootstrapLocalDb(did, fetchFn)
 }
