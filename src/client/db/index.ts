@@ -332,6 +332,7 @@ export async function resetLocalFirst (
         clearBootstrappedDb()
         _resetAdapterCache()
         await removeOpfsDb(did)
+        clearPaintCache(did)
     } finally {
         await releaseLocalTabLock()
     }

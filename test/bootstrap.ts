@@ -1375,3 +1375,90 @@ test('resetLocalFirst: requires explicit data-loss confirmation after failure',
         _resetAdapterCache()
     }
 )
+
+test('AC15.1: resetLocalFirst clears paint cache',
+    async (t) => {
+        clearBootstrappedDb()
+        _resetSupportedCache()
+        _resetAdapterCache()
+        resetTabCoordinationForTests()
+        syncSubscriptions.value = true
+        billingStatus.value = {
+            entitled: true,
+            planId: 'local-first',
+            status: 'active',
+            refreshedAt: Date.now(),
+            useLive: false
+        }
+
+        Object.defineProperty(navigator, 'storage', {
+            value: {
+                getDirectory: async () => ({
+                    getDirectoryHandle: async () => ({
+                        removeEntry: async () => {}
+                    })
+                })
+            },
+            configurable: true
+        })
+        Object.defineProperty(globalThis, 'crossOriginIsolated', {
+            value: true,
+            configurable: true
+        })
+        Object.defineProperty(navigator, 'onLine', {
+            value: true,
+            configurable: true
+        })
+
+        setTestMode(false)
+        setSQLiteWorkerClientFactoryForTests(() => ({
+            probe: async () => {},
+            open: async () => {},
+            exec: async () => {},
+            query: async () => [],
+            close: async () => {},
+            dispose: () => {}
+        } as unknown as SQLiteWorkerClient))
+
+        const did = 'did:test:reset-clear-paint'
+
+        try {
+            // Write a paint cache entry
+            const { writePaintCache } = await import(
+                '../src/client/paint-cache.js'
+            )
+            writePaintCache(did, {
+                feeds: [],
+                items: [],
+                counts: {
+                    total: 0,
+                    starred: 0,
+                    unread: 0,
+                    perFeed: {}
+                },
+                selectedFeedId: null
+            })
+
+            // Get adapter to bootstrap, then reset
+            await getAdapter(did)
+            await resetLocalFirst(did, makeFetch(syncPayload))
+
+            // After resetLocalFirst, the paint cache entry
+            // for this DID should be cleared
+            const { readPaintCache } = await import(
+                '../src/client/paint-cache.js'
+            )
+            const cacheAfterReset = readPaintCache(did)
+
+            t.equal(
+                cacheAfterReset,
+                null,
+                'paint cache entry is cleared after resetLocalFirst' +
+                ' (verifies clearPaintCache was called)'
+            )
+        } finally {
+            clearBootstrappedDb()
+            _resetAdapterCache()
+        }
+    }
+)
