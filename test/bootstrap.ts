@@ -1006,6 +1006,10 @@ test('AC8.1: tab lock held through OPFS delete - success path',
         // is called by observing when the lock's released state changes.
         const events:string[] = []
         let removeOpfsDbResolve:() => void = () => {}
+        let stateDuringRemove:string|null = null
+        const { getTabCoordinationState } = await import(
+            '../src/client/db/tab-coordination.js'
+        )
 
         Object.defineProperty(navigator, 'storage', {
             value: {
@@ -1013,7 +1017,9 @@ test('AC8.1: tab lock held through OPFS delete - success path',
                     getDirectoryHandle: async () => ({
                         removeEntry: async () => {
                             events.push('removeOpfsDb-called')
-                            // Pause to let test observe lock is still acquired
+                            // The lock must still be held (primary) while the
+                            // OPFS delete runs — release happens only after.
+                            stateDuringRemove = getTabCoordinationState()
                             await new Promise<void>((resolve) => {
                                 removeOpfsDbResolve = resolve
                             })
@@ -1072,17 +1078,22 @@ test('AC8.1: tab lock held through OPFS delete - success path',
             // Wait for bootstrap to complete
             await bootstrapPromise
 
-            // Verify the order of events
-            const removeCalledIdx = events.indexOf('removeOpfsDb-called')
-            const removeCompletedIdx = events.indexOf('removeOpfsDb-completed')
-
+            // The lock was still held (primary) while removeOpfsDb ran —
+            // this is the ordering guarantee. If the lock were released
+            // before the delete (the bug), the state would be 'waiting'.
             t.ok(
-                removeCalledIdx >= 0 && removeCompletedIdx >= 0,
-                'removeOpfsDb is called and completes'
+                events.includes('removeOpfsDb-called'),
+                'removeOpfsDb was invoked during terminal reset'
             )
-            t.ok(
-                removeCalledIdx < removeCompletedIdx,
-                'removeOpfsDb execution is tracked correctly'
+            t.equal(
+                stateDuringRemove,
+                'primary',
+                'tab lock still held while removeOpfsDb runs'
+            )
+            t.equal(
+                getTabCoordinationState(),
+                'waiting',
+                'tab lock released only after removeOpfsDb completed'
             )
             t.equal(syncSubscriptions.value, false,
                 'terminal reset disables syncSubscriptions')
