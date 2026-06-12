@@ -65,26 +65,8 @@ function createRefreshDo (
         broadcasts.push({ event, data })
     }
 
-    // The actual runFeedPool implementation from the DO
-    userDo.runFeedPool = async (items:FeedRow[], worker) => {
-        const FEED_REFRESH_CONCURRENCY = 8
-        let next = 0
-        const count = Math.min(FEED_REFRESH_CONCURRENCY, items.length)
-        const runners = Array.from({ length: count }, async () => {
-            while (next < items.length) {
-                const item = items[next++]
-                if (!item) continue
-                try {
-                    await worker(item)
-                } catch (err) {
-                    // Isolate per-feed failure: log, continue pool
-                    console.error('[refresh-feed]', err, { feedId: item.id })
-                }
-            }
-        })
-
-        await Promise.all(runners)
-    }
+    // Bind the real runFeedPool from the prototype
+    userDo.runFeedPool = RsssUserDO.prototype.runFeedPool
 
     return { userDo, broadcasts }
 }

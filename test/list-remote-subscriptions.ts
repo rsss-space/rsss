@@ -1,29 +1,42 @@
 /**
  * Tests for listRemoteSubscriptions pagination bounds (AC7.5)
  *
- * Tests the pagination cap and cursor-stall detection via mocked fetch
- * to ensure the function doesn't loop forever on a stalled PDS.
+ * Tests the pagination cap and cursor-stall detection by calling
+ * the real listRemoteSubscriptions method with mocked fetch and
+ * collaborator methods.
  */
 import { test } from '@substrate-system/tapzero'
+import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
-// We need to test the private listRemoteSubscriptions method.
-// Since it's private on the DO class, we'll test through mocking globalThis.fetch
-// and verifying the behavior.
+interface OAuthCredentialRecord {
+    did:string
+    pdsEndpoint:string
+}
+
+interface ListedSubscriptionRecord {
+    uri:string
+    value:Record<string, unknown>
+}
 
 interface ListedSubscriptionResponse {
-    records:Array<{ uri:string; value:{ type:string; value:string } }>
+    records:ListedSubscriptionRecord[]
     cursor?:string
+}
+
+interface RemoteSubscription {
+    rkey:string
+    createdAt:string|null
 }
 
 function makeListRecordsPage (
     recordCount:number,
     cursor?:string
 ):ListedSubscriptionResponse {
-    const records:ListedSubscriptionResponse['records'] = []
+    const records:ListedSubscriptionRecord[] = []
     for (let i = 0; i < recordCount; i++) {
         records.push({
             uri: `at://did:plc:example/com.example.record/${i}`,
-            value: { type: 'com.example.record', value: `record-${i}` }
+            value: { feedUrl: `https://example.com/feed${i}.xml` }
         })
     }
     return {
@@ -41,90 +54,194 @@ function makeSuccessResponse (body:unknown):Response {
 
 test('listRemoteSubscriptions stops at MAX_RECORD_PAGES cap (AC7.5)',
     async (t) => {
-    // Verify that when a PDS returns a unique cursor on each page
-    // (always different), the function still stops after MAX_RECORD_PAGES.
-    // To test this without hitting a stall immediately, we generate
-    // unique cursors but continue until page cap.
-
+        // Create a real DO instance and call the real listRemoteSubscriptions
         let fetchCount = 0
         const originalFetch = globalThis.fetch
 
         try {
-            globalThis.fetch = (async (_input:string|URL|Request) => {
+            const userDo = Object.create(
+                RsssUserDO.prototype
+            ) as unknown as {
+                listRemoteSubscriptions(
+                    creds:OAuthCredentialRecord
+                ):Promise<Map<string, RemoteSubscription>>
+                listRecordsUrl(
+                    creds:OAuthCredentialRecord,
+                    cursor?:string
+                ):string
+                isListedSubscriptionRecord(
+                    value:unknown
+                ):value is ListedSubscriptionRecord
+                subscriptionFromRecord(
+                    record:ListedSubscriptionRecord
+                ):{ feedUrl:string; subscription:RemoteSubscription }|null
+            }
+
+            // Mock globalThis.fetch to return unique cursors
+            globalThis.fetch = (async () => {
                 fetchCount++
-                // Return unique cursors to avoid stall detection
                 return makeSuccessResponse(
                     makeListRecordsPage(5, `cursor-${fetchCount}`)
                 )
             }) as typeof fetch
 
-            const MAX_RECORD_PAGES = 50
-            let cursor:string|undefined
-            let pageCount = 0
+            // Stub the collaborator methods from the DO
+            userDo.listRecordsUrl = (creds, cursor) => {
+                const base = creds.pdsEndpoint.endsWith('/') ?
+                    creds.pdsEndpoint :
+                    `${creds.pdsEndpoint}/`
+                const url = new URL(
+                    'xrpc/com.atproto.repo.listRecords',
+                    base
+                )
+                url.searchParams.set('repo', creds.did)
+                url.searchParams.set('collection', 'app.bsky.feed.subscribe')
+                url.searchParams.set('limit', '100')
+                if (cursor) url.searchParams.set('cursor', cursor)
+                return url.href
+            }
 
-            do {
-                if (pageCount >= MAX_RECORD_PAGES) {
-                    break
+            userDo.isListedSubscriptionRecord = (value) => {
+                if (typeof value !== 'object' || value === null) return false
+                if (Array.isArray(value)) return false
+                const record = value as Partial<ListedSubscriptionRecord>
+                return typeof record.uri === 'string'
+            }
+
+            userDo.subscriptionFromRecord = (record) => {
+                if (typeof record.value !== 'object' ||
+                    record.value === null) {
+                    return null
                 }
-
-                const response = await fetch('http://test.example/records')
-                const body = await response.json<ListedSubscriptionResponse>()
-
-                pageCount++
-                const newCursor = body.cursor
-
-                if (newCursor && newCursor === cursor) {
-                    break
+                if (Array.isArray(record.value)) return null
+                const value = record.value as {
+                    feedUrl?:string; createdAt?:string
                 }
+                const rkey = record.uri.split('/').pop() || null
+                if (!rkey || typeof value.feedUrl !== 'string') return null
+                return {
+                    feedUrl: value.feedUrl,
+                    subscription: {
+                        rkey,
+                        createdAt: typeof value.createdAt === 'string' ?
+                            value.createdAt :
+                            null
+                    }
+                }
+            }
 
-                cursor = newCursor
-            } while (cursor)
+            // Call the real method
+            const result = await userDo.listRemoteSubscriptions({
+                did: 'did:plc:test',
+                pdsEndpoint: 'https://example.com/'
+            })
 
-            t.equal(fetchCount, 50, 'should make 50 requests up to MAX_RECORD_PAGES')
-            t.equal(pageCount, 50, 'pageCount should equal MAX_RECORD_PAGES')
+            t.equal(
+                fetchCount,
+                50,
+                'should make 50 requests up to MAX_RECORD_PAGES'
+            )
+            t.ok(
+                result.size > 0,
+                'should return collected subscriptions'
+            )
         } finally {
             globalThis.fetch = originalFetch
         }
     })
 
-test('listRemoteSubscriptions bails on cursor stall (AC7.5)', async (t) => {
-    // When a PDS returns the same cursor twice, bail immediately
-    let fetchCount = 0
-    const originalFetch = globalThis.fetch
+test('listRemoteSubscriptions bails on cursor stall (AC7.5)',
+    async (t) => {
+        // When the PDS returns the same cursor twice, bail immediately
+        let fetchCount = 0
+        const originalFetch = globalThis.fetch
 
-    try {
-        globalThis.fetch = (async (_input:string|URL|Request) => {
-            fetchCount++
-            // Always return cursor-1, which will be stable on request 2
-            return makeSuccessResponse(makeListRecordsPage(5, 'cursor-1'))
-        }) as typeof fetch
-
-        const MAX_RECORD_PAGES = 50
-        let cursor:string|undefined
-        let pageCount = 0
-
-        do {
-            if (pageCount >= MAX_RECORD_PAGES) {
-                break
+        try {
+            const userDo = Object.create(
+                RsssUserDO.prototype
+            ) as unknown as {
+                listRemoteSubscriptions(
+                    creds:OAuthCredentialRecord
+                ):Promise<Map<string, RemoteSubscription>>
+                listRecordsUrl(
+                    creds:OAuthCredentialRecord,
+                    cursor?:string
+                ):string
+                isListedSubscriptionRecord(
+                    value:unknown
+                ):value is ListedSubscriptionRecord
+                subscriptionFromRecord(
+                    record:ListedSubscriptionRecord
+                ):{ feedUrl:string; subscription:RemoteSubscription }|null
             }
 
-            const response = await fetch('http://test.example/records')
-            const body = await response.json<ListedSubscriptionResponse>()
+            // Mock to always return the same cursor
+            globalThis.fetch = (async () => {
+                fetchCount++
+                return makeSuccessResponse(
+                    makeListRecordsPage(5, 'cursor-1')
+                )
+            }) as typeof fetch
 
-            pageCount++
-            const newCursor = body.cursor
-
-            // Bail if cursor unchanged
-            if (newCursor && newCursor === cursor) {
-                break
+            userDo.listRecordsUrl = (creds, cursor) => {
+                const base = creds.pdsEndpoint.endsWith('/') ?
+                    creds.pdsEndpoint :
+                    `${creds.pdsEndpoint}/`
+                const url = new URL(
+                    'xrpc/com.atproto.repo.listRecords',
+                    base
+                )
+                url.searchParams.set('repo', creds.did)
+                url.searchParams.set('collection', 'app.bsky.feed.subscribe')
+                url.searchParams.set('limit', '100')
+                if (cursor) url.searchParams.set('cursor', cursor)
+                return url.href
             }
 
-            cursor = newCursor
-        } while (cursor)
+            userDo.isListedSubscriptionRecord = (value) => {
+                if (typeof value !== 'object' || value === null) return false
+                if (Array.isArray(value)) return false
+                const record = value as Partial<ListedSubscriptionRecord>
+                return typeof record.uri === 'string'
+            }
 
-        t.equal(fetchCount, 2, 'should make 2 requests before detecting stall')
-        t.equal(pageCount, 2, 'pageCount should be 2 before stall')
-    } finally {
-        globalThis.fetch = originalFetch
-    }
-})
+            userDo.subscriptionFromRecord = (record) => {
+                if (typeof record.value !== 'object' ||
+                    record.value === null) {
+                    return null
+                }
+                if (Array.isArray(record.value)) return null
+                const value = record.value as {
+                    feedUrl?:string; createdAt?:string
+                }
+                const rkey = record.uri.split('/').pop() || null
+                if (!rkey || typeof value.feedUrl !== 'string') return null
+                return {
+                    feedUrl: value.feedUrl,
+                    subscription: {
+                        rkey,
+                        createdAt: typeof value.createdAt === 'string' ?
+                            value.createdAt :
+                            null
+                    }
+                }
+            }
+
+            const result = await userDo.listRemoteSubscriptions({
+                did: 'did:plc:test',
+                pdsEndpoint: 'https://example.com/'
+            })
+
+            t.equal(
+                fetchCount,
+                2,
+                'should make 2 requests before detecting stall'
+            )
+            t.ok(
+                result.size > 0,
+                'should return collected subscriptions'
+            )
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })

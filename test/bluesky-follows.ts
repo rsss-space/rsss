@@ -233,8 +233,9 @@ test('cache key is consistent for same DID', async (t) => {
 })
 
 test('stops at MAX_FOLLOW_PAGES cap (AC7.1)', async (t) => {
-    // Create 51 pages all with the same cursor, which would infinite-loop
-    // without the page cap. Instead, should stop at page 50.
+    // Use DISTINCT cursors per page to avoid the stall guard (AC7.2)
+    // so we test the page cap specifically. Should make exactly
+    // MAX_FOLLOW_PAGES requests and stop there.
     let fetchCount = 0
     const deps:BlueskyFollowsDeps &
         { puts:Array<{ key:string; value:string; ttl:number }> } = {
@@ -243,7 +244,7 @@ test('stops at MAX_FOLLOW_PAGES cap (AC7.1)', async (t) => {
                 fetchCount++
                 return makeSuccessResponse(makeAppviewPage(
                     [makeFollow(`did:plc:f${fetchCount}`, `f${fetchCount}.test`)],
-                    'constant-cursor'
+                    `cursor-${fetchCount}`
                 ))
             },
             getCache: async () => null,
@@ -252,7 +253,11 @@ test('stops at MAX_FOLLOW_PAGES cap (AC7.1)', async (t) => {
             }
         }
     const result = await getBlueskyFollows('did:plc:test', deps)
-    t.ok(fetchCount <= 50, `should stop at MAX_FOLLOW_PAGES (${fetchCount} fetches)`)
+    t.equal(
+        fetchCount,
+        50,
+        'should make exactly MAX_FOLLOW_PAGES (50) requests'
+    )
     t.equal(result.ok, false, 'ok should be false when max pages reached')
     t.ok(result.follows.length > 0, 'should return partial follows')
 })
