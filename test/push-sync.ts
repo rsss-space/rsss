@@ -548,10 +548,14 @@ test(
                 ]
             })
 
+            // Fail with 5xx for 9 attempts (below DEAD_LETTER_ATTEMPT_LIMIT)
+            // then recover on the 10th. A transient failure that recovers
+            // within the retry budget must NOT be dead-lettered. (At/over the
+            // cap, the row IS promoted to dead-letter — see the AC5.3 test.)
             let calls = 0
             const transientThenOk:FakeFetch = async () => {
                 calls += 1
-                const status = calls <= 10 ? 500 : 200
+                const status = calls <= 9 ? 500 : 200
                 return {
                     ok: status >= 200 && status < 300,
                     status,
@@ -559,7 +563,7 @@ test(
                 }
             }
 
-            for (let i = 0; i < 11; i += 1) {
+            for (let i = 0; i < 10; i += 1) {
                 await pushSync(db, transientThenOk)
             }
 
@@ -567,7 +571,8 @@ test(
             t.equal(
                 queryAll(db, 'SELECT * FROM dead_letter_outbox').length,
                 0,
-                'transient failures are not dead-lettered'
+                'transient failures that recover within budget ' +
+                'are not dead-lettered'
             )
         } finally {
             db.close()
@@ -669,6 +674,86 @@ test('pushSync: sequential dead letters do not collide on id', async (t) => {
         db.close()
     }
 })
+
+// ── AC5.3: 5xx retry cap promotion to dead-letter ────────────────────────────
+
+test(
+    'AC5.3: 5xx retry loop promotes to dead-letter at DEAD_LETTER_ATTEMPT_LIMIT',
+    async (t) => {
+        const db = await openLocalDb('did:test:ac5-3-dead-letter-5xx')
+        try {
+            // Seed an add_feed outbox row
+            const addFeedPayload = JSON.stringify({
+                url: 'https://example.com/new-feed',
+                title: 'New Feed'
+            })
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id, client_updated_at,
+                     attempts)
+                    VALUES (?, ?, ?, ?, ?, ?)`,
+                bind: [
+                    'add_feed',
+                    null,
+                    addFeedPayload,
+                    'op-uuid-5xx-retry',
+                    '2026-01-01 00:00:00',
+                    0
+                ]
+            })
+
+            // Drive through 5xx retries: simulate calling pushSync multiple times
+            // with 5xx responses. Each call increments attempts by 1.
+            // After DEAD_LETTER_ATTEMPT_LIMIT (10) attempts, the row should
+            // be in dead_letter_outbox.
+            for (let i = 0; i < DEAD_LETTER_ATTEMPT_LIMIT; i++) {
+                await pushSync(db, makeFetch(500))
+                const outboxRow = queryOne<{ attempts:number }>(
+                    db,
+                    'SELECT attempts FROM outbox WHERE client_op_id = ?',
+                    ['op-uuid-5xx-retry']
+                )
+                const deadRow = queryOne<{ attempts:number }>(
+                    db,
+                    'SELECT attempts FROM dead_letter_outbox' +
+                    ' WHERE client_op_id = ?',
+                    ['op-uuid-5xx-retry']
+                )
+                if (i < DEAD_LETTER_ATTEMPT_LIMIT - 1) {
+                    t.ok(outboxRow, `after ${i + 1} attempt(s): in outbox`)
+                    t.equal(deadRow, undefined, `after ${i + 1} attempt(s):` +
+                        ' not yet in dead_letter_outbox')
+                }
+            }
+
+            // After DEAD_LETTER_ATTEMPT_LIMIT attempts, row should be promoted
+            const finalOutbox = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM outbox WHERE client_op_id = ?',
+                ['op-uuid-5xx-retry']
+            )
+            const finalDead = queryOne<{ attempts:number }>(
+                db,
+                'SELECT attempts FROM dead_letter_outbox' +
+                ' WHERE client_op_id = ?',
+                ['op-uuid-5xx-retry']
+            )
+            t.equal(
+                finalOutbox,
+                undefined,
+                'row removed from outbox at cap'
+            )
+            t.ok(finalDead, 'row in dead_letter_outbox at cap')
+            t.equal(
+                finalDead?.attempts,
+                DEAD_LETTER_ATTEMPT_LIMIT,
+                'attempts count matches limit'
+            )
+        } finally {
+            db.close()
+        }
+    }
+)
 
 // ── 409 reconciliation ────────────────────────────────────────────────────────
 

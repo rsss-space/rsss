@@ -121,6 +121,11 @@ async function recordTransientFailure (
     row:OutboxRow,
     error:string
 ):Promise<void> {
+    const attempts = row.attempts + 1
+    if (attempts >= DEAD_LETTER_ATTEMPT_LIMIT) {
+        await recordPermanentFailure(db, row, error)
+        return
+    }
     await incrementAttempt(db, row.id, error)
 }
 
