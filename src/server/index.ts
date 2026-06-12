@@ -1967,16 +1967,14 @@ app.get('/api/graph', requireAuth, async (c) => {
                 })
             ])
 
-            const available = !('code' in backlinkRes) ||
-                !('code' in countRes)
+            const listFailed = 'code' in backlinkRes
+            const countFailed = 'code' in countRes
 
-            const dids = 'code' in backlinkRes ?
-                [] :
-                backlinkRes.subjects.slice(0, 100)
-
-            const count = 'code' in countRes ?
-                dids.length :
-                countRes.count
+            const dids = listFailed ? [] : backlinkRes.subjects.slice(0, 100)
+            // available reflects the call that actually backs `dids` (the list call).
+            const available = !listFailed
+            // unknown count when the count call failed — do NOT substitute capped length.
+            const count = countFailed ? null : countRes.count
 
             return { dids, count, available }
         }
