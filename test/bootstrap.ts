@@ -1040,16 +1040,7 @@ test('AC8.1: tab lock held through OPFS delete - success path',
             value: {
                 getDirectory: async () => ({
                     getDirectoryHandle: async () => ({
-                        removeEntry: async () => {
-                            events.push('removeOpfsDb-called')
-                            // The lock must still be held (primary) while the
-                            // OPFS delete runs — release happens only after.
-                            stateDuringRemove = getTabCoordinationState()
-                            await new Promise<void>((resolve) => {
-                                removeOpfsDbResolve = resolve
-                            })
-                            events.push('removeOpfsDb-completed')
-                        }
+                        removeEntry: async () => {}
                     })
                 })
             },
@@ -1065,13 +1056,25 @@ test('AC8.1: tab lock held through OPFS delete - success path',
         })
 
         setTestMode(false)
+        // removeOpfsDb now drives the worker `remove` RPC (SAH-pool unlink),
+        // not navigator.storage.removeEntry. Observe the lock state inside the
+        // worker remove: it must still be 'primary' (held) while the delete
+        // runs; release happens only after, in bootstrapLocalDb's finally.
         setSQLiteWorkerClientFactoryForTests(() => ({
             probe: async () => {},
             open: async () => {},
             exec: async () => {},
             query: async () => [],
             close: async () => {},
-            dispose: () => {}
+            dispose: () => {},
+            remove: async () => {
+                events.push('removeOpfsDb-called')
+                stateDuringRemove = getTabCoordinationState()
+                await new Promise<void>((resolve) => {
+                    removeOpfsDbResolve = resolve
+                })
+                events.push('removeOpfsDb-completed')
+            }
         } as unknown as SQLiteWorkerClient))
 
         try {
@@ -1161,9 +1164,7 @@ test('AC8.1: tab lock released even if OPFS delete throws',
             value: {
                 getDirectory: async () => ({
                     getDirectoryHandle: async () => ({
-                        removeEntry: async () => {
-                            throw new Error('OPFS delete failed')
-                        }
+                        removeEntry: async () => {}
                     })
                 })
             },
@@ -1179,13 +1180,18 @@ test('AC8.1: tab lock released even if OPFS delete throws',
         })
 
         setTestMode(false)
+        // The OPFS delete (worker `remove` RPC) throws; bootstrapLocalDb's
+        // finally must still release the tab lock afterward.
         setSQLiteWorkerClientFactoryForTests(() => ({
             probe: async () => {},
             open: async () => {},
             exec: async () => {},
             query: async () => [],
             close: async () => {},
-            dispose: () => {}
+            dispose: () => {},
+            remove: async () => {
+                throw new Error('OPFS delete failed')
+            }
         } as unknown as SQLiteWorkerClient))
 
         try {
