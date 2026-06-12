@@ -53,6 +53,7 @@ const commands = [
     'npm run test:subscription-reconcile',
     'npm run test:admin-auth',
     'npm run test:admin-refresh-all',
+    'npm run test:recommendations-route',
 
     // --- node-platform tests (esbuild -> node -> tap-spec) ---
     [

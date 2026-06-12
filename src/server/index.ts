@@ -71,6 +71,14 @@ import {
     buildGraphResponse,
     type GraphApiDeps
 } from './graph-api.js'
+import {
+    computeRecommendations,
+    type RecommendationsDeps
+} from './recommendations.js'
+import {
+    getBlueskyFollows,
+    makeBlueskyFollowsDeps
+} from './bluesky-follows.js'
 import type { Context, Next } from 'hono'
 import type * as BlurhashRuntime from './blurhash-runtime.js'
 
@@ -2013,6 +2021,86 @@ app.get('/api/graph', requireAuth, async (c) => {
     }
 })
 
+/**
+ * Recommended users for the authenticated user (US-020).
+ * Returns users from the user's Bluesky follows who are in the
+ * rsss registry and whom the user does not already follow on rsss.
+ */
+app.get('/api/recommendations', requireAuth, async (c) => {
+    const session = c.get('session')!
+
+    // Build dependencies for computeRecommendations
+    const depsForBluesky = makeBlueskyFollowsDeps(c.env.SESSIONS, fetch)
+
+    const deps:RecommendationsDeps = {
+        getBlueskyFollows: async (did:string) => {
+            const result = await getBlueskyFollows(did, depsForBluesky)
+            // If Bluesky fetch failed, surface as 503 (not zero recommendations)
+            if (!result.ok) {
+                return {
+                    follows: [],
+                    ok: false
+                }
+            }
+            return result
+        },
+        listRsssFollowing: async () => {
+            try {
+                const stub = getRsssUserDO(c.env, session.did)
+                const res = await stub.fetch(
+                    new Request('http://do/graph/following')
+                )
+                if (!res.ok) return []
+                const body = await res.json() as { dids?:string[] }
+                return body.dids ?? []
+            } catch {
+                return []
+            }
+        },
+        batchLookupRegistry: async (dids:string[]) => {
+            const stub = getRegistryDO(c.env)
+            if (!stub) return []
+            try {
+                const res = await stub.fetch(
+                    new Request('http://registry/batch-lookup', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ dids })
+                    })
+                )
+                if (!res.ok) return []
+                const body = await res.json() as
+                    { users?:Array<{ did:string; handle:string; avatar:string|null }> }
+                return body.users ?? []
+            } catch {
+                return []
+            }
+        }
+    }
+
+    try {
+        // Check that Bluesky follows fetch succeeded
+        const blueskyResult = await getBlueskyFollows(
+            session.did,
+            depsForBluesky
+        )
+        if (!blueskyResult.ok) {
+            return c.json({ error: 'recommendations_unavailable' }, 503)
+        }
+
+        const recommendations = await computeRecommendations(
+            session.did,
+            deps
+        )
+        return c.json(recommendations)
+    } catch (err) {
+        reportError(err, 'recommendations', {
+            route: '/api/recommendations'
+        })
+        return c.json({ error: 'recommendations_unavailable' }, 503)
+    }
+})
+
 export const dataRouter = new Hono<{
     Bindings:Env;
     Variables:Variables
@@ -2334,7 +2422,7 @@ app.post('/admin/refresh-all', requireAdmin, async (c) => {
             (key) => key.name.replace('user:', '')
         )
         listComplete = result.list_complete
-        nextCursor = result.cursor
+        nextCursor = (result as { cursor?:string }).cursor
     }
 
     if (dids.length === 0) {

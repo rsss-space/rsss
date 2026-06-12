@@ -147,7 +147,7 @@ test('AC16.1: constant-time impl always digests (no early length return)', async
     const countingCompare = async (
         a:string,
         b:string
-    ):Promise<boolean> => {
+    ):Promise<{ result:boolean; callsBeforeXor:number }> => {
         const enc = new TextEncoder()
         // Count digest calls with different lengths
         digestCalls = 0
