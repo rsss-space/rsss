@@ -7,8 +7,7 @@ import { test } from '@substrate-system/tapzero'
 import {
     computeRecommendations,
     type RecommendationsDeps,
-    type RegistryUser,
-    type RecommendedUser
+    type RegistryUser
 } from '../src/server/recommendations.js'
 import {
     type BlueskyFollowsResult,
