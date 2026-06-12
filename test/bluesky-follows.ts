@@ -177,31 +177,31 @@ test('returns ok:false on fetch error (AC7.4)', async (t) => {
 
 test('returns ok:false on non-200 response mid-pagination (AC7.3)',
     async (t) => {
-    const page1 = makeAppviewPage(
-        [makeFollow('did:plc:a', 'a.test')],
-        'cursor-1'
-    )
-    let pageIndex = 0
-    const deps:BlueskyFollowsDeps &
+        const page1 = makeAppviewPage(
+            [makeFollow('did:plc:a', 'a.test')],
+            'cursor-1'
+        )
+        let pageIndex = 0
+        const deps:BlueskyFollowsDeps &
         { puts:Array<{ key:string; value:string; ttl:number }> } = {
-        puts: [],
-        fetch: async () => {
-            if (pageIndex === 0) {
-                pageIndex++
-                return makeSuccessResponse(page1)
+            puts: [],
+            fetch: async () => {
+                if (pageIndex === 0) {
+                    pageIndex++
+                    return makeSuccessResponse(page1)
+                }
+                return makeErrorResponse(400)
+            },
+            getCache: async () => null,
+            putCache: async (key, value, ttl) => {
+                deps.puts.push({ key, value, ttl })
             }
-            return makeErrorResponse(400)
-        },
-        getCache: async () => null,
-        putCache: async (key, value, ttl) => {
-            deps.puts.push({ key, value, ttl })
         }
-    }
-    const result = await getBlueskyFollows('did:plc:test', deps)
-    t.equal(result.follows.length, 1, 'should keep page-1 follows on page-2 error')
-    t.equal(result.follows[0].did, 'did:plc:a')
-    t.equal(result.ok, false, 'ok should be false on mid-pagination error')
-})
+        const result = await getBlueskyFollows('did:plc:test', deps)
+        t.equal(result.follows.length, 1, 'should keep page-1 follows on page-2 error')
+        t.equal(result.follows[0].did, 'did:plc:a')
+        t.equal(result.ok, false, 'ok should be false on mid-pagination error')
+    })
 
 test('cache key includes the DID', async (t) => {
     const deps = makeDeps({ pages: [makeAppviewPage([])] })
@@ -238,19 +238,19 @@ test('stops at MAX_FOLLOW_PAGES cap (AC7.1)', async (t) => {
     let fetchCount = 0
     const deps:BlueskyFollowsDeps &
         { puts:Array<{ key:string; value:string; ttl:number }> } = {
-        puts: [],
-        fetch: async () => {
-            fetchCount++
-            return makeSuccessResponse(makeAppviewPage(
-                [makeFollow(`did:plc:f${fetchCount}`, `f${fetchCount}.test`)],
-                'constant-cursor'
-            ))
-        },
-        getCache: async () => null,
-        putCache: async (key, value, ttl) => {
-            deps.puts.push({ key, value, ttl })
+            puts: [],
+            fetch: async () => {
+                fetchCount++
+                return makeSuccessResponse(makeAppviewPage(
+                    [makeFollow(`did:plc:f${fetchCount}`, `f${fetchCount}.test`)],
+                    'constant-cursor'
+                ))
+            },
+            getCache: async () => null,
+            putCache: async (key, value, ttl) => {
+                deps.puts.push({ key, value, ttl })
+            }
         }
-    }
     const result = await getBlueskyFollows('did:plc:test', deps)
     t.ok(fetchCount <= 50, `should stop at MAX_FOLLOW_PAGES (${fetchCount} fetches)`)
     t.equal(result.ok, false, 'ok should be false when max pages reached')
@@ -261,19 +261,19 @@ test('bails on unchanged cursor (AC7.2)', async (t) => {
     let fetchCount = 0
     const deps:BlueskyFollowsDeps &
         { puts:Array<{ key:string; value:string; ttl:number }> } = {
-        puts: [],
-        fetch: async () => {
-            fetchCount++
-            return makeSuccessResponse(makeAppviewPage(
-                [makeFollow(`did:plc:g${fetchCount}`, `g${fetchCount}.test`)],
-                'stalled-cursor'
-            ))
-        },
-        getCache: async () => null,
-        putCache: async (key, value, ttl) => {
-            deps.puts.push({ key, value, ttl })
+            puts: [],
+            fetch: async () => {
+                fetchCount++
+                return makeSuccessResponse(makeAppviewPage(
+                    [makeFollow(`did:plc:g${fetchCount}`, `g${fetchCount}.test`)],
+                    'stalled-cursor'
+                ))
+            },
+            getCache: async () => null,
+            putCache: async (key, value, ttl) => {
+                deps.puts.push({ key, value, ttl })
+            }
         }
-    }
     const result = await getBlueskyFollows('did:plc:test', deps)
     t.equal(fetchCount, 2, 'should make 2 requests (second with same cursor)')
     t.equal(result.ok, false, 'ok should be false on cursor stall')

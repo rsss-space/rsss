@@ -46,46 +46,46 @@ test('listRemoteSubscriptions stops at MAX_RECORD_PAGES cap (AC7.5)',
     // To test this without hitting a stall immediately, we generate
     // unique cursors but continue until page cap.
 
-    let fetchCount = 0
-    const originalFetch = globalThis.fetch
+        let fetchCount = 0
+        const originalFetch = globalThis.fetch
 
-    try {
-        globalThis.fetch = (async (_input:string|URL|Request) => {
-            fetchCount++
-            // Return unique cursors to avoid stall detection
-            return makeSuccessResponse(
-                makeListRecordsPage(5, `cursor-${fetchCount}`)
-            )
-        }) as typeof fetch
+        try {
+            globalThis.fetch = (async (_input:string|URL|Request) => {
+                fetchCount++
+                // Return unique cursors to avoid stall detection
+                return makeSuccessResponse(
+                    makeListRecordsPage(5, `cursor-${fetchCount}`)
+                )
+            }) as typeof fetch
 
-        const MAX_RECORD_PAGES = 50
-        let cursor:string|undefined
-        let pageCount = 0
+            const MAX_RECORD_PAGES = 50
+            let cursor:string|undefined
+            let pageCount = 0
 
-        do {
-            if (pageCount >= MAX_RECORD_PAGES) {
-                break
-            }
+            do {
+                if (pageCount >= MAX_RECORD_PAGES) {
+                    break
+                }
 
-            const response = await fetch('http://test.example/records')
-            const body = await response.json<ListedSubscriptionResponse>()
+                const response = await fetch('http://test.example/records')
+                const body = await response.json<ListedSubscriptionResponse>()
 
-            pageCount++
-            const newCursor = body.cursor
+                pageCount++
+                const newCursor = body.cursor
 
-            if (newCursor && newCursor === cursor) {
-                break
-            }
+                if (newCursor && newCursor === cursor) {
+                    break
+                }
 
-            cursor = newCursor
-        } while (cursor)
+                cursor = newCursor
+            } while (cursor)
 
-        t.equal(fetchCount, 50, 'should make 50 requests up to MAX_RECORD_PAGES')
-        t.equal(pageCount, 50, 'pageCount should equal MAX_RECORD_PAGES')
-    } finally {
-        globalThis.fetch = originalFetch
-    }
-})
+            t.equal(fetchCount, 50, 'should make 50 requests up to MAX_RECORD_PAGES')
+            t.equal(pageCount, 50, 'pageCount should equal MAX_RECORD_PAGES')
+        } finally {
+            globalThis.fetch = originalFetch
+        }
+    })
 
 test('listRemoteSubscriptions bails on cursor stall (AC7.5)', async (t) => {
     // When a PDS returns the same cursor twice, bail immediately
