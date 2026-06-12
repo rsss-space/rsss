@@ -359,3 +359,45 @@ test('RsssUserDO migrates missing feed publish state columns', async t => {
         )
     }
 })
+
+// AC14.1: FEEDS_UPDATED_AT_BUMP_KEY guard cannot re-run the bump on
+// a cold start (flag persisted before the UPDATE).
+test('RsssUserDO does not re-run updated_at bump when flag is already set',
+    async t => {
+        // Simulate a cold start where the bump flag was already set
+        // from a previous instantiation
+        const setup = createConstructorContext(8)
+        let bumpUpdateRan = false
+
+        // Override ctx.storage.get to return the bump flag as already set
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const originalGet = (setup.ctx.storage.get as any).bind(
+            setup.ctx.storage
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(setup.ctx.storage.get as any) = async (key:string|string[]) => {
+            if (key === 'feeds_updated_at_bump_for_last_pulled_at') {
+                return true
+            }
+            return originalGet(key)
+        }
+
+        // Override sql.exec to track whether the bump UPDATE ran
+        const originalExec = setup.ctx.storage.sql.exec.bind(
+            setup.ctx.storage.sql
+        )
+        setup.ctx.storage.sql.exec = ((query:string) => {
+            if (query === "UPDATE feeds SET updated_at = datetime('now')") {
+                bumpUpdateRan = true
+            }
+            return originalExec(query)
+        }) as typeof setup.ctx.storage.sql.exec
+
+        const userDo = new RsssUserDO(setup.ctx, {} as never)
+        await setup.ready()
+
+        t.ok(userDo, 'Durable Object constructed successfully')
+        t.equal(bumpUpdateRan, false,
+            'updated_at bump UPDATE does not run when flag is already set')
+    })
+
