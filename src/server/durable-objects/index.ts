@@ -37,8 +37,10 @@ import {
     type FeedSubscriptionRecord,
     type GraphFollowRecord
 } from '../../shared/lexicons/index.js'
-import { subscriptionRkeyForFeedUrl } from
-    '../../shared/subscription-rkey.js'
+import {
+    subscriptionRkeyForFeedUrl,
+    canonicalizeFeedUrl
+} from '../../shared/subscription-rkey.js'
 import { fetchFullArticle } from '../article-fetch.js'
 import {
     blurhashCacheKey,
@@ -770,7 +772,7 @@ export class RsssUserDO extends DurableObject<Env> {
         createdAt:string
     ):FeedSubscriptionRecord {
         return {
-            feedUrl: feed.url,
+            feedUrl: canonicalizeFeedUrl(feed.url),
             createdAt,
             ...(feed.title ? { title: feed.title } : {}),
             ...(feed.site_url ? { siteUrl: feed.site_url } : {})
@@ -904,7 +906,7 @@ export class RsssUserDO extends DurableObject<Env> {
                 const remote = this.subscriptionFromRecord(rawRecord)
                 if (remote) {
                     subscriptions.set(
-                        remote.feedUrl,
+                        canonicalizeFeedUrl(remote.feedUrl),
                         remote.subscription
                     )
                 }
@@ -957,7 +959,7 @@ export class RsssUserDO extends DurableObject<Env> {
         let changed = 0
 
         for (const feed of feeds) {
-            const remote = remoteByUrl.get(feed.url)
+            const remote = remoteByUrl.get(canonicalizeFeedUrl(feed.url))
 
             if (remote) {
                 const publishedAt = remote.createdAt ??
