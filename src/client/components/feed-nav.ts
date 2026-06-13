@@ -199,12 +199,14 @@ export const FeedNav:FunctionComponent<{
                     <div class="sidebar-item feed-item${
                         allFeeds ? ' active' : ''
                     }">
-                        <span class="badge feed-unread-count">
-                            ${counts.value.unread}
-                        </span>
-                        <a class="feed-select" href="/">
-                            All Feeds
-                        </a>
+                        <div class="feed-item-row">
+                            <span class="badge feed-unread-count">
+                                ${counts.value.unread}
+                            </span>
+                            <a class="feed-select" href="/">
+                                All Feeds
+                            </a>
+                        </div>
                     </div>
 
                     ${feedsLoading.value &&
@@ -256,58 +258,31 @@ export const FeedNav:FunctionComponent<{
                                 }${stateClass}"
                                 key=${feed.id}
                             >
-                                <span class="badge feed-unread-count">
-                                    ${feedUnread}
-                                </span>
-                                ${pending > 0 ? `(${pending}) ` : ''}
-                                ${isResolving && html`
-                                    <span
-                                        class="feed-spinner"
-                                        aria-label="Resolving feed"
-                                        role="status"
-                                    ></span>
-                                `}
-                                <a
-                                    class="feed-select"
-                                    href="/feed/${feedPath}"
-                                >
-                                    ${feed.title || feed.url}
-                                </a>
-                                ${hasFailed && html`
-                                    <span class="feed-failed-label">
-                                        Failed to fetch
+                                <div class="feed-item-row">
+                                    <span class="badge feed-unread-count">
+                                        ${feedUnread}
                                     </span>
-                                `}
+                                    ${pending > 0 ? `(${pending}) ` : ''}
+                                    ${isResolving && html`
+                                        <span
+                                            class="feed-spinner"
+                                            aria-label="Resolving feed"
+                                            role="status"
+                                        ></span>
+                                    `}
+                                    <a
+                                        class="feed-select"
+                                        href="/feed/${feedPath}"
+                                    >
+                                        ${feed.title || feed.url}
+                                    </a>
+                                    ${hasFailed && html`
+                                        <span class="feed-failed-label">
+                                            Failed to fetch
+                                        </span>
+                                    `}
 
                             <div class="item-controls">
-                                <div class="feed-share-control">
-                                    <${CheckBox.TAG}
-                                        name=${`share-feed-${feed.id}`}
-                                        aria-describedby=${
-                                            `share-feed-${feed.id}-status`
-                                        }
-                                        checked=${
-                                            isPublished || undefined
-                                        }
-                                        disabled=${
-                                            publishPending || undefined
-                                        }
-                                        onChange=${(ev:Event) => (
-                                            handleShareFeed(ev, feed)
-                                        )}
-                                    >
-                                        Share to Bluesky
-                                    <//>
-                                    <span
-                                        class=${'feed-share-state' +
-                                            publishStatusClass}
-                                        id=${`share-feed-${feed.id}-status`}
-                                        role="status"
-                                        aria-live="polite"
-                                    >
-                                        ${publishStatus}
-                                    </span>
-                                </div>
                                 ${hasFailed && html`
                                     <tool-tip
                                         content="Retry fetching feed"
@@ -341,7 +316,37 @@ export const FeedNav:FunctionComponent<{
                                     </button>
                                 </tool-tip>
                             </div>
-                        </div>
+                                </div>
+
+                                <div class="feed-share-control">
+                                    <${CheckBox.TAG}
+                                        name=${`share-feed-${feed.id}`}
+                                        aria-describedby=${
+                                            `share-feed-${feed.id}-status`
+                                        }
+                                        checked=${
+                                            isPublished || undefined
+                                        }
+                                        disabled=${
+                                            publishPending || undefined
+                                        }
+                                        onChange=${(ev:Event) => (
+                                            handleShareFeed(ev, feed)
+                                        )}
+                                    >
+                                        Share to Bluesky
+                                    <//>
+                                    <span
+                                        class=${'feed-share-state' +
+                                            publishStatusClass}
+                                        id=${`share-feed-${feed.id}-status`}
+                                        role="status"
+                                        aria-live="polite"
+                                    >
+                                        ${publishStatus}
+                                    </span>
+                                </div>
+                            </div>
                     `
                         })}
 

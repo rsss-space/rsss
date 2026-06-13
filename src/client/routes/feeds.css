@@ -17,21 +17,7 @@
         min-width: 2.5rem;
     }
 
-    & .feed-item .item-controls {
-        align-items: flex-start;
-        gap: 0.5rem;
-    }
-
-    & .feed-share-control {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        min-width: 8rem;
-    }
-
     & .feed-share-control check-box {
-        color: var(--color-text);
-
         & label {
             gap: 0.4rem;
         }
@@ -44,12 +30,6 @@
 
     & .feed-share-state {
         min-height: 1rem;
-        color: var(--color-text-secondary);
-        font-size: 1rem;
-    }
-
-    & .feed-share-state.error {
-        color: var(--color-error);
     }
 }
 

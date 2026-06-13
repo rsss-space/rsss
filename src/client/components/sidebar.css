@@ -13,6 +13,9 @@
 
 .item-controls {
     display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
 }
 
 .feeds-controls {
