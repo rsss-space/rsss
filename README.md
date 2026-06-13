@@ -396,7 +396,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:execute-implementation-plan /Users/nick/code/rsss/docs/implementation-plans/2026-06-11-correctness-audit/ /Users/nick/code/rsss/
+/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-06-13-035-share-to-settings.md .
 ```
 
 --------------------------------------------------------------

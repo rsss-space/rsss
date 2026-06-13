@@ -1,4 +1,37 @@
 import { spawnSync } from 'node:child_process'
+import { createServer } from 'node:net'
+
+// tapout's headless-browser harness always binds this port. It calls
+// server.close() without awaiting it before the process exits, so a
+// just-finished run's listening socket can still be draining in the
+// kernel when spawnSync immediately starts the next tapout command,
+// surfacing as an intermittent `EADDRINUSE :::8123` crash. Before each
+// command we wait until we can bind the port ourselves, which proves the
+// previous run has fully released it.
+const TAPOUT_PORT = 8123
+
+function portIsFree (port) {
+    return new Promise((resolve) => {
+        const probe = createServer()
+        probe.once('error', () => resolve(false))
+        probe.once('listening', () => {
+            probe.close(() => resolve(true))
+        })
+        probe.listen(port)
+    })
+}
+
+function delay (ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForPortFree (port, tries = 100, delayMs = 100) {
+    for (let attempt = 0; attempt < tries; attempt++) {
+        if (await portIsFree(port)) return true
+        await delay(delayMs)
+    }
+    return false
+}
 
 const commands = [
     // --- static / node-only checks ---
@@ -230,6 +263,18 @@ const commands = [
 ]
 
 for (const command of commands) {
+    // Ensure the tapout port has been released by the previous run before
+    // starting the next command, otherwise consecutive browser suites race
+    // on `listen(8123)` and crash with EADDRINUSE.
+    const free = await waitForPortFree(TAPOUT_PORT)
+    if (!free) {
+        console.error(
+            `Timed out waiting for port ${TAPOUT_PORT} to free up ` +
+            `before: ${command}`
+        )
+        process.exit(1)
+    }
+
     const result = spawnSync(command, {
         shell: true,
         stdio: 'inherit'
