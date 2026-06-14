@@ -2,7 +2,8 @@ import { signal } from '@preact/signals'
 import { html } from 'htm/preact/index.js'
 import { render } from 'preact'
 import { test } from '@substrate-system/tapzero'
-import { FeedShareControl } from '../src/client/components/feed-share-control.js'
+import { FeedShareControl }
+    from '../src/client/components/feed-share-control.js'
 import { type AppState, type Feed } from '../src/client/state.js'
 
 type TestCheckBox = HTMLElement & {
@@ -124,7 +125,7 @@ test('FeedShareControl AC1.2: published feed renders checked checkbox' +
 test('FeedShareControl AC1.3: feed with publish in progress renders' +
     ' disabled checkbox with Sharing... status', async t => {
     const state = makeState({
-        feedPublishInProgress: { '1': true }
+        feedPublishInProgress: { 1: true }
     })
     const testFeed = feed(1)
     const onToggleSpy = () => {}
@@ -151,7 +152,7 @@ test('FeedShareControl AC1.3: feed with publish in progress renders' +
 test('FeedShareControl AC1.4: feed with publish error renders failure' +
     ' status with error styling', async t => {
     const state = makeState({
-        feedPublishErrors: { '1': 'boom' }
+        feedPublishErrors: { 1: 'boom' }
     })
     const testFeed = feed(1)
     const onToggleSpy = () => {}
