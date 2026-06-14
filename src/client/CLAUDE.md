@@ -1,6 +1,6 @@
 # Client: Billing / Payment Methods
 
-Last verified: 2026-05-25
+Last verified: 2026-06-13
 
 ## Purpose
 Client-side surface for managing Stripe PaymentMethods. Mirrors the
@@ -54,9 +54,15 @@ Stripe Elements inside a `<modal-window>` web component.
   `@substrate-system/dialog`, server billing routes (see
   `src/server/CLAUDE.md`)
 - **Used by**: `routes/settings.ts` — "Manage payment methods" button
-- **Boundary**: Only `payment-method-modal.ts` may import
-  `@stripe/stripe-js` (or `@stripe/stripe-js/pure`) or
-  `@substrate-system/dialog`.
+- **Boundary**: `@stripe/stripe-js` (and `@stripe/stripe-js/pure`)
+  stays confined to `payment-method-modal.ts` — that is the billing
+  surface and the only place Stripe.js loads.
+- **Note**: `@substrate-system/dialog` (`<modal-window>`) is NOT
+  exclusive to this module. It is a shared client dependency; current
+  importers are `components/payment-method-modal.ts` (this module) and
+  `routes/settings.ts` (the "Share to Bluesky" consent modal). Adding a
+  new `<modal-window>` consumer is fine — only the Stripe boundary above
+  is exclusive.
 
 ## Key Decisions
 - **Server is source of truth**: every mutation reads the canonical

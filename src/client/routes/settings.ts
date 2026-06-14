@@ -56,8 +56,29 @@ import { NBSP } from '../constants.js'
 import { formatBytes } from '../util.js'
 import { PaymentMethodModal } from
     '../components/payment-method-modal.js'
+import { ModalWindow } from '@substrate-system/dialog'
+import '@substrate-system/dialog/css'
+import { FeedShareControl } from '../components/feed-share-control.js'
 import './settings.css'
 import '@substrate-system/radio-input/css'
+
+type ModalWindowAttrs = preact.JSX.HTMLAttributes<HTMLElement> & {
+    active?:string;
+    closable?:string;
+    'no-icon'?:string|boolean;
+    animated?:string;
+    noclick?:string|boolean;
+    close?:string;
+};
+
+declare module 'preact' {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
+    export namespace JSX {
+        interface IntrinsicElements {
+            'modal-window':ModalWindowAttrs;
+        }
+    }
+}
 
 // Per-mount route-generation counter. Each <SettingsRoute> mount bumps
 // `globalSettingsRouteGeneration` and captures its own value into a
@@ -117,6 +138,41 @@ export const SettingsRoute:FunctionComponent<{
     const [subscriptionPending, setSubscriptionPending] = useState(false)
     const [pmModalOpen, setPmModalOpen] = useState(false)
     const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+    const [consentFeedId, setConsentFeedId] = useState<
+        number|null
+    >(null)
+    const consentModalRef = useRef<HTMLElement|null>(null)
+
+    async function handleShareFeed (
+        feedId:number,
+        checked:boolean
+    ):Promise<void> {
+        if (checked) {
+            setConsentFeedId(feedId)
+            return
+        }
+        await State.toggleFeedPublished(state, feedId, false)
+    }
+
+    function handleConsentCancel ():void {
+        setConsentFeedId(null)
+    }
+
+    async function handleConsentConfirm ():Promise<void> {
+        const id = consentFeedId
+        if (id == null) return
+        setConsentFeedId(null)
+        await State.toggleFeedPublished(state, id, true)
+    }
+
+    useEffect(() => {
+        const el = consentModalRef.current
+        if (!el) return
+        const evt = ModalWindow.event('close')
+        const handler = () => setConsentFeedId(null)
+        el.addEventListener(evt, handler)
+        return () => el.removeEventListener(evt, handler)
+    }, [consentFeedId])
 
     useEffect(() => {
         if (typeof window === 'undefined' || !window.matchMedia) return
@@ -599,7 +655,7 @@ export const SettingsRoute:FunctionComponent<{
                     Sync subscriptions and read state to this device
                 <//>
                 <p class="toggle-desc" id="sync-subscriptions-desc">
-                    Keeps subscriptions, read state, and starred items in
+                    Keep subscriptions, read state, and starred items in
                     local SQLite storage on this device.
                 </p>
             </div>
@@ -620,7 +676,7 @@ export const SettingsRoute:FunctionComponent<{
                     class="toggle-desc"
                     id="store-content-desc"
                 >
-                    Stores article bodies locally only when local storage is
+                    Store article bodies locally only when local storage is
                     enabled.
                 </p>
             </div>
@@ -742,7 +798,7 @@ export const SettingsRoute:FunctionComponent<{
         </section>
 
         <section class="settings-section">
-            <h2>Subscribed Feeds</h2>
+            <h2>Subscriptions</h2>
             <ul class="settings-feeds-list">
                 ${feeds.value.length === 0 ?
             html`
@@ -923,6 +979,32 @@ export const SettingsRoute:FunctionComponent<{
             </ul>
         </section>
 
+        <section class="settings-section share-section">
+            <h2>Share to Bluesky</h2>
+            ${feeds.value.length === 0 ?
+                html`
+                    <p class="empty-state">
+                        No feeds to share yet.
+                    </p>
+                ` :
+                html`
+                    <ul class="settings-share-list">
+                        ${feeds.value.map(feed => html`
+                            <li
+                                class="settings-share-item"
+                                key=${feed.url}
+                            >
+                                <${FeedShareControl}
+                                    state=${state}
+                                    feed=${feed}
+                                    onToggle=${handleShareFeed}
+                                />
+                            </li>
+                        `)}
+                    </ul>
+                `}
+        </section>
+
         <section class="settings-section danger-zone">
             <h2>Delete</h2>
             ${pendingDeletion.value ? html`
@@ -951,6 +1033,57 @@ export const SettingsRoute:FunctionComponent<{
                 </a>
             `}
         </section>
+        ${consentFeedId != null && html`
+            <modal-window
+                ref=${consentModalRef}
+                class="publish-consent-modal"
+                active="true"
+                closable="true"
+                aria-labelledby="publish-consent-title"
+                aria-describedby="publish-consent-body"
+            >
+                <h2 id="publish-consent-title">
+                    Share to Bluesky network
+                </h2>
+                <div
+                    id="publish-consent-body"
+                    class="publish-consent-body"
+                >
+                    <p>Before sharing, note that:</p>
+                    <ul>
+                        <li>
+                            Records are written to your own
+                            personal data server (PDS)
+                        </li>
+                        <li>
+                            Subscriptions are public on the
+                            AT Protocol network
+                        </li>
+                        <li>
+                            Shared subscriptions do not appear
+                            in your Bluesky timeline
+                        </li>
+                        <li>You can remove them at any time</li>
+                    </ul>
+                </div>
+                <div class="publish-consent-actions">
+                    <button
+                        type="button"
+                        class="consent-cancel"
+                        onClick=${handleConsentCancel}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        class="consent-confirm"
+                        onClick=${handleConsentConfirm}
+                    >
+                        Share
+                    </button>
+                </div>
+            </modal-window>
+        `}
         <${PaymentMethodModal}
             open=${pmModalOpen}
             onClose=${handleClosePaymentMethods}

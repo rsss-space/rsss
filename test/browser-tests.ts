@@ -63,6 +63,8 @@ import './atproto-lexicons.js'
 import './subscription-rkey.js'
 import './image-cache.js'
 import './feed-share-toggle.js'
+import './feed-share-control.js'
+import './feed-nav.js'
 import './publish-consent-modal.js'
 
 test('all done', () => {
