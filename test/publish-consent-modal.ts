@@ -74,6 +74,13 @@ function nextTick ():Promise<void> {
 }
 
 test('Share toggle shows consent modal before publishing', async t => {
+    let publishCalled = false
+    const origFetch = globalThis.fetch
+    globalThis.fetch = (async () => {
+        publishCalled = true
+        return new Response('{}', { status: 200 })
+    }) as typeof fetch
+
     const state = makeState([feed(1)])
     const root = mount(state)
 
@@ -98,7 +105,13 @@ test('Share toggle shows consent modal before publishing', async t => {
             'true',
             'consent modal is active'
         )
+        t.equal(
+            publishCalled,
+            false,
+            'publish was not called when modal opened'
+        )
     } finally {
+        globalThis.fetch = origFetch
         unmount(root)
     }
 })
