@@ -27,16 +27,11 @@
         }
     }
 
-    & .share-section {
-        & .settings-share-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        & .feed-share-control {
-            margin-left: 0;
-        }
+    & .settings-feed-item .feed-share-control {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--color-border);
+        align-self: stretch;
     }
 }
 

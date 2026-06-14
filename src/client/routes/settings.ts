@@ -845,6 +845,11 @@ export const SettingsRoute:FunctionComponent<{
                                 <span class="feed-storage">
                                     ${formatBytes(storedBytes)} cached
                                 </span>
+                                <${FeedShareControl}
+                                    state=${state}
+                                    feed=${feed}
+                                    onToggle=${handleShareFeed}
+                                />
                             </div>
                             <div class="feed-controls">
                                 <${DetailsSummary.TAG}
@@ -977,32 +982,6 @@ export const SettingsRoute:FunctionComponent<{
             })
         }
             </ul>
-        </section>
-
-        <section class="settings-section share-section">
-            <h2>Share to Bluesky</h2>
-            ${feeds.value.length === 0 ?
-                html`
-                    <p class="empty-state">
-                        No feeds to share yet.
-                    </p>
-                ` :
-                html`
-                    <ul class="settings-share-list">
-                        ${feeds.value.map(feed => html`
-                            <li
-                                class="settings-share-item"
-                                key=${feed.url}
-                            >
-                                <${FeedShareControl}
-                                    state=${state}
-                                    feed=${feed}
-                                    onToggle=${handleShareFeed}
-                                />
-                            </li>
-                        `)}
-                    </ul>
-                `}
         </section>
 
         <section class="settings-section danger-zone">

@@ -396,7 +396,13 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:execute-implementation-plan /Users/nick/code/rsss/DOCS/implementation-plans/2026-06-13-035-share-to-settings/ /Users/nick/code/rsss/
+/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-06-14-040-fix-updates-count.md .
+```
+
+```
+Use specs/040-fix-updates-count/clarification.md as the confirmed 
+clarification bundle. Start with the key open question (does the DO alarm 
+fire under wrangler dev) before designing strand 2.
 ```
 
 --------------------------------------------------------------

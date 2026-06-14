@@ -17,10 +17,5 @@ export const SidebarFooter:FunctionComponent<{
         >
             Refresh Feeds
         <//>
-        <div class="footer-links">
-            <a href="/settings" class="settings-link">
-                Settings
-            </a>
-        </div>
     </div>`
 }

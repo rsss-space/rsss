@@ -1,11 +1,10 @@
-/* The "Share to Bluesky" control sits on its own line below the feed
-   title, indented to align under the title (past the unread-count badge). */
+/* The "Share to Bluesky" toggle lives at the foot of each feed's card in
+   the Subscriptions list, beneath the feed's title and metadata. */
 .feed-share-control {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5rem;
-    margin-left: 3.5rem;
 
     & check-box {
         color: var(--color-text);

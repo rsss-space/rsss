@@ -72,45 +72,25 @@ function nextTick ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
 }
 
-test('Settings share section position is correct (AC2.1)',
+test('Share toggle lives inside each feed\'s subscription card (AC2.1)',
     async t => {
         const state = makeState([feed(1)])
         const root = mount(state)
 
         try {
             await nextTick()
-            const sections = Array.from(
-                root.querySelectorAll('.settings-section')
+            const item = root.querySelector(
+                '.settings-feeds-list .settings-feed-item'
             )
-            const shareIndex = sections.findIndex(
-                s => s.querySelector('.settings-share-list') != null
-            )
-            const subscriptionsIndex = sections.findIndex(
-                s => s.querySelector('.settings-feeds-list') != null
-            )
-            const dangerIndex = sections.findIndex(
-                s => s.classList.contains('danger-zone')
-            )
-
+            t.ok(item, 'subscription feed card exists')
             t.ok(
-                subscriptionsIndex >= 0,
-                'subscriptions section exists'
+                item?.querySelector('check-box[name="share-feed-1"]'),
+                'share toggle is nested within its own feed card'
             )
-            t.ok(
-                shareIndex >= 0,
-                'share section exists'
-            )
-            t.ok(
-                dangerIndex >= 0,
-                'delete section exists'
-            )
-            t.ok(
-                shareIndex > subscriptionsIndex,
-                'share section is after subscriptions'
-            )
-            t.ok(
-                shareIndex < dangerIndex,
-                'share section is before delete'
+            t.equal(
+                root.querySelector('.share-section'),
+                null,
+                'standalone share section no longer exists'
             )
         } finally {
             unmount(root)
@@ -132,18 +112,22 @@ test('Settings renders per-feed share controls (AC2.2)',
 
         try {
             await nextTick()
-            const shareSection = root.querySelector(
-                '.share-section'
-            )
-            const first = shareSection?.querySelector(
+            const items = Array.from(root.querySelectorAll(
+                '.settings-feeds-list .settings-feed-item'
+            ))
+            t.equal(items.length, 2, 'one subscription card per feed')
+
+            // Scope each lookup to its own card so the test fails if a
+            // toggle is detached from the feed it controls.
+            const first = items[0]?.querySelector(
                 'check-box[name="share-feed-1"]'
             ) as TestCheckBox|null
-            const second = shareSection?.querySelector(
+            const second = items[1]?.querySelector(
                 'check-box[name="share-feed-2"]'
             ) as TestCheckBox|null
 
-            t.ok(first, 'first feed has a share toggle')
-            t.ok(second, 'second feed has a share toggle')
+            t.ok(first, 'feed 1 card owns the share-feed-1 toggle')
+            t.ok(second, 'feed 2 card owns the share-feed-2 toggle')
             t.equal(first?.checked, false, 'unpublished feed is unchecked')
             t.equal(second?.checked, true, 'published feed is checked')
         } finally {
@@ -152,25 +136,25 @@ test('Settings renders per-feed share controls (AC2.2)',
     }
 )
 
-test('Settings share section shows empty state with no feeds (AC2.3)',
+test('Settings shows no share toggles when there are no feeds (AC2.3)',
     async t => {
         const state = makeState([])
         const root = mount(state)
 
         try {
             await nextTick()
-            const shareSection = root.querySelector(
-                '.share-section'
+            const toggles = root.querySelectorAll(
+                'check-box[name^="share-feed-"]'
             )
-            const emptyState = shareSection?.querySelector(
-                '.empty-state'
-            )
-            const shareList = shareSection?.querySelector(
-                '.settings-share-list'
-            )
+            t.equal(toggles.length, 0, 'no share toggles without feeds')
 
-            t.ok(emptyState, 'empty state is shown')
-            t.equal(shareList, null, 'share list is not shown')
+            const subscriptions = Array.from(
+                root.querySelectorAll('.settings-section')
+            ).find(s => s.querySelector('.settings-feeds-list'))
+            t.ok(
+                subscriptions?.querySelector('.empty-state'),
+                'subscriptions empty state is shown'
+            )
         } finally {
             unmount(root)
         }
@@ -210,10 +194,10 @@ test('Settings share flow shows progress and stores feed row (AC3.2)',
 
         try {
             await nextTick()
-            const shareSection = root.querySelector(
-                '.share-section'
+            const item = root.querySelector(
+                '.settings-feeds-list .settings-feed-item'
             )
-            const box = shareSection?.querySelector(
+            const box = item?.querySelector(
                 'check-box[name="share-feed-1"]'
             ) as TestCheckBox|null
             t.ok(box, 'share toggle is present')
@@ -238,7 +222,7 @@ test('Settings share flow shows progress and stores feed row (AC3.2)',
             await nextTick()
 
             t.equal(box.disabled, true, 'toggle is disabled while saving')
-            const statusEl = shareSection?.querySelector(
+            const statusEl = item?.querySelector(
                 '#share-feed-1-status'
             )
             t.ok(
@@ -274,10 +258,10 @@ test('Settings share section surfaces publish errors (AC3.5)',
             state.feedPublishErrors.value = { 1: 'boom' }
             await nextTick()
 
-            const shareSection = root.querySelector(
-                '.share-section'
+            const item = root.querySelector(
+                '.settings-feeds-list .settings-feed-item'
             )
-            const statusEl = shareSection?.querySelector(
+            const statusEl = item?.querySelector(
                 '#share-feed-1-status'
             )
             t.ok(
