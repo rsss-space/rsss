@@ -165,7 +165,7 @@ test('FeedShareControl AC1.4: feed with publish error renders failure' +
         ) as HTMLElement|null
 
         t.ok(status?.textContent?.includes('Failed: boom'),
-            'status includes Failed: boom')
+            'status shows the publish failure text')
         t.ok(status?.className?.includes('error'),
             'status has error class')
     } finally {

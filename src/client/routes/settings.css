@@ -485,7 +485,6 @@ modal-window.publish-consent-modal {
             background: var(--color-surface);
             color: var(--color-text);
             cursor: pointer;
-            border-radius: 4px;
 
             &:hover {
                 background: var(--color-placeholder-highlight);
