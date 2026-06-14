@@ -179,15 +179,14 @@ test('Settings share section shows empty state with no feeds (AC2.3)',
 
 test('Settings share flow shows progress and stores feed row (AC3.2)',
     async t => {
+        const origFetch = globalThis.fetch
         let release:() => void = () => {}
         const fetchStarted = new Promise<void>(resolve => {
-            const originalFetch = globalThis.fetch
             globalThis.fetch = (async (input, init) => {
                 resolve()
                 await new Promise<void>(resolve => {
                     release = resolve
                 })
-                globalThis.fetch = originalFetch
                 const request = input instanceof Request ? input : null
                 const url = request?.url ?? String(input)
                 const method = request?.method ?? init?.method
@@ -259,8 +258,7 @@ test('Settings share flow shows progress and stores feed row (AC3.2)',
                 'published status is visible'
             )
         } finally {
-            globalThis.fetch = (globalThis.fetch as any).restore?.() ||
-                globalThis.fetch
+            globalThis.fetch = origFetch
             unmount(root)
         }
     }
