@@ -260,29 +260,6 @@ button {
     white-space: nowrap;
 }
 
-/* The "Share to Bluesky" control sits on its own line below the feed
-   title, indented to align under the title (past the unread-count badge). */
-.feed-share-control {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-left: 3.5rem;
-
-    & check-box {
-        color: var(--color-text);
-    }
-}
-
-.feed-share-state {
-    color: var(--color-text-secondary);
-    font-size: 1rem;
-
-    &.error {
-        color: var(--color-error);
-    }
-}
-
 .btn-delete,
 .btn-cache {
     border: 1px solid;
