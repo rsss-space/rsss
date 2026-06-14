@@ -273,7 +273,7 @@ test('Settings share section surfaces publish errors (AC3.5)',
 
         try {
             await nextTick()
-            state.feedPublishErrors.value = { '1': 'boom' }
+            state.feedPublishErrors.value = { 1: 'boom' }
             await nextTick()
 
             const shareSection = root.querySelector(

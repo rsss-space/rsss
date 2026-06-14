@@ -2,7 +2,8 @@ import { signal } from '@preact/signals'
 import { html } from 'htm/preact/index.js'
 import { render } from 'preact'
 import { test } from '@substrate-system/tapzero'
-import { FeedNav } from '../src/client/components/feed-nav.js'
+import { SettingsRoute } from '../src/client/routes/settings.js'
+import { ModalWindow } from '@substrate-system/dialog'
 import { type AppState, type Feed } from '../src/client/state.js'
 
 type TestCheckBox = HTMLElement & {
@@ -40,8 +41,9 @@ function makeState (feeds:Feed[]):AppState {
         feedsError: signal(null),
         feedPublishInProgress: signal({}),
         feedPublishErrors: signal({}),
-        route: signal('/feeds'),
+        route: signal('/settings'),
         user: signal(null),
+        isAuthenticated: signal(false),
         showUnreadOnly: signal(false),
         showStarredOnly: signal(false),
         counts: signal({
@@ -58,7 +60,7 @@ function makeState (feeds:Feed[]):AppState {
 function mount (state:AppState):HTMLElement {
     const root = document.createElement('div')
     document.body.appendChild(root)
-    render(html`<${FeedNav} state=${state} />`, root)
+    render(html`<${SettingsRoute} state=${state} />`, root)
     return root
 }
 
@@ -249,6 +251,109 @@ test('Confirming consent modal proceeds with publish', async t => {
         t.equal(captured.method, 'POST', 'publish uses POST')
     } finally {
         globalThis.fetch = origFetch
+        unmount(root)
+    }
+})
+
+test('Disabling published feed unpublishes immediately, no modal (AC3.4)',
+    async t => {
+        const captured = {
+            url: null as string|null,
+            method: null as string|null
+        }
+        const origFetch = globalThis.fetch
+        globalThis.fetch = (async (input, init) => {
+            const req = input instanceof Request ? input : null
+            captured.url = req?.url ?? String(input)
+            captured.method = req?.method ?? init?.method ?? 'GET'
+            return new Response(JSON.stringify({
+                feed: {
+                    ...feed(1, { published: 1 }),
+                    published: 0
+                }
+            }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        }) as typeof fetch
+
+        const state = makeState([
+            feed(1, {
+                published: 1,
+                published_rkey: 'existing.pub',
+                published_at: '2026-06-10T20:00:00.000Z'
+            })
+        ])
+        const root = mount(state)
+
+        try {
+            await nextTick()
+            const box = root.querySelector(
+                'check-box[name="share-feed-1"]'
+            ) as TestCheckBox|null
+            t.ok(box, 'share toggle is present')
+            if (!box) return
+
+            box.checked = false
+            box.dispatchEvent(new Event('change', { bubbles: true }))
+            await nextTick()
+
+            const modal = document.querySelector(
+                'modal-window.publish-consent-modal'
+            )
+            t.equal(
+                modal,
+                null,
+                'no consent modal appears for unpublish'
+            )
+            t.ok(
+                captured.url?.endsWith('/api/feeds/1/publish'),
+                'DELETE endpoint called'
+            )
+            t.equal(captured.method, 'DELETE', 'unpublish uses DELETE')
+        } finally {
+            globalThis.fetch = origFetch
+            unmount(root)
+        }
+    }
+)
+
+test('Modal close event resets consent state (AC3.6)', async t => {
+    const state = makeState([feed(1)])
+    const root = mount(state)
+
+    try {
+        await nextTick()
+        const box = root.querySelector(
+            'check-box[name="share-feed-1"]'
+        ) as TestCheckBox|null
+        if (!box) { t.fail('share toggle not found'); return }
+
+        box.checked = true
+        box.dispatchEvent(new Event('change', { bubbles: true }))
+        await nextTick()
+
+        const modal = document.querySelector(
+            'modal-window.publish-consent-modal'
+        ) as HTMLElement|null
+        t.ok(modal, 'consent modal is present')
+        if (!modal) return
+
+        modal.dispatchEvent(
+            new Event(ModalWindow.event('close'))
+        )
+        await nextTick()
+        await nextTick()
+
+        const modalAfter = document.querySelector(
+            'modal-window.publish-consent-modal'
+        )
+        t.equal(
+            modalAfter,
+            null,
+            'modal is removed from DOM after close event'
+        )
+    } finally {
         unmount(root)
     }
 })
