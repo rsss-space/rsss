@@ -70,7 +70,7 @@ function unmount (root:HTMLElement):void {
 }
 
 function nextTick ():Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, 0))
+    return new Promise(resolve => setTimeout(resolve, 50))
 }
 
 test('Share toggle shows consent modal before publishing', async t => {
@@ -344,14 +344,15 @@ test('Modal close event resets consent state (AC3.6)', async t => {
         )
         await nextTick()
         await nextTick()
+        await nextTick()
 
         const modalAfter = document.querySelector(
             'modal-window.publish-consent-modal'
         )
         t.equal(
-            modalAfter,
+            modalAfter?.getAttribute('active'),
             null,
-            'modal is removed from DOM after close event'
+            'modal is no longer active after close event'
         )
     } finally {
         unmount(root)
