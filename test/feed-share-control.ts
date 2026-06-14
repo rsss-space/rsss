@@ -177,7 +177,7 @@ test('FeedShareControl AC1.5: toggling checkbox invokes onToggle with' +
     ' (feed.id, checked)', async t => {
     const state = makeState()
     const testFeed = feed(1)
-    let toggleCalls:(number[]|boolean[])[] = []
+    let toggleCalls:Array<[number, boolean]> = []
     const onToggleSpy = (
         feedId:number,
         checked:boolean
