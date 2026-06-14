@@ -16,19 +16,4 @@
         min-height: 2.5rem;
         min-width: 2.5rem;
     }
-
-    & .feed-share-control check-box {
-        & label {
-            gap: 0.4rem;
-        }
-
-        & input {
-            width: 1rem;
-            height: 1rem;
-        }
-    }
-
-    & .feed-share-state {
-        min-height: 1rem;
-    }
 }
