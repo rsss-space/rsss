@@ -1250,40 +1250,29 @@ test('getFeedUpdateCounts pins pending-count predicate and mapping',
         }
 
         const result = userDo.getFeedUpdateCounts()
+        const normalized = capturedQuery.replace(/\s+/g, ' ').trim()
 
         // AC1.1: items.pub_date > feeds.last_pulled_at
         t.ok(
-            capturedQuery
-                .replace(/ +/g, ' ')
-                .trim()
-                .includes('items.pub_date > feeds.last_pulled_at'),
+            normalized.includes('items.pub_date > feeds.last_pulled_at'),
             'query uses strict > for pending items (AC1.1)'
         )
 
         // AC1.2: feeds.last_pulled_at IS NULL for never-pulled feeds
         t.ok(
-            capturedQuery
-                .replace(/ +/g, ' ')
-                .trim()
-                .includes('feeds.last_pulled_at IS NULL'),
+            normalized.includes('feeds.last_pulled_at IS NULL'),
             'query checks NULL last_pulled_at for never-pulled feeds (AC1.2)'
         )
 
         // AC1.4: items.pub_date IS NOT NULL excludes null-date items
         t.ok(
-            capturedQuery
-                .replace(/ +/g, ' ')
-                .trim()
-                .includes('items.pub_date IS NOT NULL'),
+            normalized.includes('items.pub_date IS NOT NULL'),
             'query excludes items with NULL pub_date (AC1.4)'
         )
 
         // AC1.3: GROUP BY feeds.id ensures per-feed counts sum to total
         t.ok(
-            capturedQuery
-                .replace(/ +/g, ' ')
-                .trim()
-                .includes('GROUP BY feeds.id'),
+            normalized.includes('GROUP BY feeds.id'),
             'query groups by feed id for per-feed counts (AC1.3)'
         )
 
