@@ -147,6 +147,12 @@ const MAX_RECORD_PAGES = 50 // cap pagination to prevent stalled cursors
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
 const FEED_REFRESH_INTERVAL_MS = 60 * 60 * 1000
+// When a stored alarm is already overdue (e.g. it never fired under
+// `wrangler dev`, or the runtime dropped it), re-arm it to fire almost
+// immediately rather than a full interval out, so the heal runs a
+// discovery pass promptly. alarm() then reschedules to now + interval,
+// returning to the normal cadence (no tight loop).
+const OVERDUE_ALARM_REARM_DELAY_MS = 5 * 1000
 // Application-level WebSocket keepalive. The client sends LIVE_PING on a
 // timer; the runtime answers LIVE_PONG via setWebSocketAutoResponse
 // WITHOUT waking the hibernated DO, refreshing the idle timer so
@@ -496,16 +502,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
         ctx.blockConcurrencyWhile(async () => {
             await this.initDatabase()
-
-            // Schedule initial alarm if none exists
-            // This wakes the DO periodically to refresh feeds
-            const currentAlarm = await ctx.storage.getAlarm()
-            if (!currentAlarm) {
-                // Set first alarm one refresh interval from now
-                await ctx.storage.setAlarm(
-                    Date.now() + FEED_REFRESH_INTERVAL_MS
-                )
-            }
+            await this.ensureFeedRefreshArmed()
         })
     }
 
@@ -3676,6 +3673,12 @@ export class RsssUserDO extends DurableObject<Env> {
         if (existing == null) {
             await this.ctx.storage.setAlarm(
                 Date.now() + FEED_REFRESH_INTERVAL_MS
+            )
+            return
+        }
+        if (existing <= Date.now()) {
+            await this.ctx.storage.setAlarm(
+                Date.now() + OVERDUE_ALARM_REARM_DELAY_MS
             )
         }
     }

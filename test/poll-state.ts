@@ -215,6 +215,31 @@ test('ensureFeedRefreshArmed is a no-op when an alarm exists', async t => {
     t.equal(alarmTimes.length, 0, 'existing alarm is left untouched')
 })
 
+test(
+    'ensureFeedRefreshArmed re-arms when alarm is in the past',
+    async t => {
+        const { userDo, alarmTimes, seedAlarm } = createPollDo()
+        const now = Date.now()
+        const pastTime = now - 60000 // 1 minute ago
+
+        seedAlarm(pastTime)
+        await userDo.ensureFeedRefreshArmed()
+
+        t.equal(alarmTimes.length, 1, 'overdue alarm triggers a re-arm')
+        const rearmedTime = alarmTimes[0]
+        const delta = rearmedTime - now
+        // Should be close to 5 seconds, clearly less than 60 min
+        t.ok(
+            delta >= 4000 && delta <= 6000,
+            'overdue re-arm is near-immediate (5 sec)'
+        )
+        t.ok(
+            delta < 30 * 60 * 1000,
+            'overdue re-arm is far below normal 60 min interval'
+        )
+    }
+)
+
 test('maybeKickCatchUp re-arms the alarm for a returning user', async t => {
     const { userDo, storage, alarmTimes } = createPollDo()
     const now = 1_700_000_000_000
