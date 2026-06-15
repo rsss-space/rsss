@@ -281,10 +281,12 @@ test('AC3.2: DO /internal/dev/poll-now returns 404 in production',
     }
 )
 
-// Note on AC3.2 worker-level proxy test: the /api/internal/dev/poll-now
-// route requires full Durable Object setup to test at the worker level
-// (unlike /api/dev/poll-now which gates before auth). The DO-level test
-// above already proves the defense-in-depth guard is in place, so we don't
-// duplicate that testing at the proxy layer. The worker-level /api/dev/poll-now
-// tests prove the non-internal route is gated, and the DO test proves the
-// internal route is also gated at the DO level (defense in depth).
+// Note on AC3.2 worker-level proxy test: we deliberately do NOT add a
+// worker-level /api/internal/dev/poll-now production test. The guard logic
+// lives entirely in the DO route (gated on this.env.NODE_ENV); the worker
+// proxy just strips /api and forwards. The DO-level production-404 test
+// above exercises that exact guard non-vacuously, so a worker-level test
+// would only re-assert the same outcome through Hono's proxy plumbing. It
+// is constructible (see test/api-router.ts for the authed-proxy pattern),
+// but omitted by choice to avoid duplicating the DO-level guard assertion.
+// The /api/dev/poll-now tests cover the non-internal route's gate.
