@@ -3623,15 +3623,15 @@ export class RsssUserDO extends DurableObject<Env> {
             return  // intentional dormancy: do not reschedule (AC2.3)
         }
 
-        // Reschedule BEFORE any further fallible discovery work (AC2.2): even if
-        // refreshFeedBatches throws, the next tick is already armed.
+        // Reschedule BEFORE any further fallible discovery work
+        // (AC2.2): even if refreshFeedBatches throws, the next tick
+        // is already armed.
         await this.scheduleNextFeedRefresh()
 
         try {
             await this.refreshFeedBatches()
         } catch (err) {
             console.error('alarm refreshFeedBatches error:', err)
-            throw err
         }
     }
 

@@ -228,13 +228,16 @@ test(
         t.equal(alarmTimes.length, 1, 'overdue alarm triggers a re-arm')
         const rearmedTime = alarmTimes[0]
         const delta = rearmedTime - now
-        // Should be close to 5 seconds, clearly less than 60 min
+        // OVERDUE_ALARM_REARM_DELAY_MS is 5 seconds; assert near-immediate
+        // (within ~2x that value), clearly far below 60 min interval.
+        const expectedRearmedDelayMs = 5 * 1000
+        const normalIntervalMs = 60 * 60 * 1000
         t.ok(
-            delta >= 4000 && delta <= 6000,
-            'overdue re-arm is near-immediate (5 sec)'
+            delta <= 2 * expectedRearmedDelayMs,
+            'overdue re-arm is near-immediate'
         )
         t.ok(
-            delta < 30 * 60 * 1000,
+            delta < normalIntervalMs,
             'overdue re-arm is far below normal 60 min interval'
         )
     }

@@ -114,46 +114,6 @@ function createDeletionDo (initial:{
         configurable: true
     })
 
-    Object.defineProperty(userDo, 'executeAccountDeletion', {
-        value: async (did:string) => {
-            // Call the actual DO method which will handle deletion
-            // For testing we need to use the actual implementation
-            // to properly test the deletion path. The mock sql/env/storage
-            // are already set up to track calls.
-            console.log('[test] executeAccountDeletion', did)
-
-            // Remove KV entries (tracked by mock)
-            try {
-                await Promise.all([
-                    userDo.env.SESSIONS.delete(`user:${did}`),
-                    userDo.env.SESSIONS.delete(`billing:${did}`),
-                    userDo.env.SESSIONS.delete(`billing_pending_email:${did}`),
-                    userDo.env.SESSIONS.delete(`billing_contact_email:${did}`)
-                ])
-            } catch (_err) {
-                // no-op
-            }
-
-            // Drop SQL tables (tracked by mock)
-            try {
-                userDo.sql.exec('DROP TABLE IF EXISTS items')
-                userDo.sql.exec('DROP TABLE IF EXISTS feeds')
-                userDo.sql.exec('DROP TABLE IF EXISTS dead_letter_outbox')
-            } catch (_err) {
-                // no-op
-            }
-
-            // Wipe DO state
-            try {
-                await userDo.ctx.storage.deleteAll()
-            } catch (_err) {
-                // no-op
-            }
-        },
-        writable: true,
-        configurable: true
-    })
-
     return {
         userDo,
         sqlExecutions,
@@ -274,7 +234,10 @@ test(
 
         await harness.userDo.alarm()
 
-        t.ok(harness.wasRescheduled(), 'setAlarm was called despite sweep error')
+        t.ok(
+            harness.wasRescheduled(),
+            'setAlarm was called despite sweep error'
+        )
         t.ok(
             harness.setAlarms.length > 0,
             'reschedule was actually set'
