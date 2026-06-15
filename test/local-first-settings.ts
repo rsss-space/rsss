@@ -204,3 +204,59 @@ test('corrupt cache field values fall back to defaults on load', async (t) => {
     t.equal(mod.defaultMaxAgeSeconds.value, 30 * 86400,
         'corrupt maxAgeSeconds falls back to default')
 })
+
+test('defaultCacheSizeHint names the concrete default with MB unit',
+    async (t) => {
+        const mod = await import('../src/client/local-first-settings.js')
+
+        t.equal(mod.defaultCacheSizeHint(50_000_000), 'default, 50 MB',
+            '50 MB default formats as "default, 50 MB"')
+        t.ok(mod.defaultCacheSizeHint(50_000_000).includes('default'),
+            'size hint contains the literal word default')
+    })
+
+test('defaultCacheSizeHint rounds bytes like the account editor', async (t) => {
+    const mod = await import('../src/client/local-first-settings.js')
+
+    // Math.round(50_499_999 / 1_000_000) === 50
+    t.equal(mod.defaultCacheSizeHint(50_499_999), 'default, 50 MB',
+        'rounds down below the half-MB boundary')
+    // Math.round(50_500_000 / 1_000_000) === 51
+    t.equal(mod.defaultCacheSizeHint(50_500_000), 'default, 51 MB',
+        'rounds up at the half-MB boundary')
+})
+
+test('defaultCacheAgeHint names the concrete default with days unit',
+    async (t) => {
+        const mod = await import('../src/client/local-first-settings.js')
+
+        t.equal(mod.defaultCacheAgeHint(30 * 86400), 'default, 30 days',
+            '30-day default formats as "default, 30 days"')
+        t.ok(mod.defaultCacheAgeHint(30 * 86400).includes('default'),
+            'age hint contains the literal word default')
+    })
+
+test('defaultCacheAgeHint rounds seconds like the account editor', async (t) => {
+    const mod = await import('../src/client/local-first-settings.js')
+
+    // Math.round((14 * 86400) / 86400) === 14
+    t.equal(mod.defaultCacheAgeHint(14 * 86400), 'default, 14 days',
+        'whole-day value formats exactly')
+    // Math.round((1.5 * 86400) / 86400) === 2
+    t.equal(mod.defaultCacheAgeHint(1.5 * 86400), 'default, 2 days',
+        'rounds up at the half-day boundary')
+})
+
+test('cache hints degrade to bare "default" for non-finite input',
+    async (t) => {
+        const mod = await import('../src/client/local-first-settings.js')
+
+        t.equal(mod.defaultCacheSizeHint(NaN), 'default',
+            'NaN size degrades to default')
+        t.equal(mod.defaultCacheSizeHint(Infinity), 'default',
+            'Infinity size degrades to default')
+        t.equal(mod.defaultCacheAgeHint(NaN), 'default',
+            'NaN age degrades to default')
+        t.equal(mod.defaultCacheAgeHint(Infinity), 'default',
+            'Infinity age degrades to default')
+    })

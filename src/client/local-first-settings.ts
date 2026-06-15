@@ -20,6 +20,23 @@ export const defaultMaxAgeSeconds:Signal<number> =
 export const defaultAccountMaxSizeBytes:Signal<number> =
     signal(DEFAULT_ACCOUNT_MAX_SIZE_BYTES)
 
+// Format an account-default value into a per-feed cache field hint that names
+// the concrete default the field falls back to when left blank. The rounding
+// MUST match the account-level cache editor (routes/settings.ts) so the
+// per-feed hint and the editor never show a different number. Pure + total:
+// the caller passes `signal.value` in (reading it at the call site is what
+// makes the hint reactive), and non-finite input degrades to the bare word
+// `default` so the hint never renders `NaN`/`undefined`.
+export function defaultCacheSizeHint (bytes:number):string {
+    if (!isFinite(bytes)) return 'default'
+    return `default, ${Math.round(bytes / 1_000_000)} MB`
+}
+
+export function defaultCacheAgeHint (seconds:number):string {
+    if (!isFinite(seconds)) return 'default'
+    return `default, ${Math.round(seconds / 86400)} days`
+}
+
 const LS_KEY = 'rsss.localFirst'
 export type SyncSubscriptionsResult = 'applied'|'pending'|'blocked'
 
