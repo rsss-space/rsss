@@ -1220,3 +1220,93 @@ test('GET /items includes items with NULL pub_date', async t => {
     t.equal(body.items[0].title, 'No date', 'correct item returned')
     t.equal(body.total, 1, 'count includes the NULL pub_date item')
 })
+
+// ---- 040 AC1: getFeedUpdateCounts predicate + mapping regression test ----
+
+test('getFeedUpdateCounts pins pending-count predicate and mapping',
+    t => {
+        let capturedQuery = ''
+        const userDo = Object.create(RsssUserDO.prototype) as {
+            sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
+            getFeedUpdateCounts:() => Record<string, number>
+        }
+
+        userDo.sql = {
+            exec (query:string) {
+                if (
+                    query.includes('COUNT(items.id)') &&
+                    query.includes('GROUP BY feeds.id')
+                ) {
+                    capturedQuery = query
+                    return fakeResult([
+                        { id: 1, pending_count: 3 },
+                        { id: 2, pending_count: 1 },
+                        { id: 3, pending_count: 0 },
+                        { id: 4, pending_count: null }
+                    ])
+                }
+                return fakeResult([])
+            }
+        }
+
+        const result = userDo.getFeedUpdateCounts()
+
+        // AC1.1: items.pub_date > feeds.last_pulled_at
+        t.ok(
+            capturedQuery
+                .replace(/ +/g, ' ')
+                .trim()
+                .includes('items.pub_date > feeds.last_pulled_at'),
+            'query uses strict > for pending items (AC1.1)'
+        )
+
+        // AC1.2: feeds.last_pulled_at IS NULL for never-pulled feeds
+        t.ok(
+            capturedQuery
+                .replace(/ +/g, ' ')
+                .trim()
+                .includes('feeds.last_pulled_at IS NULL'),
+            'query checks NULL last_pulled_at for never-pulled feeds (AC1.2)'
+        )
+
+        // AC1.4: items.pub_date IS NOT NULL excludes null-date items
+        t.ok(
+            capturedQuery
+                .replace(/ +/g, ' ')
+                .trim()
+                .includes('items.pub_date IS NOT NULL'),
+            'query excludes items with NULL pub_date (AC1.4)'
+        )
+
+        // AC1.3: GROUP BY feeds.id ensures per-feed counts sum to total
+        t.ok(
+            capturedQuery
+                .replace(/ +/g, ' ')
+                .trim()
+                .includes('GROUP BY feeds.id'),
+            'query groups by feed id for per-feed counts (AC1.3)'
+        )
+
+        // AC1.3: Header total = sum of per-feed counts
+        const headerTotal = Object.values(result)
+            .reduce((sum, count) => sum + count, 0)
+        const expectedTotal = 3 + 1 + 0 + 0
+        t.equal(
+            headerTotal,
+            expectedTotal,
+            'header total equals sum of per-feed counts'
+        )
+
+        // AC1.3: Per-feed mapping is correct
+        const expected:Record<string, number> = {}
+        expected['1'] = 3
+        expected['2'] = 1
+        expected['3'] = 0
+        expected['4'] = 0
+        t.deepEqual(
+            result,
+            expected,
+            'per-feed counts and null-to-zero coercion are correct'
+        )
+    }
+)
