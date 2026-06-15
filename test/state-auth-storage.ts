@@ -1393,7 +1393,12 @@ async t => {
             did,
             handle: 'focus.test'
         }
+        // Settle any pending online handler calls
+        await settleOnlineHandler()
+        // Reset counter AFTER settling to ignore initialization-time calls
         loadFeedStatusCalls = 0
+        // Settle again to ensure everything is idle
+        await settleOnlineHandler()
 
         const visibilityChangeEvent = new Event('visibilitychange')
         document.dispatchEvent(visibilityChangeEvent)
@@ -1471,7 +1476,12 @@ async t => {
             did,
             handle: 'focus-dedup.test'
         }
+        // Settle any pending online handler calls
+        await settleOnlineHandler()
+        // Reset counter AFTER settling to ignore initialization-time calls
         loadFeedStatusCalls = 0
+        // Settle again to ensure everything is idle
+        await settleOnlineHandler()
 
         // Fire both focus and visibilitychange in the same tick
         document.dispatchEvent(new Event('visibilitychange'))
@@ -1558,7 +1568,12 @@ async t => {
             did,
             handle: 'focus-hidden.test'
         }
+        // Settle any pending online handler calls
+        await settleOnlineHandler()
+        // Reset counter AFTER settling to ignore initialization-time calls
         loadFeedStatusCalls = 0
+        // Settle again to ensure everything is idle
+        await settleOnlineHandler()
 
         // Fire focus event while hidden
         window.dispatchEvent(new Event('focus'))
@@ -1626,7 +1641,12 @@ async t => {
     try {
         const state = State()
         // user is null
+        // Settle any pending online handler calls
+        await settleOnlineHandler()
+        // Reset counter AFTER settling to ignore initialization-time calls
         loadFeedStatusCalls = 0
+        // Settle again to ensure everything is idle
+        await settleOnlineHandler()
 
         document.dispatchEvent(new Event('visibilitychange'))
         await new Promise(resolve => setTimeout(resolve, 10))
