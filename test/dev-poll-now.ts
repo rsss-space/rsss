@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { fakeResult } from './helpers/sql-fake.js'
+import { fakeResult, type FakeQueryResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import app from '../src/server/index.js'
 import { makeEnv, executionCtx } from './signup-helpers.js'
@@ -84,9 +84,8 @@ test('POST /api/dev/poll-now returns 404 in staging',
 
 // ---- DO-level tests (AC3.1, AC3.3) ----
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface DevPollDoType {
-    sql:{ exec:(q:string, ...p:unknown[]) => any }
+    sql:{ exec:(q:string, ...p:unknown[]) => FakeQueryResult }
     fetchFeed:(feed:FeedRow) => Promise<void>
     advanceFeedCursor:(feedId:number) => void
     getFeedUpdateCounts:() => Record<string, number>
@@ -236,11 +235,6 @@ test('AC3.2: DO /internal/dev/poll-now returns 404 in production',
         const userDo = Object.create(RsssUserDO.prototype) as DevPollDoType & {
             env?:{ NODE_ENV?:string }
         }
-        // Copy over all the properties from the harness setup
-        Object.assign(
-            userDo,
-            Object.create(RsssUserDO.prototype)
-        )
         userDo.env = { NODE_ENV: 'production' }
 
         // Rebuild harness with production DO
