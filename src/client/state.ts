@@ -1024,8 +1024,30 @@ export function State ():AppState {
             })
     }
 
+    // Re-sync the canonical pending count when the user returns to a
+    // backgrounded tab. Covers the case where the live socket was down while
+    // hidden, so feed-updates-available was missed. Guarded so the
+    // visibilitychange + focus pair (and any concurrent trigger) fire at
+    // most one in-flight loadFeedStatus.
+    let resyncInFlight = false
+    const handleVisibleResync = () => {
+        if (document.visibilityState !== 'visible') return
+        if (!state.user.value) return
+        if (resyncInFlight) return
+        resyncInFlight = true
+        State.loadFeedStatus(state)
+            .catch((err) => {
+                debug('focus loadFeedStatus error:', err)
+            })
+            .finally(() => {
+                resyncInFlight = false
+            })
+    }
+
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    document.addEventListener('visibilitychange', handleVisibleResync)
+    window.addEventListener('focus', handleVisibleResync)
 
     // Recompute the local-cache-health snapshot when relevant inputs
     // change: paid status, store-content / default cache mode toggles,
@@ -1064,6 +1086,8 @@ export function State ():AppState {
     state.cleanup = () => {
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
+        document.removeEventListener('visibilitychange', handleVisibleResync)
+        window.removeEventListener('focus', handleVisibleResync)
         State.closeEventStream()
         disposeDocumentTitle()
     }
