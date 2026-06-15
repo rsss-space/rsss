@@ -50,8 +50,8 @@ FR-007 consistency and centralizes the FR/edge-case degrade rule.
 **⚠️ CRITICAL**: Both user stories consume this helper — neither US1 nor US2
 can be completed until this phase is done.
 
-- [ ] T001 Write a failing unit test for the hint helper(s) in `test/local-first-settings.ts`: assert rounding parity with the account editor (`Math.round(bytes / 1_000_000)` → `default, <N> MB`; `Math.round(seconds / 86400)` → `default, <N> days`), that the returned string contains the literal word `default` and the value+unit, and that a non-finite input (`NaN`, `Infinity`) degrades to the bare word `default` (no `NaN`/`undefined`). Test the pure function only — no rendered-HTML assertions.
-- [ ] T002 Implement the pure, total helper(s) in `src/client/local-first-settings.ts` per `contracts/ui-cache-hint.md`: `defaultCacheSizeHint(bytes:number):string` and `defaultCacheAgeHint(seconds:number):string` (or one unit-parameterized helper). Use the byte-for-byte same conversions as the account editor (`Math.round(bytes / 1_000_000)`, `Math.round(seconds / 86400)`), return `default, <N> MB` / `default, <N> days` with a fixed (non-pluralized) unit, and return bare `default` for non-finite input. No signal reads inside the helper (caller passes `.value` in). Run T001 to green.
+- [X] T001 Write a failing unit test for the hint helper(s) in `test/local-first-settings.ts`: assert rounding parity with the account editor (`Math.round(bytes / 1_000_000)` → `default, <N> MB`; `Math.round(seconds / 86400)` → `default, <N> days`), that the returned string contains the literal word `default` and the value+unit, and that a non-finite input (`NaN`, `Infinity`) degrades to the bare word `default` (no `NaN`/`undefined`). Test the pure function only — no rendered-HTML assertions.
+- [X] T002 Implement the pure, total helper(s) in `src/client/local-first-settings.ts` per `contracts/ui-cache-hint.md`: `defaultCacheSizeHint(bytes:number):string` and `defaultCacheAgeHint(seconds:number):string` (or one unit-parameterized helper). Use the byte-for-byte same conversions as the account editor (`Math.round(bytes / 1_000_000)`, `Math.round(seconds / 86400)`), return `default, <N> MB` / `default, <N> days` with a fixed (non-pluralized) unit, and return bare `default` for non-finite input. No signal reads inside the helper (caller passes `.value` in). Run T001 to green.
 
 **Checkpoint**: Helper exists, is unit-tested, and is importable by both call
 sites. User-story work can begin.
@@ -73,8 +73,8 @@ unchanged (US1 scenario 3, FR-008).
 
 ### Implementation for User Story 1
 
-- [ ] T003 [P] [US1] In `src/client/components/cache-settings.ts`, import `defaultMaxSizeBytes`, `defaultMaxAgeSeconds`, and the helper(s) from `local-first-settings.ts` (this file does not import them yet). Replace the `Max size (MB, blank = default)` label (~line 295) and the `Keep for (days, blank = default)` label (~line 306) with helper-built hints (`Max size (${defaultCacheSizeHint(defaultMaxSizeBytes.value)})` / `Keep for (${defaultCacheAgeHint(defaultMaxAgeSeconds.value)})`), reading the signals' `.value` inside the render body. Leave the `<input>`, its `placeholder="default"`, the `onChange` handlers, and the override read/write logic untouched (FR-008, D6).
-- [ ] T004 [P] [US1] In `src/client/routes/settings.ts`, replace the `Max size (MB, blank = default)` label (~line 924) and the `Keep for (days, blank = default)` label (~line 937) in the per-feed Subscriptions list with the same helper-built hints (the `defaultMaxSizeBytes` / `defaultMaxAgeSeconds` signals are already imported here). Wording MUST be identical to T003 (FR-007). Leave the input, `placeholder`, and `onChange` handlers untouched.
+- [X] T003 [P] [US1] In `src/client/components/cache-settings.ts`, import `defaultMaxSizeBytes`, `defaultMaxAgeSeconds`, and the helper(s) from `local-first-settings.ts` (this file does not import them yet). Replace the `Max size (MB, blank = default)` label (~line 295) and the `Keep for (days, blank = default)` label (~line 306) with helper-built hints (`Max size (${defaultCacheSizeHint(defaultMaxSizeBytes.value)})` / `Keep for (${defaultCacheAgeHint(defaultMaxAgeSeconds.value)})`), reading the signals' `.value` inside the render body. Leave the `<input>`, its `placeholder="default"`, the `onChange` handlers, and the override read/write logic untouched (FR-008, D6).
+- [X] T004 [P] [US1] In `src/client/routes/settings.ts`, replace the `Max size (MB, blank = default)` label (~line 924) and the `Keep for (days, blank = default)` label (~line 937) in the per-feed Subscriptions list with the same helper-built hints (the `defaultMaxSizeBytes` / `defaultMaxAgeSeconds` signals are already imported here). Wording MUST be identical to T003 (FR-007). Leave the input, `placeholder`, and `onChange` handlers untouched.
 
 **Checkpoint**: Both per-feed call sites show the concrete account default and
 `blank = default` is gone from the cache size/retention hints (SC-002). MVP is
@@ -95,7 +95,7 @@ shown in the account-level editor (SC-003).
 
 ### Implementation for User Story 2
 
-- [ ] T005 [US2] Verify the reactivity contract (D3) at both call sites: confirm `src/client/components/cache-settings.ts` and `src/client/routes/settings.ts` read `defaultMaxSizeBytes.value` / `defaultMaxAgeSeconds.value` inside the component render body (not a value hoisted/cached outside render or captured before the signal read), so writing the account-default signal re-renders the hint. If a cached/hoisted copy is found, move the `.value` read into the render path. (Achieved for free if T003/T004 read `.value` inline — this task confirms it.)
+- [X] T005 [US2] Verify the reactivity contract (D3) at both call sites: confirm `src/client/components/cache-settings.ts` and `src/client/routes/settings.ts` read `defaultMaxSizeBytes.value` / `defaultMaxAgeSeconds.value` inside the component render body (not a value hoisted/cached outside render or captured before the signal read), so writing the account-default signal re-renders the hint. If a cached/hoisted copy is found, move the `.value` read into the render path. (Achieved for free if T003/T004 read `.value` inline — this task confirms it.)
 
 **Checkpoint**: Per-feed hints update live when account defaults change and
 never disagree with the account editor.
@@ -106,7 +106,7 @@ never disagree with the account editor.
 
 **Purpose**: Verify scope guards, no regressions, and the success criteria.
 
-- [ ] T006 [P] Grep the client for the substring `blank = default` (`src/client/`) and confirm it no longer appears in the per-feed cache size/retention hints (SC-002).
+- [X] T006 [P] Grep the client for the substring `blank = default` (`src/client/`) and confirm it no longer appears in the per-feed cache size/retention hints (SC-002).
 - [ ] T007 Run the full `quickstart.md` manual verification in a browser (`npm start`): (1) blank-field hints read the concrete default (US1); (2) change the account default and confirm per-feed hints update and match the account editor (US2, SC-003); (3) enter/clear a per-feed override and confirm save/clear still works and the hint still describes the fallback (US1 scenario 3, FR-008, SC-004); (4) confirm the Subscriptions-list fields use identical wording (FR-007). Clean up the dev server afterward.
 - [ ] T008 Run `npm test && npm run lint` and confirm both pass (includes the T001 helper test and existing settings/cache-policy suites).
 

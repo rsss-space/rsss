@@ -15,6 +15,8 @@ import {
     defaultMaxSizeBytes,
     defaultMaxAgeSeconds,
     defaultAccountMaxSizeBytes,
+    defaultCacheSizeHint,
+    defaultCacheAgeHint,
     setSyncSubscriptions,
     saveLocalFirstSettings,
     loadLocalFirstSettings,
@@ -821,6 +823,11 @@ export const SettingsRoute:FunctionComponent<{
                         policy.max_age_seconds / 86400
                     )) :
                     ''
+                // Read account-default signals in the render body so the hint
+                // tracks account-default changes (reactivity, FR-004). Wording
+                // is identical to cache-settings.ts (FR-007).
+                const sizeHint = defaultCacheSizeHint(defaultMaxSizeBytes.value)
+                const ageHint = defaultCacheAgeHint(defaultMaxAgeSeconds.value)
                 const storedBytes = feedStorageBytes.value[feed.id] ?? 0
                 return html`
                         <li
@@ -921,7 +928,7 @@ export const SettingsRoute:FunctionComponent<{
                                                     </select>
                                                 </label>
                                                 <label class="cache-field-label">
-                                                    Max size (MB, blank = default)
+                                                    Max size (${sizeHint})
                                                     <input
                                                         type="number"
                                                         name=${`feed-max-size-${feed.id}`}
@@ -934,7 +941,7 @@ export const SettingsRoute:FunctionComponent<{
                                                     />
                                                 </label>
                                                 <label class="cache-field-label">
-                                                    Keep for (days, blank = default)
+                                                    Keep for (${ageHint})
                                                     <input
                                                         type="number"
                                                         name=${`feed-max-age-${feed.id}`}

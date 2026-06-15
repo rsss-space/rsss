@@ -8,7 +8,11 @@ import {
     type CacheMode,
     storeContent,
     setSyncSubscriptions,
-    saveLocalFirstSettings
+    saveLocalFirstSettings,
+    defaultMaxSizeBytes,
+    defaultMaxAgeSeconds,
+    defaultCacheSizeHint,
+    defaultCacheAgeHint
 } from '../local-first-settings.js'
 import {
     feedPolicies,
@@ -223,6 +227,10 @@ export const CacheSettings:FunctionComponent<{
     const ageVal = policy?.max_age_seconds != null ?
         String(Math.round(policy.max_age_seconds / 86400)) :
         ''
+    // Read the account-default signals here, in the render body, so the hint
+    // re-renders when the account default changes (reactivity, FR-004).
+    const sizeHint = defaultCacheSizeHint(defaultMaxSizeBytes.value)
+    const ageHint = defaultCacheAgeHint(defaultMaxAgeSeconds.value)
     const effectiveContent = isContentCachedForPolicy(policy)
     const billing = billingStatus.value
     const isEntitled = Boolean(billing?.entitled)
@@ -292,7 +300,7 @@ export const CacheSettings:FunctionComponent<{
                                 </select>
                             </label>
                             <label class="cache-field-label">
-                                Max size (MB, blank = default)
+                                Max size (${sizeHint})
                                 <input
                                     type="number"
                                     name=${`feed-max-size-${selectedFeed.id}`}
@@ -303,7 +311,7 @@ export const CacheSettings:FunctionComponent<{
                                 />
                             </label>
                             <label class="cache-field-label">
-                                Keep for (days, blank = default)
+                                Keep for (${ageHint})
                                 <input
                                     type="number"
                                     name=${`feed-max-age-${selectedFeed.id}`}
