@@ -1350,6 +1350,307 @@ test('loadItemByRoute fetches server body for local item missing content',
         }
     })
 
+test('focus/visibility re-sync handler fires loadFeedStatus on ' +
+    'visibilitychange to visible',
+async t => {
+    const did = 'did:plc:focus-test'
+    const originalFetch = globalThis.fetch
+    const originalLoadFeedStatus = State.loadFeedStatus
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+    )
+    let loadFeedStatusCalls = 0
+
+    setupLocalFirstForStateTest()
+    await getAdapter(did)
+
+    globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ?
+            input.url :
+            input.toString()
+        if (url.includes('/api/feed-status')) {
+            return new Response(JSON.stringify({
+                feedUpdateCounts: {},
+                totalPending: 0
+            }))
+        }
+        return originalFetch.call(globalThis, input, init)
+    }
+
+    Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        configurable: true
+    })
+
+    State.loadFeedStatus = (async () => {
+        loadFeedStatusCalls++
+    }) as typeof State.loadFeedStatus
+
+    try {
+        const state = State()
+        state.user.value = {
+            did,
+            handle: 'focus.test'
+        }
+
+        const visibilityChangeEvent = new Event('visibilitychange')
+        document.dispatchEvent(visibilityChangeEvent)
+        await new Promise(r => setTimeout(r, 10))
+
+        t.equal(
+            loadFeedStatusCalls,
+            1,
+            'visibilitychange to visible calls loadFeedStatus'
+        )
+
+        state.cleanup()
+    } finally {
+        State.loadFeedStatus = originalLoadFeedStatus
+        globalThis.fetch = originalFetch
+        if (originalDescriptor) {
+            Object.defineProperty(document, 'visibilityState',
+                originalDescriptor)
+        } else {
+            delete (document as
+                Record<string, unknown>).visibilityState
+        }
+        _resetAdapterCache()
+        _resetSupportedCache()
+        syncSubscriptions.value = false
+        resetTabCoordinationForTests()
+    }
+})
+
+test('focus/visibility re-sync handler dedupes concurrent ' +
+    'triggers',
+async t => {
+    const did = 'did:plc:focus-dedup'
+    const originalFetch = globalThis.fetch
+    const originalLoadFeedStatus = State.loadFeedStatus
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+    )
+    let loadFeedStatusCalls = 0
+    let resolvePending:(() => void)|null = null
+    const pendingPromise = new Promise<void>((resolve) => {
+        resolvePending = resolve
+    })
+
+    setupLocalFirstForStateTest()
+    await getAdapter(did)
+
+    globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ?
+            input.url :
+            input.toString()
+        if (url.includes('/api/feed-status')) {
+            return new Response(JSON.stringify({
+                feedUpdateCounts: {},
+                totalPending: 0
+            }))
+        }
+        return originalFetch.call(globalThis, input, init)
+    }
+
+    Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        configurable: true
+    })
+
+    State.loadFeedStatus = (async () => {
+        loadFeedStatusCalls++
+        return pendingPromise
+    }) as typeof State.loadFeedStatus
+
+    try {
+        const state = State()
+        state.user.value = {
+            did,
+            handle: 'focus-dedup.test'
+        }
+
+        // Fire both focus and visibilitychange in the same tick
+        document.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event('focus'))
+        await new Promise(r => setTimeout(r, 10))
+
+        t.equal(
+            loadFeedStatusCalls,
+            1,
+            'concurrent focus + visibilitychange fires ' +
+            'loadFeedStatus exactly once'
+        )
+
+        // Resolve the pending promise and fire again
+        if (resolvePending) resolvePending()
+        await new Promise(r => setTimeout(r, 10))
+        document.dispatchEvent(new Event('visibilitychange'))
+        await new Promise(r => setTimeout(r, 10))
+
+        t.equal(
+            loadFeedStatusCalls,
+            2,
+            'after promise settles, next trigger calls loadFeedStatus again'
+        )
+
+        state.cleanup()
+    } finally {
+        State.loadFeedStatus = originalLoadFeedStatus
+        globalThis.fetch = originalFetch
+        if (originalDescriptor) {
+            Object.defineProperty(document, 'visibilityState',
+                originalDescriptor)
+        } else {
+            delete (document as
+                Record<string, unknown>).visibilityState
+        }
+        _resetAdapterCache()
+        _resetSupportedCache()
+        syncSubscriptions.value = false
+        resetTabCoordinationForTests()
+    }
+})
+
+test('focus/visibility re-sync handler skips when visibilityState ' +
+    'is not visible',
+async t => {
+    const did = 'did:plc:focus-hidden'
+    const originalFetch = globalThis.fetch
+    const originalLoadFeedStatus = State.loadFeedStatus
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+    )
+    let loadFeedStatusCalls = 0
+
+    setupLocalFirstForStateTest()
+    await getAdapter(did)
+
+    globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ?
+            input.url :
+            input.toString()
+        if (url.includes('/api/feed-status')) {
+            return new Response(JSON.stringify({
+                feedUpdateCounts: {},
+                totalPending: 0
+            }))
+        }
+        return originalFetch.call(globalThis, input, init)
+    }
+
+    Object.defineProperty(document, 'visibilityState', {
+        value: 'hidden',
+        configurable: true
+    })
+
+    State.loadFeedStatus = (async () => {
+        loadFeedStatusCalls++
+    }) as typeof State.loadFeedStatus
+
+    try {
+        const state = State()
+        state.user.value = {
+            did,
+            handle: 'focus-hidden.test'
+        }
+
+        // Fire focus event while hidden
+        window.dispatchEvent(new Event('focus'))
+        await new Promise(r => setTimeout(r, 10))
+
+        t.equal(
+            loadFeedStatusCalls,
+            0,
+            'focus event while hidden does not call loadFeedStatus'
+        )
+
+        state.cleanup()
+    } finally {
+        State.loadFeedStatus = originalLoadFeedStatus
+        globalThis.fetch = originalFetch
+        if (originalDescriptor) {
+            Object.defineProperty(document, 'visibilityState',
+                originalDescriptor)
+        } else {
+            delete (document as
+                Record<string, unknown>).visibilityState
+        }
+        _resetAdapterCache()
+        _resetSupportedCache()
+        syncSubscriptions.value = false
+        resetTabCoordinationForTests()
+    }
+})
+
+test('focus/visibility re-sync handler skips when user is not ' +
+    'logged in',
+async t => {
+    const originalFetch = globalThis.fetch
+    const originalLoadFeedStatus = State.loadFeedStatus
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+    )
+    let loadFeedStatusCalls = 0
+
+    setupLocalFirstForStateTest()
+
+    globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ?
+            input.url :
+            input.toString()
+        if (url.includes('/api/feed-status')) {
+            return new Response(JSON.stringify({
+                feedUpdateCounts: {},
+                totalPending: 0
+            }))
+        }
+        return originalFetch.call(globalThis, input, init)
+    }
+
+    Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        configurable: true
+    })
+
+    State.loadFeedStatus = (async () => {
+        loadFeedStatusCalls++
+    }) as typeof State.loadFeedStatus
+
+    try {
+        const state = State()
+        // user is null
+
+        document.dispatchEvent(new Event('visibilitychange'))
+        await new Promise(r => setTimeout(r, 10))
+
+        t.equal(
+            loadFeedStatusCalls,
+            0,
+            'visibilitychange without user does not call loadFeedStatus'
+        )
+
+        state.cleanup()
+    } finally {
+        State.loadFeedStatus = originalLoadFeedStatus
+        globalThis.fetch = originalFetch
+        if (originalDescriptor) {
+            Object.defineProperty(document, 'visibilityState',
+                originalDescriptor)
+        } else {
+            delete (document as
+                Record<string, unknown>).visibilityState
+        }
+        _resetAdapterCache()
+        _resetSupportedCache()
+        syncSubscriptions.value = false
+        resetTabCoordinationForTests()
+    }
+})
+
 test('checkAuth does not remove legacy user localStorage entry',
     async t => {
         const originalFetch = globalThis.fetch
