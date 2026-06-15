@@ -149,30 +149,6 @@ function createDevPollHarness (opts?:CreateDevPollHarnessOptions) {
         1: 5
     })
 
-    // Use real runFeedPool implementation with stubbed fetchFeed.
-    // This exercises the real pool concurrency and orchestration logic.
-    userDo.runFeedPool = async (
-        feedsList:FeedRow[],
-        worker:(feed:FeedRow) => Promise<void>
-    ) => {
-        let next = 0
-        // Use a single concurrent worker for tests (vs 8 in production)
-        const count = 1
-        const runners = Array.from({ length: count }, async () => {
-            while (next < feedsList.length) {
-                const feed = feedsList[next++]
-                if (!feed) continue
-                try {
-                    await worker(feed)
-                } catch (_err) {
-                    // Isolate per-feed failure
-                }
-            }
-        })
-
-        await Promise.all(runners)
-    }
-
     userDo.broadcast = () => {}
 
     return {
@@ -288,27 +264,6 @@ test('AC3.2: DO /internal/dev/poll-now returns 404 in production',
         }
 
         userDo.getFeedUpdateCounts = () => ({ 1: 0 })
-
-        userDo.runFeedPool = async (
-            feedsList:FeedRow[],
-            worker:(feed:FeedRow) => Promise<void>
-        ) => {
-            let next = 0
-            const count = 1
-            const runners = Array.from({ length: count }, async () => {
-                while (next < feedsList.length) {
-                    const feed = feedsList[next++]
-                    if (!feed) continue
-                    try {
-                        await worker(feed)
-                    } catch (_err) {
-                        // Isolate per-feed failure
-                    }
-                }
-            })
-
-            await Promise.all(runners)
-        }
 
         userDo.broadcast = () => {}
 
