@@ -1393,10 +1393,11 @@ async t => {
             did,
             handle: 'focus.test'
         }
+        loadFeedStatusCalls = 0
 
         const visibilityChangeEvent = new Event('visibilitychange')
         document.dispatchEvent(visibilityChangeEvent)
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise(resolve => setTimeout(resolve, 10))
 
         t.equal(
             loadFeedStatusCalls,
@@ -1412,7 +1413,7 @@ async t => {
             Object.defineProperty(document, 'visibilityState',
                 originalDescriptor)
         } else {
-            delete (document as
+            delete (document as unknown as
                 Record<string, unknown>).visibilityState
         }
         _resetAdapterCache()
@@ -1470,11 +1471,12 @@ async t => {
             did,
             handle: 'focus-dedup.test'
         }
+        loadFeedStatusCalls = 0
 
         // Fire both focus and visibilitychange in the same tick
         document.dispatchEvent(new Event('visibilitychange'))
         window.dispatchEvent(new Event('focus'))
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise(resolve => setTimeout(resolve, 10))
 
         t.equal(
             loadFeedStatusCalls,
@@ -1485,9 +1487,9 @@ async t => {
 
         // Resolve the pending promise and fire again
         if (resolvePending) resolvePending()
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise(resolve => setTimeout(resolve, 10))
         document.dispatchEvent(new Event('visibilitychange'))
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise(resolve => setTimeout(resolve, 10))
 
         t.equal(
             loadFeedStatusCalls,
@@ -1503,7 +1505,7 @@ async t => {
             Object.defineProperty(document, 'visibilityState',
                 originalDescriptor)
         } else {
-            delete (document as
+            delete (document as unknown as
                 Record<string, unknown>).visibilityState
         }
         _resetAdapterCache()
@@ -1556,10 +1558,11 @@ async t => {
             did,
             handle: 'focus-hidden.test'
         }
+        loadFeedStatusCalls = 0
 
         // Fire focus event while hidden
         window.dispatchEvent(new Event('focus'))
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise(resolve => setTimeout(resolve, 10))
 
         t.equal(
             loadFeedStatusCalls,
@@ -1575,7 +1578,7 @@ async t => {
             Object.defineProperty(document, 'visibilityState',
                 originalDescriptor)
         } else {
-            delete (document as
+            delete (document as unknown as
                 Record<string, unknown>).visibilityState
         }
         _resetAdapterCache()
@@ -1623,9 +1626,10 @@ async t => {
     try {
         const state = State()
         // user is null
+        loadFeedStatusCalls = 0
 
         document.dispatchEvent(new Event('visibilitychange'))
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise(resolve => setTimeout(resolve, 10))
 
         t.equal(
             loadFeedStatusCalls,
@@ -1641,7 +1645,7 @@ async t => {
             Object.defineProperty(document, 'visibilityState',
                 originalDescriptor)
         } else {
-            delete (document as
+            delete (document as unknown as
                 Record<string, unknown>).visibilityState
         }
         _resetAdapterCache()
