@@ -253,14 +253,10 @@ test('alarm resumes refresh after a mid-run kill', async t => {
         2
     )
 
-    let killed = false
-    try {
-        await firstRun.alarm()
-    } catch {
-        killed = true
-    }
-
-    t.equal(killed, true, 'first alarm stops mid-refresh')
+    // AC2.2: alarm() does NOT throw even when refreshFeedBatches fails;
+    // the error is caught and logged. Instead, the reschedule happens
+    // before the fallible work, so the next tick is armed.
+    await firstRun.alarm()
     t.deepEqual(
         fetched,
         [1, 2, 3, 4, 5, 6, 7, 8],
