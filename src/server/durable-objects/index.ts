@@ -1890,6 +1890,9 @@ export class RsssUserDO extends DurableObject<Env> {
         // the pending count grows and can be observed. Reachable only via the
         // dev-gated, authenticated worker route POST /api/dev/poll-now.
         app.post('/internal/dev/poll-now', async (c) => {
+            if (this.env?.NODE_ENV !== 'development') {
+                return c.notFound()
+            }
             const feeds = this.sql.exec('SELECT * FROM feeds')
                 .toArray() as unknown as Feed[]
             const before = Number(
