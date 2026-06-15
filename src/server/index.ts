@@ -2199,6 +2199,27 @@ dataRouter.all('*', async (c) => {
     return response
 })
 
+// Dev-only: force a discovery pass over all feeds without advancing the
+// read cursor, so the "N updates" count can be observed growing locally.
+// Gated to development; 404 elsewhere. Gate runs before requireAuth so
+// production returns 404 (not 401) regardless of session.
+app.post(
+    '/api/dev/poll-now',
+    async (c, next) => {
+        if (c.env.NODE_ENV !== 'development') return c.notFound()
+        return next()
+    },
+    requireAuth,
+    async (c) => {
+        const session = c.get('session')!
+        const stub = getRsssUserDO(c.env, session.did)
+        return stub.fetch(new Request(
+            'http://do/internal/dev/poll-now',
+            { method: 'POST' }
+        ))
+    }
+)
+
 app.route('/api', dataRouter)
 
 function extractPdsUrl (didDoc:unknown):string | null {
