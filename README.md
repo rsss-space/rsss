@@ -396,7 +396,7 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-06-14-040-fix-updates-count.md .
+/ed3d-plan-and-execute:execute-implementation-plan /Users/nick/code/rsss/docs/implementation-plans/2026-06-14-040-fix-updates-count/ /Users/nick/code/rsss/
 ```
 
 ```
