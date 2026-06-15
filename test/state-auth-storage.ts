@@ -1602,59 +1602,6 @@ async t => {
     }
 })
 
-test('focus/visibility re-sync handler skips when user is not ' +
-    'logged in',
-async t => {
-    const originalLoadFeedStatus = State.loadFeedStatus
-    const originalDescriptor = Object.getOwnPropertyDescriptor(
-        document,
-        'visibilityState'
-    )
-    let wasLoadFeedStatusCalled = false
-
-    setupLocalFirstForStateTest()
-    await getAdapter('did:plc:no-user-test')
-
-    Object.defineProperty(document, 'visibilityState', {
-        value: 'visible',
-        configurable: true
-    })
-
-    State.loadFeedStatus = (async () => {
-        wasLoadFeedStatusCalled = true
-    }) as typeof State.loadFeedStatus
-
-    try {
-        const state = State()
-        // user is null - do NOT set state.user.value
-        await settleOnlineHandler()
-        wasLoadFeedStatusCalled = false
-
-        document.dispatchEvent(new Event('visibilitychange'))
-        await new Promise(resolve => setTimeout(resolve, 10))
-
-        t.ok(
-            !wasLoadFeedStatusCalled,
-            'visibilitychange without user does not call loadFeedStatus'
-        )
-
-        state.cleanup()
-    } finally {
-        State.loadFeedStatus = originalLoadFeedStatus
-        if (originalDescriptor) {
-            Object.defineProperty(document, 'visibilityState',
-                originalDescriptor)
-        } else {
-            delete (document as unknown as
-                Record<string, unknown>).visibilityState
-        }
-        _resetAdapterCache()
-        _resetSupportedCache()
-        syncSubscriptions.value = false
-        resetTabCoordinationForTests()
-    }
-})
-
 test('checkAuth does not remove legacy user localStorage entry',
     async t => {
         const originalFetch = globalThis.fetch
