@@ -39,6 +39,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-15
 - N/A — no local SQLite or DO schema change (033-no-sentry-in-dev)
 - N/A — UI-only. No local SQLite, DO SQLite, or `/api/sync` (034-fetch-updates-button)
 - N/A — reads existing per-DID client signals (041-cache-default-labels)
+- TypeScript (browser, ES2022 lib via Vite); the change + Preact, `@preact/signals`, `htm/preact`, (042-fix-cache-settings-width)
+- N/A — presentation-only. No local SQLite, DO SQLite, or (042-fix-cache-settings-width)
 
 - TypeScript (Cloudflare Workers runtime, ES2022 lib) + `hono`, `@cloudflare/workers-types`, `fast-xml-parser` (001-fix-og-image-redirects)
 
@@ -59,9 +61,9 @@ npm test && npm run lint
 TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Recent Changes
+- 042-fix-cache-settings-width: Added TypeScript (browser, ES2022 lib via Vite); the change + Preact, `@preact/signals`, `htm/preact`,
 - 041-cache-default-labels: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
 - 034-fetch-updates-button: Added TypeScript (browser, ES2022 lib via Vite) + Preact, `@preact/signals`, `htm/preact`
-- 033-no-sentry-in-dev: Added TypeScript (Cloudflare Workers runtime, ES2022 lib) for + `@sentry/cloudflare` (worker + DO),
 
 
 <!-- MANUAL ADDITIONS START -->
