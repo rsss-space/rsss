@@ -1884,6 +1884,30 @@ export class RsssUserDO extends DurableObject<Env> {
             return c.json({ success: true, queued: feeds.length })
         })
 
+        // Dev-only discovery trigger. Runs the real per-feed discovery path
+        // (insert items + feed-updates-available broadcast) over ALL feeds,
+        // ignoring per-feed nextDueAt, WITHOUT advancing last_pulled_at — so
+        // the pending count grows and can be observed. Reachable only via the
+        // dev-gated, authenticated worker route POST /api/dev/poll-now.
+        app.post('/internal/dev/poll-now', async (c) => {
+            const feeds = this.sql.exec('SELECT * FROM feeds')
+                .toArray() as unknown as Feed[]
+            const before = Number(
+                (this.sql.exec('SELECT COUNT(*) AS c FROM items')
+                    .one() as { c:number|string }).c
+            )
+            await this.runFeedPool(feeds, feed => this.fetchFeed(feed))
+            const after = Number(
+                (this.sql.exec('SELECT COUNT(*) AS c FROM items')
+                    .one() as { c:number|string }).c
+            )
+            return c.json({
+                polledFeeds: feeds.length,
+                newItems: after - before,
+                counts: this.getFeedUpdateCounts()
+            })
+        })
+
         // List items with optional filters
         app.get('/items', (c) => {
             const feedId = c.req.query('feed_id')
