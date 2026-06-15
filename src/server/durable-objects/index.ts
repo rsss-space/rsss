@@ -147,6 +147,12 @@ const MAX_RECORD_PAGES = 50 // cap pagination to prevent stalled cursors
 const OG_IMAGE_FETCH_CONCURRENCY = 4
 const OG_IMAGE_FETCH_BUDGET_MS = 10_000
 const FEED_REFRESH_INTERVAL_MS = 60 * 60 * 1000
+// When a stored alarm is already overdue (e.g. it never fired under
+// `wrangler dev`, or the runtime dropped it), re-arm it to fire almost
+// immediately rather than a full interval out, so the heal runs a
+// discovery pass promptly. alarm() then reschedules to now + interval,
+// returning to the normal cadence (no tight loop).
+const OVERDUE_ALARM_REARM_DELAY_MS = 5 * 1000
 // Application-level WebSocket keepalive. The client sends LIVE_PING on a
 // timer; the runtime answers LIVE_PONG via setWebSocketAutoResponse
 // WITHOUT waking the hibernated DO, refreshing the idle timer so
@@ -496,16 +502,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
         ctx.blockConcurrencyWhile(async () => {
             await this.initDatabase()
-
-            // Schedule initial alarm if none exists
-            // This wakes the DO periodically to refresh feeds
-            const currentAlarm = await ctx.storage.getAlarm()
-            if (!currentAlarm) {
-                // Set first alarm one refresh interval from now
-                await ctx.storage.setAlarm(
-                    Date.now() + FEED_REFRESH_INTERVAL_MS
-                )
-            }
+            await this.ensureFeedRefreshArmed()
         })
     }
 
@@ -1885,6 +1882,33 @@ export class RsssUserDO extends DurableObject<Env> {
             })())
 
             return c.json({ success: true, queued: feeds.length })
+        })
+
+        // Dev-only discovery trigger. Runs the real per-feed discovery path
+        // (insert items + feed-updates-available broadcast) over ALL feeds,
+        // ignoring per-feed nextDueAt, WITHOUT advancing last_pulled_at — so
+        // the pending count grows and can be observed. Reachable only via the
+        // dev-gated, authenticated worker route POST /api/dev/poll-now.
+        app.post('/internal/dev/poll-now', async (c) => {
+            if (this.env?.NODE_ENV !== 'development') {
+                return c.notFound()
+            }
+            const feeds = this.sql.exec('SELECT * FROM feeds')
+                .toArray() as unknown as Feed[]
+            const before = Number(
+                (this.sql.exec('SELECT COUNT(*) AS c FROM items')
+                    .one() as { c:number|string }).c
+            )
+            await this.runFeedPool(feeds, feed => this.fetchFeed(feed))
+            const after = Number(
+                (this.sql.exec('SELECT COUNT(*) AS c FROM items')
+                    .one() as { c:number|string }).c
+            )
+            return c.json({
+                polledFeeds: feeds.length,
+                newItems: after - before,
+                counts: this.getFeedUpdateCounts()
+            })
         })
 
         // List items with optional filters
@@ -3594,10 +3618,15 @@ export class RsssUserDO extends DurableObject<Env> {
         )
         if (pending && Date.now() >= pending.scheduledFor) {
             await this.executeAccountDeletion(pending.did)
-            return
+            return  // intentional: DO is being deleted, do not reschedule
         }
 
-        this.sweepStuckResolvingFeeds()
+        // Fallible pre-discovery step: a throw here must not kill the loop.
+        try {
+            this.sweepStuckResolvingFeeds()
+        } catch (err) {
+            console.error('alarm sweepStuckResolvingFeeds error:', err)
+        }
 
         // Inactivity gate (FR-008, SC-005): once an account has been
         // idle past the threshold, STOP the polling alarm so the DO
@@ -3607,16 +3636,30 @@ export class RsssUserDO extends DurableObject<Env> {
         // (not-yet-due) deletion must keep the alarm ticking so it
         // executes when due, so only silence the alarm when no
         // deletion is pending.
-        const activity = await this.readAccountActivity()
-        const idlePastThreshold = activity != null &&
-            Date.now() - activity.lastActiveAt >
-                ACCOUNT_INACTIVITY_THRESHOLD_MS
+        let idlePastThreshold = false
+        try {
+            const activity = await this.readAccountActivity()
+            idlePastThreshold = activity != null &&
+                Date.now() - activity.lastActiveAt >
+                    ACCOUNT_INACTIVITY_THRESHOLD_MS
+        } catch (err) {
+            console.error('alarm readAccountActivity error:', err)
+            idlePastThreshold = false
+        }
         if (idlePastThreshold && pending == null) {
-            return
+            return  // intentional dormancy: do not reschedule (AC2.3)
         }
 
+        // Reschedule BEFORE any further fallible discovery work
+        // (AC2.2): even if refreshFeedBatches throws, the next tick
+        // is already armed.
         await this.scheduleNextFeedRefresh()
-        await this.refreshFeedBatches()
+
+        try {
+            await this.refreshFeedBatches()
+        } catch (err) {
+            console.error('alarm refreshFeedBatches error:', err)
+        }
     }
 
     /**
@@ -3676,6 +3719,12 @@ export class RsssUserDO extends DurableObject<Env> {
         if (existing == null) {
             await this.ctx.storage.setAlarm(
                 Date.now() + FEED_REFRESH_INTERVAL_MS
+            )
+            return
+        }
+        if (existing <= Date.now()) {
+            await this.ctx.storage.setAlarm(
+                Date.now() + OVERDUE_ALARM_REARM_DELAY_MS
             )
         }
     }

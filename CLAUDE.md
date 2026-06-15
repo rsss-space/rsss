@@ -67,7 +67,7 @@ TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Correctness Conventions
 
-Last verified: 2026-06-12
+Last verified: 2026-06-15
 
 These are project-wide invariants confirmed by the correctness audit. They
 are durable contracts, not implementation notes — keep them true.
@@ -125,6 +125,42 @@ SQL bind.
   and report truncation. `getBlueskyFollows` returns `{ follows, ok }` where
   `ok:false` signals a fetch error, page cap, or cursor stall truncated the
   result; callers must treat a partial list as incomplete.
+
+### Feed-polling alarm contracts
+
+The per-user `RsssUserDO` polling alarm (`src/server/durable-objects/index.ts`)
+drives background feed discovery on a `FEED_REFRESH_INTERVAL_MS` (1h) cadence.
+
+- **`alarm()` reschedules BEFORE any fallible discovery work.** It calls
+  `scheduleNextFeedRefresh()` (now + interval) first, then runs the fallible
+  steps (`sweepStuckResolvingFeeds`, `readAccountActivity`, `refreshFeedBatches`)
+  each wrapped in try/catch (swallow-and-log, no re-throw). A throw in
+  discovery must never leave the DO without a future alarm. The two
+  intentional early returns that deliberately do NOT reschedule are the only
+  exceptions: pending-deletion-due (the DO is being deleted) and the
+  inactivity gate (FR-008/AC2.3, dormancy when no deletion is pending).
+- **`ensureFeedRefreshArmed()` self-heals an overdue alarm.** It arms a fresh
+  alarm when none exists, and re-arms an already-overdue stored alarm to fire
+  in `OVERDUE_ALARM_REARM_DELAY_MS` (5s) — not a full interval out — so a
+  dropped/never-fired alarm (e.g. under `wrangler dev`) heals promptly without
+  a tight loop (`alarm()` then reschedules to now + interval). It is the single
+  cold-start arming path (constructor) and the returning-user resume path
+  (`maybeKickCatchUp`). Idempotent: a no-op when a future alarm is already set.
+
+### Dev-only poll trigger
+
+- **`POST /api/dev/poll-now` is development-gated, defense-in-depth.** The
+  worker route (`src/server/index.ts`) gates on `NODE_ENV === 'development'`
+  BEFORE `requireAuth`, so production returns `404` (not `401`) regardless of
+  session, and is registered above the `dataRouter` catch-all. It forwards to
+  the internal DO route `POST /internal/dev/poll-now`
+  (`src/server/durable-objects/index.ts`), which independently re-checks
+  `this.env.NODE_ENV === 'development'` — the gate must live on the DO handler
+  too, because the `dataRouter` proxies `/api/internal/*` to the DO. The DO
+  route runs the real discovery path (`runFeedPool` + `fetchFeed`) over ALL
+  feeds, ignoring per-feed due times and WITHOUT advancing `last_pulled_at`, so
+  the pending "N updates" count grows observably; returns
+  `{ polledFeeds, newItems, counts }`. Both layers `404` outside development.
 
 ### Cache-storage / OPFS atomicity
 

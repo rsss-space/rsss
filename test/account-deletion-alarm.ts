@@ -35,12 +35,19 @@ function createDeletionDo (initial:{
     let deletedAll = false
     let scheduledRefresh = false
     let refreshedFeeds = false
+    let sweepError:unknown = null
+    let activityError:unknown = null
+    let refreshError:unknown = null
 
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => ReturnType<typeof fakeResult> }
         ctx:{ storage:FakeStorage }
         env:{ SESSIONS:FakeKv } & Record<string, unknown>
         alarm:() => Promise<void>
+        sweepStuckResolvingFeeds:() => void
+        readAccountActivity:() => Promise<{ lastActiveAt:number }|undefined>
+        refreshFeedBatches:() => Promise<void>
+        executeAccountDeletion:(did:string) => Promise<void>
     }
 
     userDo.sql = {
@@ -80,10 +87,27 @@ function createDeletionDo (initial:{
         }
     }
 
-    // Mark whether the normal refresh path was taken so the test
-    // can assert it did NOT run when deletion was due.
+    // Set up default method overrides. Tests can customize these.
+    Object.defineProperty(userDo, 'sweepStuckResolvingFeeds', {
+        value: () => {
+            if (sweepError) throw sweepError
+        },
+        writable: true,
+        configurable: true
+    })
+
+    Object.defineProperty(userDo, 'readAccountActivity', {
+        value: async () => {
+            if (activityError) throw activityError
+            return undefined
+        },
+        writable: true,
+        configurable: true
+    })
+
     Object.defineProperty(userDo, 'refreshFeedBatches', {
         value: async () => {
+            if (refreshError) throw refreshError
             refreshedFeeds = true
         },
         writable: true,
@@ -97,7 +121,10 @@ function createDeletionDo (initial:{
         setAlarms,
         wasDeletedAll: () => deletedAll,
         wasRescheduled: () => scheduledRefresh,
-        wasFeedRefresh: () => refreshedFeeds
+        wasFeedRefresh: () => refreshedFeeds,
+        setSweepError: (err:unknown) => { sweepError = err },
+        setActivityError: (err:unknown) => { activityError = err },
+        setRefreshError: (err:unknown) => { refreshError = err }
     }
 }
 
@@ -196,5 +223,145 @@ test(
             'no deletion runs'
         )
         t.ok(harness.wasRescheduled(), 'reschedules the next alarm')
+    }
+)
+
+test(
+    'AC2.2: alarm reschedules even when sweepStuckResolvingFeeds throws',
+    async t => {
+        const harness = createDeletionDo(null)
+        harness.setSweepError(new Error('sweep failed'))
+
+        await harness.userDo.alarm()
+
+        t.ok(
+            harness.wasRescheduled(),
+            'setAlarm was called despite sweep error'
+        )
+        t.ok(
+            harness.setAlarms.length > 0,
+            'reschedule was actually set'
+        )
+    }
+)
+
+test(
+    'AC2.2: alarm reschedules even when readAccountActivity rejects',
+    async t => {
+        const harness = createDeletionDo(null)
+        harness.setActivityError(new Error('activity read failed'))
+
+        await harness.userDo.alarm()
+
+        t.ok(
+            harness.wasRescheduled(),
+            'setAlarm was called despite activity error'
+        )
+        t.ok(
+            harness.setAlarms.length > 0,
+            'reschedule was actually set'
+        )
+    }
+)
+
+test(
+    'AC2.2: alarm reschedules BEFORE fallible refreshFeedBatches',
+    async t => {
+        const harness = createDeletionDo(null)
+        const setAlarmOrder:number[] = []
+        const refreshOrder:number[] = []
+
+        // Track order: setAlarm calls get marked with 0, refreshFeedBatches
+        // gets marked with 1. If reschedule happens first, 0 appears before 1.
+        const origSetAlarm = harness.userDo.ctx.storage.setAlarm
+        harness.userDo.ctx.storage.setAlarm = async (time:number) => {
+            setAlarmOrder.push(0)
+            await origSetAlarm.call(harness.userDo.ctx.storage, time)
+        }
+
+        harness.setRefreshError(new Error('refresh failed'))
+        Object.defineProperty(harness.userDo, 'refreshFeedBatches', {
+            value: async () => {
+                refreshOrder.push(1)
+                throw new Error('refresh failed')
+            },
+            writable: true,
+            configurable: true
+        })
+
+        try {
+            await harness.userDo.alarm()
+        } catch {
+            // Expected: refreshFeedBatches throws
+        }
+
+        t.ok(
+            harness.setAlarms.length > 0,
+            'alarm was rescheduled'
+        )
+        t.ok(
+            setAlarmOrder[0] === 0 && refreshOrder[0] === 1,
+            'setAlarm call happened before refreshFeedBatches'
+        )
+    }
+)
+
+test(
+    'AC2.3: inactivity gate prevents reschedule when idle',
+    async t => {
+        const harness = createDeletionDo(null)
+        const veryOldTime = Date.now() - (4 * 24 * 60 * 60 * 1000)
+
+        Object.defineProperty(harness.userDo, 'readAccountActivity', {
+            value: async () => ({
+                lastActiveAt: veryOldTime
+            }),
+            writable: true,
+            configurable: true
+        })
+
+        await harness.userDo.alarm()
+
+        t.equal(
+            harness.setAlarms.length,
+            0,
+            'no reschedule when idle past threshold (stays dormant)'
+        )
+    }
+)
+
+test(
+    'AC2.3: deletion path still prevents reschedule when due',
+    async t => {
+        const did = 'did:plc:alice'
+        const harness = createDeletionDo({
+            scheduledFor: Date.now() - 1000,
+            did
+        })
+
+        await harness.userDo.alarm()
+
+        t.equal(
+            harness.setAlarms.length,
+            0,
+            'deletion due: no reschedule'
+        )
+    }
+)
+
+test(
+    'AC2.3: not-yet-due deletion keeps polling armed',
+    async t => {
+        const harness = createDeletionDo({
+            scheduledFor: Date.now() + 60_000,
+            did: 'did:plc:alice'
+        })
+
+        await harness.userDo.alarm()
+
+        t.ok(
+            harness.wasRescheduled(),
+            'pending but not-yet-due deletion keeps alarm ticking'
+        )
     }
 )

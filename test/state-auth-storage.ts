@@ -30,7 +30,8 @@ import { billingStatus } from '../src/client/billing-status.js'
 import {
     State,
     type AppState,
-    _registerRefreshSignalForTest
+    _registerRefreshSignalForTest,
+    _resetPaintCacheWriteHandleForTest
 } from '../src/client/state.js'
 import { remoteAdapter } from '../src/client/db/remote-adapter.js'
 import { mockFeeds } from './mock.js'
@@ -1349,6 +1350,421 @@ test('loadItemByRoute fetches server body for local item missing content',
             resetTabCoordinationForTests()
         }
     })
+
+// Capture the document/window listeners a State() instance registers,
+// WITHOUT attaching them to the real document/window, so the handler can
+// be invoked directly. A real dispatchEvent would also fire
+// handleVisibleResync listeners LEAKED by other State() instances in this
+// shared consolidated bundle and pollute the loadFeedStatus call count;
+// direct invocation isolates this test's handler.
+interface CapturedListeners {
+    state:ReturnType<typeof State>
+    docListeners:Map<string, EventListener>
+    winListeners:Map<string, EventListener>
+}
+
+function captureStateListeners ():CapturedListeners {
+    const docListeners = new Map<string, EventListener>()
+    const winListeners = new Map<string, EventListener>()
+    const origDocAdd = document.addEventListener
+    const origWinAdd = window.addEventListener
+    const origCheckAuth = State.checkAuth
+    document.addEventListener = ((type:string, fn:EventListener) => {
+        docListeners.set(type, fn)
+    }) as typeof document.addEventListener
+    window.addEventListener = ((type:string, fn:EventListener) => {
+        winListeners.set(type, fn)
+    }) as typeof window.addEventListener
+    // State()'s init IIFE reads State.checkAuth synchronously during
+    // construction; stub it so it does not kick off real auth / data
+    // loads that would schedule a paint-cache write firing after teardown.
+    State.checkAuth = (async () => {}) as typeof State.checkAuth
+    try {
+        const state = State()
+        // Ensure the snapshot collections are defined arrays so a
+        // paint-cache write scheduled by State()'s async init cannot crash
+        // on `undefined.map` when it fires (via requestIdleCallback) after
+        // the test has torn the environment down.
+        state.feeds.value = []
+        state.items.value = []
+        return { state, docListeners, winListeners }
+    } finally {
+        document.addEventListener = origDocAdd
+        window.addEventListener = origWinAdd
+        State.checkAuth = origCheckAuth
+    }
+}
+
+// Stub the data-load methods that the auth effect (which runs on
+// state.user.value change, via a queued microtask) calls — loadFeeds,
+// loadItems, loadCounts, loadItemByRoute, loadBillingStatus. Left
+// un-stubbed they schedule a paint-cache write that fires (against
+// torn-down state) after the test, crashing the shared bundle. Returns a
+// restore fn for the finally block.
+function stubStateDataLoads ():() => void {
+    const orig = {
+        loadBillingStatus: State.loadBillingStatus,
+        loadFeeds: State.loadFeeds,
+        loadItems: State.loadItems,
+        loadCounts: State.loadCounts,
+        loadItemByRoute: State.loadItemByRoute,
+        refreshAfterSync: State.refreshAfterSync
+    }
+    const noop = (async () => {}) as unknown
+    State.loadBillingStatus = noop as typeof State.loadBillingStatus
+    State.loadFeeds = noop as typeof State.loadFeeds
+    State.loadItems = noop as typeof State.loadItems
+    State.loadCounts = noop as typeof State.loadCounts
+    State.loadItemByRoute = noop as typeof State.loadItemByRoute
+    State.refreshAfterSync = noop as typeof State.refreshAfterSync
+    return () => {
+        State.loadBillingStatus = orig.loadBillingStatus
+        State.loadFeeds = orig.loadFeeds
+        State.loadItems = orig.loadItems
+        State.loadCounts = orig.loadCounts
+        State.loadItemByRoute = orig.loadItemByRoute
+        State.refreshAfterSync = orig.refreshAfterSync
+    }
+}
+
+test('focus/visibility re-sync handler fires loadFeedStatus on ' +
+    'visibilitychange to visible',
+async t => {
+    const did = 'did:plc:focus-test'
+    const originalFetch = globalThis.fetch
+    const originalLoadFeedStatus = State.loadFeedStatus
+    const restoreDataLoads = stubStateDataLoads()
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+    )
+    let loadFeedStatusCalls = 0
+
+    setupLocalFirstForStateTest()
+    await getAdapter(did)
+
+    globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ?
+            input.url :
+            input.toString()
+        if (url.includes('/api/feed-status')) {
+            return new Response(JSON.stringify({
+                feedUpdateCounts: {},
+                totalPending: 0
+            }))
+        }
+        return originalFetch.call(globalThis, input, init)
+    }
+
+    Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        configurable: true
+    })
+
+    State.loadFeedStatus = (async () => {
+        loadFeedStatusCalls++
+    }) as typeof State.loadFeedStatus
+
+    try {
+        const { state, docListeners } = captureStateListeners()
+        const onVisible = docListeners.get('visibilitychange')
+        t.ok(onVisible, 'registers a visibilitychange listener')
+
+        // Drain State() init (which may set user / fire loadFeedStatus),
+        // THEN set the user and reset, so the handler sees a stable state.
+        // Invoke the captured handler directly and assert synchronously
+        // (no await between invoke and assert), so no stray async call can
+        // affect the count.
+        await settleOnlineHandler()
+        state.user.value = { did, handle: 'focus.test' }
+        loadFeedStatusCalls = 0
+        onVisible?.(new Event('visibilitychange'))
+
+        t.equal(
+            loadFeedStatusCalls,
+            1,
+            'visibilitychange to visible calls loadFeedStatus exactly once'
+        )
+
+        // Clear the user to bump the auth-load generation, cancelling any
+        // queued async load chain before it schedules a paint-cache write.
+        state.user.value = null
+        state.cleanup()
+    } finally {
+        State.loadFeedStatus = originalLoadFeedStatus
+        restoreDataLoads()
+        globalThis.fetch = originalFetch
+        _resetPaintCacheWriteHandleForTest()
+        if (originalDescriptor) {
+            Object.defineProperty(document, 'visibilityState',
+                originalDescriptor)
+        } else {
+            delete (document as unknown as
+                Record<string, unknown>).visibilityState
+        }
+        _resetAdapterCache()
+        _resetSupportedCache()
+        syncSubscriptions.value = false
+        resetTabCoordinationForTests()
+    }
+})
+
+test('focus/visibility re-sync handler dedupes concurrent ' +
+    'triggers',
+async t => {
+    const did = 'did:plc:focus-dedup'
+    const originalFetch = globalThis.fetch
+    const originalLoadFeedStatus = State.loadFeedStatus
+    const restoreDataLoads = stubStateDataLoads()
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+    )
+    let loadFeedStatusCalls = 0
+    let resolvePending:(() => void)|null = null
+    const pendingPromise = new Promise<void>((resolve) => {
+        resolvePending = resolve
+    })
+
+    setupLocalFirstForStateTest()
+    await getAdapter(did)
+
+    globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ?
+            input.url :
+            input.toString()
+        if (url.includes('/api/feed-status')) {
+            return new Response(JSON.stringify({
+                feedUpdateCounts: {},
+                totalPending: 0
+            }))
+        }
+        return originalFetch.call(globalThis, input, init)
+    }
+
+    Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        configurable: true
+    })
+
+    State.loadFeedStatus = (async () => {
+        loadFeedStatusCalls++
+        return pendingPromise
+    }) as typeof State.loadFeedStatus
+
+    try {
+        const { state, docListeners, winListeners } =
+            captureStateListeners()
+        const onVisible = docListeners.get('visibilitychange')
+        const onFocus = winListeners.get('focus')
+
+        // Drain init, set user, reset, then invoke both captured handlers
+        // in the same tick. The in-flight guard makes the second a no-op,
+        // so loadFeedStatus fires exactly once.
+        await settleOnlineHandler()
+        state.user.value = { did, handle: 'focus-dedup.test' }
+        loadFeedStatusCalls = 0
+        onVisible?.(new Event('visibilitychange'))
+        onFocus?.(new Event('focus'))
+
+        t.equal(
+            loadFeedStatusCalls,
+            1,
+            'concurrent focus + visibilitychange dedupe to exactly one ' +
+            'in-flight loadFeedStatus'
+        )
+
+        // Resolve the in-flight promise so the guard resets (.finally),
+        // then a later trigger re-syncs.
+        if (resolvePending) resolvePending()
+        await nextTask()
+        loadFeedStatusCalls = 0
+        onVisible?.(new Event('visibilitychange'))
+
+        t.equal(
+            loadFeedStatusCalls,
+            1,
+            'after the in-flight promise settles, a later trigger re-syncs'
+        )
+
+        // Clear the user to bump the auth-load generation, cancelling any
+        // queued async load chain before it schedules a paint-cache write.
+        state.user.value = null
+        state.cleanup()
+    } finally {
+        State.loadFeedStatus = originalLoadFeedStatus
+        restoreDataLoads()
+        globalThis.fetch = originalFetch
+        _resetPaintCacheWriteHandleForTest()
+        if (originalDescriptor) {
+            Object.defineProperty(document, 'visibilityState',
+                originalDescriptor)
+        } else {
+            delete (document as unknown as
+                Record<string, unknown>).visibilityState
+        }
+        _resetAdapterCache()
+        _resetSupportedCache()
+        syncSubscriptions.value = false
+        resetTabCoordinationForTests()
+    }
+})
+
+test('focus/visibility re-sync handler skips when no user is set',
+    async t => {
+        const did = 'did:plc:focus-no-user'
+        const originalFetch = globalThis.fetch
+        const originalLoadFeedStatus = State.loadFeedStatus
+        const restoreDataLoads = stubStateDataLoads()
+        const originalDescriptor = Object.getOwnPropertyDescriptor(
+            document,
+            'visibilityState'
+        )
+        let loadFeedStatusCalls = 0
+
+        setupLocalFirstForStateTest()
+        await getAdapter(did)
+
+        globalThis.fetch = async (input, init) => {
+            const url = input instanceof Request ?
+                input.url :
+                input.toString()
+            if (url.includes('/api/feed-status')) {
+                return new Response(JSON.stringify({
+                    feedUpdateCounts: {},
+                    totalPending: 0
+                }))
+            }
+            return originalFetch.call(globalThis, input, init)
+        }
+
+        Object.defineProperty(document, 'visibilityState', {
+            value: 'visible',
+            configurable: true
+        })
+
+        State.loadFeedStatus = (async () => {
+            loadFeedStatusCalls++
+        }) as typeof State.loadFeedStatus
+
+        try {
+            const { state, docListeners, winListeners } =
+                captureStateListeners()
+            const onVisible = docListeners.get('visibilitychange')
+            const onFocus = winListeners.get('focus')
+
+            // Drain init, then explicitly null the user (overriding any
+            // user init set), reset, and invoke the captured handlers
+            // directly. With no user the handler returns early.
+            await settleOnlineHandler()
+            state.user.value = null
+            loadFeedStatusCalls = 0
+            onVisible?.(new Event('visibilitychange'))
+            onFocus?.(new Event('focus'))
+
+            t.equal(
+                loadFeedStatusCalls,
+                0,
+                'no user set -> focus/visibility does not call loadFeedStatus'
+            )
+
+            state.cleanup()
+        } finally {
+            State.loadFeedStatus = originalLoadFeedStatus
+            restoreDataLoads()
+            globalThis.fetch = originalFetch
+            _resetPaintCacheWriteHandleForTest()
+            if (originalDescriptor) {
+                Object.defineProperty(document, 'visibilityState',
+                    originalDescriptor)
+            } else {
+                delete (document as unknown as
+                Record<string, unknown>).visibilityState
+            }
+            _resetAdapterCache()
+            _resetSupportedCache()
+            syncSubscriptions.value = false
+            resetTabCoordinationForTests()
+        }
+    })
+
+test('focus/visibility re-sync handler skips when visibilityState ' +
+    'is not visible',
+async t => {
+    const did = 'did:plc:focus-hidden'
+    const originalFetch = globalThis.fetch
+    const originalLoadFeedStatus = State.loadFeedStatus
+    const restoreDataLoads = stubStateDataLoads()
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+    )
+    let loadFeedStatusCalls = 0
+
+    setupLocalFirstForStateTest()
+    await getAdapter(did)
+
+    globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ?
+            input.url :
+            input.toString()
+        if (url.includes('/api/feed-status')) {
+            return new Response(JSON.stringify({
+                feedUpdateCounts: {},
+                totalPending: 0
+            }))
+        }
+        return originalFetch.call(globalThis, input, init)
+    }
+
+    Object.defineProperty(document, 'visibilityState', {
+        value: 'hidden',
+        configurable: true
+    })
+
+    State.loadFeedStatus = (async () => {
+        loadFeedStatusCalls++
+    }) as typeof State.loadFeedStatus
+
+    try {
+        const { state, winListeners } = captureStateListeners()
+        const onFocus = winListeners.get('focus')
+
+        // Drain init, set user, reset, then invoke the captured focus
+        // handler while visibilityState is 'hidden' -> handler no-ops.
+        await settleOnlineHandler()
+        state.user.value = { did, handle: 'focus-hidden.test' }
+        loadFeedStatusCalls = 0
+        onFocus?.(new Event('focus'))
+
+        t.equal(
+            loadFeedStatusCalls,
+            0,
+            'focus event while hidden does not call loadFeedStatus'
+        )
+
+        // Clear the user to bump the auth-load generation, cancelling any
+        // queued async load chain before it schedules a paint-cache write.
+        state.user.value = null
+        state.cleanup()
+    } finally {
+        State.loadFeedStatus = originalLoadFeedStatus
+        restoreDataLoads()
+        globalThis.fetch = originalFetch
+        _resetPaintCacheWriteHandleForTest()
+        if (originalDescriptor) {
+            Object.defineProperty(document, 'visibilityState',
+                originalDescriptor)
+        } else {
+            delete (document as unknown as
+                Record<string, unknown>).visibilityState
+        }
+        _resetAdapterCache()
+        _resetSupportedCache()
+        syncSubscriptions.value = false
+        resetTabCoordinationForTests()
+    }
+})
 
 test('checkAuth does not remove legacy user localStorage entry',
     async t => {

@@ -208,6 +208,15 @@ const commands = [
         '| node --input-type=module | tap-spec'
     ].join(' '),
     [
+        'esbuild ./test/dev-poll-now.ts --bundle',
+        '--platform=node --format=esm',
+        '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '--alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
         'esbuild ./test/state-refresh-audit.ts --bundle',
         '--platform=node --format=esm',
         '| node --input-type=module | tap-spec'
