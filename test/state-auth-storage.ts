@@ -1395,18 +1395,16 @@ async t => {
         }
         // Settle any pending online handler calls
         await settleOnlineHandler()
-        // Reset counter AFTER settling to ignore initialization-time calls
+        // Reset counter BEFORE dispatch (not after)
         loadFeedStatusCalls = 0
-        // Settle again to ensure everything is idle
-        await settleOnlineHandler()
 
-        const visibilityChangeEvent = new Event('visibilitychange')
-        document.dispatchEvent(visibilityChangeEvent)
-        await new Promise(resolve => setTimeout(resolve, 10))
+        // Dispatch event and assert synchronously (no await in between)
+        document.dispatchEvent(new Event('visibilitychange'))
 
-        t.ok(
-            loadFeedStatusCalls >= 1,
-            'visibilitychange to visible calls loadFeedStatus'
+        t.equal(
+            loadFeedStatusCalls,
+            1,
+            'visibilitychange to visible calls loadFeedStatus exactly once'
         )
 
         state.cleanup()
@@ -1477,33 +1475,35 @@ async t => {
         }
         // Settle any pending online handler calls
         await settleOnlineHandler()
-        // Reset counter AFTER settling to ignore initialization-time calls
+        // Reset counter BEFORE dispatch
         loadFeedStatusCalls = 0
-        // Settle again to ensure everything is idle
-        await settleOnlineHandler()
 
         // Fire both focus and visibilitychange in the same tick
+        // and assert synchronously
         document.dispatchEvent(new Event('visibilitychange'))
         window.dispatchEvent(new Event('focus'))
-        await new Promise(resolve => setTimeout(resolve, 10))
-
-        const callsWhileInFlight = loadFeedStatusCalls
-        t.ok(
-            callsWhileInFlight >= 1,
-            'concurrent focus + visibilitychange fires ' +
-            'loadFeedStatus at least once (in-flight guard)'
-        )
-
-        // Resolve the pending promise and fire again
-        if (resolvePending) resolvePending()
-        await new Promise(resolve => setTimeout(resolve, 10))
-        document.dispatchEvent(new Event('visibilitychange'))
-        await new Promise(resolve => setTimeout(resolve, 10))
 
         t.equal(
             loadFeedStatusCalls,
-            2,
-            'after promise settles, next trigger calls loadFeedStatus again'
+            1,
+            'concurrent focus + visibilitychange dedupe to exactly one ' +
+            'in-flight loadFeedStatus'
+        )
+
+        // Now resolve the pending promise and wait for it to settle
+        if (resolvePending) resolvePending()
+        // Wait one tick for the .finally to run
+        await nextTask()
+        // Reset counter BEFORE the next dispatch
+        loadFeedStatusCalls = 0
+
+        // Fire again and assert synchronously
+        document.dispatchEvent(new Event('visibilitychange'))
+
+        t.equal(
+            loadFeedStatusCalls,
+            1,
+            'after the in-flight promise settles, a later trigger re-syncs'
         )
 
         state.cleanup()
@@ -1523,6 +1523,79 @@ async t => {
         resetTabCoordinationForTests()
     }
 })
+
+test('focus/visibility re-sync handler skips when no user is set',
+    async t => {
+        const did = 'did:plc:focus-no-user'
+        const originalFetch = globalThis.fetch
+        const originalLoadFeedStatus = State.loadFeedStatus
+        const originalDescriptor = Object.getOwnPropertyDescriptor(
+            document,
+            'visibilityState'
+        )
+        let loadFeedStatusCalls = 0
+
+        setupLocalFirstForStateTest()
+        await getAdapter(did)
+
+        globalThis.fetch = async (input, init) => {
+            const url = input instanceof Request ?
+                input.url :
+                input.toString()
+            if (url.includes('/api/feed-status')) {
+                return new Response(JSON.stringify({
+                    feedUpdateCounts: {},
+                    totalPending: 0
+                }))
+            }
+            return originalFetch.call(globalThis, input, init)
+        }
+
+        Object.defineProperty(document, 'visibilityState', {
+            value: 'visible',
+            configurable: true
+        })
+
+        State.loadFeedStatus = (async () => {
+            loadFeedStatusCalls++
+        }) as typeof State.loadFeedStatus
+
+        try {
+            const state = State()
+            // Explicitly leave state.user.value null
+            state.user.value = null
+            // Settle any pending online handler calls
+            await settleOnlineHandler()
+            // Reset counter BEFORE dispatch
+            loadFeedStatusCalls = 0
+
+            // Fire both visibilitychange and focus while no user is set
+            document.dispatchEvent(new Event('visibilitychange'))
+            window.dispatchEvent(new Event('focus'))
+
+            t.equal(
+                loadFeedStatusCalls,
+                0,
+                'no user set -> focus/visibility does not call loadFeedStatus'
+            )
+
+            state.cleanup()
+        } finally {
+            State.loadFeedStatus = originalLoadFeedStatus
+            globalThis.fetch = originalFetch
+            if (originalDescriptor) {
+                Object.defineProperty(document, 'visibilityState',
+                    originalDescriptor)
+            } else {
+                delete (document as unknown as
+                Record<string, unknown>).visibilityState
+            }
+            _resetAdapterCache()
+            _resetSupportedCache()
+            syncSubscriptions.value = false
+            resetTabCoordinationForTests()
+        }
+    })
 
 test('focus/visibility re-sync handler skips when visibilityState ' +
     'is not visible',
@@ -1569,14 +1642,11 @@ async t => {
         }
         // Settle any pending online handler calls
         await settleOnlineHandler()
-        // Reset counter AFTER settling to ignore initialization-time calls
+        // Reset counter BEFORE dispatch
         loadFeedStatusCalls = 0
-        // Settle again to ensure everything is idle
-        await settleOnlineHandler()
 
-        // Fire focus event while hidden
+        // Fire focus event while hidden and assert synchronously
         window.dispatchEvent(new Event('focus'))
-        await new Promise(resolve => setTimeout(resolve, 10))
 
         t.equal(
             loadFeedStatusCalls,
