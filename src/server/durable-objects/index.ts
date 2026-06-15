@@ -3591,10 +3591,15 @@ export class RsssUserDO extends DurableObject<Env> {
         )
         if (pending && Date.now() >= pending.scheduledFor) {
             await this.executeAccountDeletion(pending.did)
-            return
+            return  // intentional: DO is being deleted, do not reschedule
         }
 
-        this.sweepStuckResolvingFeeds()
+        // Fallible pre-discovery step: a throw here must not kill the loop.
+        try {
+            this.sweepStuckResolvingFeeds()
+        } catch (err) {
+            console.error('alarm sweepStuckResolvingFeeds error:', err)
+        }
 
         // Inactivity gate (FR-008, SC-005): once an account has been
         // idle past the threshold, STOP the polling alarm so the DO
@@ -3604,16 +3609,30 @@ export class RsssUserDO extends DurableObject<Env> {
         // (not-yet-due) deletion must keep the alarm ticking so it
         // executes when due, so only silence the alarm when no
         // deletion is pending.
-        const activity = await this.readAccountActivity()
-        const idlePastThreshold = activity != null &&
-            Date.now() - activity.lastActiveAt >
-                ACCOUNT_INACTIVITY_THRESHOLD_MS
+        let idlePastThreshold = false
+        try {
+            const activity = await this.readAccountActivity()
+            idlePastThreshold = activity != null &&
+                Date.now() - activity.lastActiveAt >
+                    ACCOUNT_INACTIVITY_THRESHOLD_MS
+        } catch (err) {
+            console.error('alarm readAccountActivity error:', err)
+            idlePastThreshold = false
+        }
         if (idlePastThreshold && pending == null) {
-            return
+            return  // intentional dormancy: do not reschedule (AC2.3)
         }
 
+        // Reschedule BEFORE any further fallible discovery work (AC2.2): even if
+        // refreshFeedBatches throws, the next tick is already armed.
         await this.scheduleNextFeedRefresh()
-        await this.refreshFeedBatches()
+
+        try {
+            await this.refreshFeedBatches()
+        } catch (err) {
+            console.error('alarm refreshFeedBatches error:', err)
+            throw err
+        }
     }
 
     /**
