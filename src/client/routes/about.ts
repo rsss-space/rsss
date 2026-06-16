@@ -48,7 +48,7 @@ export const AboutRoute:FunctionComponent<{
 
                 <p>
                     The server polls the feeds you are subscribed to
-                    (every 10 minutes) to check for new items.
+                    (about once an hour) to check for new items.
                 </p>
             </section>
 

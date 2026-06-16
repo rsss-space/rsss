@@ -171,7 +171,7 @@ export const PrivacyRoute:FunctionComponent<{
                     </li>
                     <li>
                         Periodically poll your feeds (about
-                        every 10 minutes) so new items
+                        once an hour) so new items
                         appear.
                     </li>
                     <li>
