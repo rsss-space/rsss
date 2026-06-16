@@ -2,13 +2,24 @@
 
 * [x] The text excerpt below the date and author in each feed item should be
   full width, not constrained to the column. ![Screenshot of feed item](image-1.png)
-* [ ] Get rid of the "blank = default" text in the cache settings details.
+* [x] Get rid of the "blank = default" text in the cache settings details.
   ![Screenshot of details for cache settings](image-2.png)
   The input should just have the default set as its value, and if it is the
   default then the word "(default)" above the input -- ie "(MB, blank = default)"
   would be just "(default)".
 * [ ] the "star" button -- when you click it, it is impossible to click it back
   the other way (can't "un-star" things) until you refresh the page.
+
+## [ ] "Local Storage" section
+
+This section is too confusing ![screenshot](image-5.png). It should have 1
+checkbox -- either we synchronize article content to this device or not.
+Need to remove the first checkbox, "Keep subscriptions, read state, and starred
+items in local SQLite storage on this device."
+
+
+---
+
 
 ## Cache Settings
 
