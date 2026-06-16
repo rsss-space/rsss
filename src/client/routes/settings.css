@@ -411,14 +411,14 @@
 
     & select,
     & input[type="number"] {
-        padding: 0.3rem 0.5rem;
         border: 1px solid var(--color-border);
-        background: var(--color-bg);
+        background-color: var(--color-bg);
         color: var(--color-text);
         font-size: 1rem;
     }
 
     & input[type="number"] {
+        padding: 0.3rem 0.5rem;
         width: 8rem;
     }
 }

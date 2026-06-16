@@ -1,0 +1,28 @@
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    padding: 1rem;
+    border-top: 1px solid var(--color-border, #e0e0e0);
+
+    &.pagination-header {
+        padding: 0;
+        border-top: none;
+    }
+
+    & .pagination-info {
+        color: var(--color-text-secondary);
+        font-size: 0.875rem;
+        white-space: nowrap;
+    }
+
+    & .page-size-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--color-text-secondary);
+        white-space: nowrap;
+    }
+}

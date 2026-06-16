@@ -79,6 +79,21 @@ button {
     }
 }
 
+select {
+    appearance: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 1rem;
+    color: var(--color-text);
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 0.4rem 1.9rem 0.4rem 0.6rem;
+    /* select has no usable pseudo-element, so the chevron lives here */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='none' stroke='black' stroke-width='1.5' d='M1.5 3.5 5 7l3.5-3.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+}
+
 .route {
     min-height: 100vh;
     overflow: hidden auto;

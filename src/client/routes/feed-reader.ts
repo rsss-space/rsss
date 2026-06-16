@@ -1,7 +1,7 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
 import { useCallback, useEffect, useMemo } from 'preact/hooks'
-import '@substrate-system/tool-tip'
+import { CheckBox } from '@substrate-system/check-box'
 import {
     State,
     type AppState,
@@ -16,12 +16,10 @@ import {
 import { ItemRow } from '../components/item-row.js'
 import { Sidebar } from '../components/sidebar.js'
 import { CacheSettings } from '../components/cache-settings.js'
-import {
-    PendingUpdateEmptyState
-} from '../components/pending-update-empty-state.js'
+import { PendingUpdateEmptyState } from '../components/pending-update-empty-state.js'
+import { Pagination } from '../components/pagination.js'
 import Debug from '@substrate-system/debug'
 import { ELLIPSIS } from '../constants.js'
-import { CheckBox } from '@substrate-system/check-box'
 const debug = Debug('rsss:view:feed-reader')
 
 export const BOOTSTRAP_CARD_TITLE = 'Setting up your local cache'
@@ -38,8 +36,6 @@ export const FeedReader:FunctionComponent<{
         items,
         counts,
         itemsLoading,
-        itemsTotal,
-        itemsOffset,
         showUnreadOnly,
         pageSize,
     } = state
@@ -171,52 +167,6 @@ export const FeedReader:FunctionComponent<{
         </div>`
     }
 
-    const hasPrev = itemsOffset.value > 0
-    const hasNext = itemsOffset.value + pageSize.value < itemsTotal.value
-    const pageStart = itemsTotal.value === 0 ? 0 : itemsOffset.value + 1
-    const pageEnd = Math.min(
-        itemsOffset.value + pageSize.value,
-        itemsTotal.value
-    )
-
-    const renderPagination = (variant = ''):unknown => {
-        if (itemsTotal.value === 0) return null
-        const cls = 'pagination' + (variant ? ' ' + variant : '')
-        return html`
-            <div class=${cls}>
-                <button
-                    class="btn btn-small"
-                    onClick=${handlePrevPage}
-                    disabled=${!hasPrev}
-                >
-                    Previous
-                </button>
-                <span class="pagination-info">
-                    ${pageStart}--${pageEnd}
-                    ${' of '}${itemsTotal.value}
-                </span>
-                <button
-                    class="btn btn-small"
-                    onClick=${handleNextPage}
-                    disabled=${!hasNext}
-                >
-                    Next
-                </button>
-
-                <select
-                    class="page-size-select"
-                    value=${pageSize.value}
-                    onChange=${handlePageSizeChange}
-                >
-                    <option value="20">20</option>
-                    <option value="40">40</option>
-                    <option value="60">60</option>
-                    <option value="100">100</option>
-                </select>
-            </div>
-        `
-    }
-
     // Get the feed title for display
     const feedTitle = selectedFeed?.title || feedUrl || 'All Feeds'
 
@@ -245,7 +195,13 @@ export const FeedReader:FunctionComponent<{
                                 Unread only
                             <//>
                         </div>
-                        ${renderPagination('pagination-header')}
+                        <${Pagination}
+                            state=${state}
+                            variant="pagination-header"
+                            onPrevPage=${handlePrevPage}
+                            onNextPage=${handleNextPage}
+                            onPageSizeChange=${handlePageSizeChange}
+                        />
                         <button
                             class="btn btn-small"
                             onClick=${handleMarkAllRead}
@@ -275,7 +231,12 @@ export const FeedReader:FunctionComponent<{
                             renderEmptyState()}
                     </ul>
 
-                    ${renderPagination()}
+                    <${Pagination}
+                        state=${state}
+                        onPrevPage=${handlePrevPage}
+                        onNextPage=${handleNextPage}
+                        onPageSizeChange=${handlePageSizeChange}
+                    />
                 </main>
             </div>
         </div>
