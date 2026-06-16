@@ -354,6 +354,11 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 0.5rem;
+    /* Reserve the open cache form's width so opening/closing the
+       "Cache settings" disclosure never resizes the column or shifts
+       the label. Sized to the widest field label
+       ("Keep for (default, NN days)") across the font fallback chain. */
+    min-width: 13rem;
 }
 
 .feed-cache-controls {
