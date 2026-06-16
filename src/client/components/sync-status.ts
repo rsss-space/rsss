@@ -9,6 +9,7 @@ import {
     isLocalFirstActive
 } from '../db/sync-status.js'
 import { billingStatus } from '../billing-status.js'
+import '@substrate-system/tool-tip'
 import './sync-status.css'
 
 function formatTime (date:Date):string {
@@ -76,13 +77,23 @@ export const SyncStatus:FunctionComponent = function () {
         a11yLabel = label
     }
 
-    return html`
+    const statusSpan = html`
         <span
             class=${cls}
             role="status"
             aria-live="polite"
             aria-label=${a11yLabel}
-            title=${title}
         >${label}</span>
     `
+
+    // Replace the native `title` tooltip with the styled tool-tip web
+    // component for the states that carry an explanation (warning, error).
+    // Other states have no tooltip text, so the span renders on its own.
+    return title ?
+        html`
+            <tool-tip content=${title} placement="bottom" delay="500">
+                ${statusSpan}
+            </tool-tip>
+        ` :
+        statusSpan
 }

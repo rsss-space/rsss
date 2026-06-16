@@ -608,6 +608,59 @@ test('Header sync status exposes accessible live status text', t => {
     }
 })
 
+test('Header sync warning reveals detail through a tool-tip', t => {
+    const body = document.querySelector('body') as HTMLElement
+    const root = document.createElement('div')
+    body.appendChild(root)
+
+    isLocalFirstActive.value = true
+    syncStatus.value = 'warning'
+    syncError.value = null
+    syncPending.value = 0
+    syncDeadLetters.value = 1
+    syncedAt.value = null
+    billingStatus.value = {
+        entitled: true,
+        planId: 'local-first',
+        status: 'active',
+        refreshedAt: Date.now(),
+        useLive: false
+    }
+
+    try {
+        render(html`<${Header} state=${headerState()} />`, root)
+
+        const status = root.querySelector('.sync-status') as HTMLElement
+        const tip = root.querySelector('tool-tip') as HTMLElement
+
+        t.ok(status, 'renders the sync status')
+        t.ok(tip, 'wraps the status in a tool-tip')
+        t.ok(
+            tip.contains(status),
+            'the tool-tip wraps the status element'
+        )
+        t.ok(
+            (tip.getAttribute('content') ?? '').length > 0,
+            'the tool-tip exposes the warning detail as content'
+        )
+        t.equal(
+            status.getAttribute('title'),
+            null,
+            'no native title tooltip remains on the status'
+        )
+    } finally {
+        render(null, root)
+        root.remove()
+        isLocalFirstActive.value = false
+        syncStatus.value = 'idle'
+        syncError.value = null
+        syncPending.value = 0
+        syncDeadLetters.value = 0
+        syncedAt.value = null
+        billingStatus.value = null
+    }
+})
+
 test('Header feed status renders one dot for all sync states', t => {
     const body = document.querySelector('body') as HTMLElement
     const root = document.createElement('div')
