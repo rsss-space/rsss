@@ -6,7 +6,7 @@
  * Verifies AC1.3, AC1.4, AC5.1, AC5.2, AC5.3, AC5.4 from phase 7.
  */
 import { test } from '@substrate-system/tapzero'
-import { BOOTSTRAP_CARD_TITLE } from '../src/client/routes/feed-reader.js'
+import { BOOTSTRAP_CARD_TITLE } from '../src/client/components/empty-state.js'
 
 /**
  * Mirror the signal state needed for renderEmptyState decision.

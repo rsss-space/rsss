@@ -112,30 +112,4 @@
             }
         }
     }
-
-    & .bootstrap-card {
-        margin: 1.5rem auto;
-        padding: 1.5rem;
-        max-width: 32rem;
-        border: 1px solid var(--color-border, #e0e0e0);
-        border-radius: 0.5rem;
-        background: var(--color-surface, #f7f7fa);
-        text-align: center;
-    }
-
-    & .bootstrap-card-title {
-        margin: 0 0 0.5rem;
-        font-size: 1.125rem;
-    }
-
-    & .bootstrap-card-body {
-        margin: 0 0 0.5rem;
-        color: var(--color-text-secondary, #555);
-    }
-
-    & .bootstrap-card-progress {
-        margin: 0;
-        color: var(--color-text-secondary, #555);
-        font-feature-settings: 'tnum' 1;
-    }
 }
