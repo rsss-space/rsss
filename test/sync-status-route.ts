@@ -217,15 +217,7 @@ test('sync-status-detail.AC5.2: empty state transitions ' +
             last_error: null
         }
 
-        batch(() => {
-            deadLetters.value = [testDeadLetter]
-            syncDeadLetters.value = 1
-            syncStatus.value = 'idle'
-            syncError.value = null
-        })
-
-        render(html`<${SyncStatusRoute} state=${state} />`, root)
-        await nextTask()
+        await mountWithRows(root, state, [testDeadLetter])
 
         let emptyState = document.querySelector('.empty-state')
         t.equal(emptyState, null, 'empty-state not initially rendered')
@@ -236,7 +228,10 @@ test('sync-status-detail.AC5.2: empty state transitions ' +
             syncDeadLetters.value = 0
         })
 
-        await nextTask()
+        await waitFor(
+            () => document.querySelector('.empty-state') !== null,
+            50
+        )
 
         emptyState = document.querySelector('.empty-state')
         t.ok(emptyState, 'empty-state now rendered after resolution')
