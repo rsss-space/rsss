@@ -6,7 +6,9 @@ import { SyncStatusRoute } from '../src/client/routes/sync-status.js'
 import {
     deadLetters,
     failedFeeds,
-    loading
+    loading,
+    confirmingKey,
+    announcement
 } from '../src/client/routes/sync-status-state.js'
 import {
     syncStatus,
@@ -91,6 +93,8 @@ function resetSignals ():void {
         syncStatus.value = 'idle'
         syncError.value = null
         syncDeadLetters.value = 0
+        confirmingKey.value = null
+        announcement.value = ''
     })
 }
 
@@ -276,7 +280,7 @@ test('sync-status-detail.AC2.1: deadLetters renders as ' +
             id: 1,
             op: 'add_feed',
             target_id: 1,
-            payload: JSON.stringify({url: 'https://example.com/feed'}),
+            payload: JSON.stringify({ url: 'https://example.com/feed' }),
             client_op_id: 'test-op-1',
             client_updated_at: '2026-01-01T00:00:00Z',
             attempts: 2,
@@ -391,3 +395,389 @@ test('sync-status-detail.AC2.3: blocked-changes section ' +
         cleanup()
     }
 })
+
+test('sync-status-detail.AC9.1: live region present on first render',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            const { state } = createTestState(true)
+
+            batch(() => {
+                deadLetters.value = []
+                syncStatus.value = 'idle'
+                syncError.value = null
+            })
+
+            render(html`<${SyncStatusRoute} state=${state} />`, root)
+            await nextTask()
+
+            const liveRegion = document.querySelector(
+                '[role="status"][aria-live="polite"]'
+            )
+            t.ok(liveRegion, 'role=status aria-live=polite region ' +
+                'present')
+        } finally {
+            resetSignals()
+            cleanup()
+        }
+    }
+)
+
+test('sync-status-detail.AC8.4: Retry calls handler immediately ' +
+    'with no inline-confirm', async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+        const dl:DeadLetterRow = {
+            id: 42,
+            op: 'add_feed',
+            target_id: 1,
+            payload: JSON.stringify({
+                url: 'https://example.com/feed1'
+            }),
+            client_op_id: 'test-op-42',
+            client_updated_at: '2026-01-01T00:00:00Z',
+            attempts: 1,
+            last_error: null
+        }
+
+        const retryCallLog:Array<number> = []
+        state.retryDeadLetter = async (_s, id) => {
+            retryCallLog.push(id)
+            batch(() => {
+                deadLetters.value = []
+                syncDeadLetters.value = 0
+            })
+        }
+
+        batch(() => {
+            deadLetters.value = [dl]
+            syncDeadLetters.value = 1
+            syncStatus.value = 'idle'
+            syncError.value = null
+        })
+
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await waitFor(
+            () => document.querySelector('.retry-btn') !== null,
+            50
+        )
+
+        const retryBtn = document.querySelector('.retry-btn')
+        t.ok(retryBtn, 'Retry button rendered')
+
+        const confirmBefore = document.querySelector(
+            '.confirm-prompt'
+        )
+        t.equal(confirmBefore, null, 'no confirm-prompt before click')
+
+        retryBtn?.dispatchEvent(new MouseEvent('click', {
+            bubbles: true
+        }))
+
+        await nextTask()
+
+        t.deepEqual(retryCallLog, [42], 'retryDeadLetter called ' +
+            'with correct id')
+
+        const confirmAfter = document.querySelector(
+            '.confirm-prompt'
+        )
+        t.equal(confirmAfter, null, 'no confirm-prompt after retry')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC8.1: Discard click sets confirmingKey signal',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            const { state } = createTestState(true)
+            const dl:DeadLetterRow = {
+                id: 43,
+                op: 'delete_feed',
+                target_id: 1,
+                payload: '{}',
+                client_op_id: 'test-op-43',
+                client_updated_at: '2026-01-01T00:00:00Z',
+                attempts: 2,
+                last_error: 'retry-sentinel'
+            }
+
+            const discardCallLog:Array<number> = []
+            state.discardDeadLetter = async (_s, discardId) => {
+                discardCallLog.push(discardId)
+            }
+
+            batch(() => {
+                deadLetters.value = [dl]
+                syncStatus.value = 'idle'
+                syncError.value = null
+                confirmingKey.value = null
+            })
+
+            render(html`<${SyncStatusRoute} state=${state} />`, root)
+            await waitFor(
+                () => document.querySelector('.discard-btn') !== null,
+                50
+            )
+
+            t.equal(confirmingKey.value, null,
+                'confirmingKey initially null')
+
+            const discardBtn = document.querySelector('.discard-btn')
+            t.ok(discardBtn, 'Discard button rendered')
+
+            ;(discardBtn as HTMLButtonElement)?.click()
+
+            await nextTask()
+
+            t.equal(confirmingKey.value, 'dl:' + dl.id,
+                'confirmingKey set to dl:<id> after click')
+
+            t.deepEqual(discardCallLog, [],
+                'discardDeadLetter not called on Discard click')
+        } finally {
+            resetSignals()
+            cleanup()
+        }
+    }
+)
+
+test('sync-status-detail.AC8.2: Cancel clears confirmingKey',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            const { state } = createTestState(true)
+            const dl:DeadLetterRow = {
+                id: 44,
+                op: 'add_feed',
+                target_id: 1,
+                payload: JSON.stringify({
+                    url: 'https://example.com/feed2'
+                }),
+                client_op_id: 'test-op-44',
+                client_updated_at: '2026-01-01T00:00:00Z',
+                attempts: 1,
+                last_error: null
+            }
+
+            const discardCallLog:Array<number> = []
+            state.discardDeadLetter = async (_s, discardId) => {
+                discardCallLog.push(discardId)
+            }
+
+            batch(() => {
+                deadLetters.value = [dl]
+                syncStatus.value = 'idle'
+                syncError.value = null
+                confirmingKey.value = 'dl:' + dl.id
+            })
+
+            render(html`<${SyncStatusRoute} state=${state} />`, root)
+            await waitFor(
+                () => document.querySelector('.cancel-btn') !== null,
+                50
+            )
+
+            t.equal(confirmingKey.value, 'dl:' + dl.id,
+                'confirmingKey initially set')
+
+            const cancelBtn = document.querySelector('.cancel-btn')
+            t.ok(cancelBtn, 'Cancel button rendered')
+
+            ;(cancelBtn as HTMLButtonElement)?.click()
+
+            await nextTask()
+
+            t.equal(confirmingKey.value, null,
+                'confirmingKey cleared after Cancel')
+
+            t.deepEqual(discardCallLog, [],
+                'discardDeadLetter not called on Cancel')
+        } finally {
+            resetSignals()
+            cleanup()
+        }
+    }
+)
+
+test('sync-status-detail.AC8.2: Commit button calls ' +
+    'discardDeadLetter and clears confirmingKey', async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+        const dl:DeadLetterRow = {
+            id: 45,
+            op: 'delete_feed',
+            target_id: 1,
+            payload: '{}',
+            client_op_id: 'test-op-45',
+            client_updated_at: '2026-01-01T00:00:00Z',
+            attempts: 1,
+            last_error: null
+        }
+
+        const discardCallLog:Array<number> = []
+        state.discardDeadLetter = async (_s, discardId) => {
+            discardCallLog.push(discardId)
+            batch(() => {
+                deadLetters.value = []
+                syncDeadLetters.value = 0
+                confirmingKey.value = null
+            })
+        }
+
+        batch(() => {
+            deadLetters.value = [dl]
+            syncDeadLetters.value = 1
+            syncStatus.value = 'idle'
+            syncError.value = null
+            confirmingKey.value = 'dl:' + dl.id
+        })
+
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await waitFor(
+            () => document.querySelector('.commit-btn') !== null,
+            50
+        )
+
+        const commitBtn = document.querySelector('.commit-btn')
+        t.ok(commitBtn, 'Commit button rendered')
+
+        ;(commitBtn as HTMLButtonElement)?.click()
+
+        await nextTask()
+
+        t.deepEqual(discardCallLog, [45],
+            'discardDeadLetter called with row id')
+
+        t.equal(confirmingKey.value, null,
+            'confirmingKey cleared after commit')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC4.2: Retry removes row from rendered list',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            const { state } = createTestState(true)
+            const dl:DeadLetterRow = {
+                id: 46,
+                op: 'add_feed',
+                target_id: 1,
+                payload: JSON.stringify({
+                    url: 'https://example.com/feed3'
+                }),
+                client_op_id: 'test-op-46',
+                client_updated_at: '2026-01-01T00:00:00Z',
+                attempts: 2,
+                last_error: 'timeout-sentinel'
+            }
+
+            state.retryDeadLetter = async (_s, _id) => {
+                batch(() => {
+                    deadLetters.value = []
+                    syncDeadLetters.value = 0
+                })
+            }
+
+            batch(() => {
+                deadLetters.value = [dl]
+                syncDeadLetters.value = 1
+                syncStatus.value = 'idle'
+                syncError.value = null
+            })
+
+            render(html`<${SyncStatusRoute} state=${state} />`, root)
+            await waitFor(
+                () => document.querySelector('.blocked-change') !== null,
+                50
+            )
+
+            let rows = document.querySelectorAll('.blocked-change')
+            t.equal(rows.length, 1, '1 row initially')
+
+            const retryBtn = document.querySelector('.retry-btn')
+            ;(retryBtn as HTMLButtonElement)?.click()
+
+            await waitFor(
+                () => document.querySelectorAll(
+                    '.blocked-change'
+                ).length === 0,
+                50
+            )
+
+            rows = document.querySelectorAll('.blocked-change')
+            t.equal(rows.length, 0, 'row removed after Retry')
+        } finally {
+            resetSignals()
+            cleanup()
+        }
+    }
+)
+
+test('sync-status-detail.AC9.2: action announcement is set once',
+    async t => {
+        const { root, cleanup } = mountRoot()
+        try {
+            const { state } = createTestState(true)
+            const dl:DeadLetterRow = {
+                id: 47,
+                op: 'add_feed',
+                target_id: 1,
+                payload: JSON.stringify({
+                    url: 'https://example.com/feed4'
+                }),
+                client_op_id: 'test-op-47',
+                client_updated_at: '2026-01-01T00:00:00Z',
+                attempts: 1,
+                last_error: null
+            }
+
+            state.retryDeadLetter = async (_s, _id) => {
+                batch(() => {
+                    deadLetters.value = []
+                    syncDeadLetters.value = 0
+                })
+            }
+
+            batch(() => {
+                deadLetters.value = [dl]
+                syncDeadLetters.value = 1
+                syncStatus.value = 'idle'
+                syncError.value = null
+                announcement.value = ''
+            })
+
+            render(html`<${SyncStatusRoute} state=${state} />`, root)
+            await waitFor(
+                () => document.querySelector('.retry-btn') !== null,
+                50
+            )
+
+            const retryBtn = document.querySelector('.retry-btn')
+            ;(retryBtn as HTMLButtonElement)?.click()
+
+            await nextTask()
+
+            const liveRegion = document.querySelector(
+                '[role="status"][aria-live="polite"]'
+            )
+            t.ok(liveRegion, 'live region present')
+
+            const announceText = liveRegion?.textContent?.trim()
+            t.equal(announceText, 'Change retried.',
+                'announcement set to "Change retried."')
+        } finally {
+            resetSignals()
+            cleanup()
+        }
+    }
+)
+

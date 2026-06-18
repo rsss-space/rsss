@@ -1,6 +1,6 @@
 import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import { batch } from '@preact/signals'
 import { type AppState } from '../state.js'
 import {
@@ -22,8 +22,10 @@ export const SyncStatusRoute:FunctionComponent<{
     state:AppState
 }> = function ({ state }) {
     const headingRef = useRef<HTMLHeadingElement>(null)
-    const nextActionBtnRef = useRef<HTMLButtonElement>(null)
-    const [confirmingId, setConfirmingId] = useState<number|null>(null)
+    const rowActionRefs = useRef<Map<number, HTMLButtonElement>>(
+        new Map()
+    )
+    const pendingFocusTarget = useRef<HTMLElement|null>(null)
 
     useEffect(() => {
         if (!state.authLoading.value && !state.isAuthenticated.value) {
@@ -36,13 +38,19 @@ export const SyncStatusRoute:FunctionComponent<{
     }, [syncDeadLetters.value])
 
     useEffect(() => {
-        // Focus restoration: move to next row's first action button,
-        // or the section heading if list is empty
-        const dl = deadLetters.value
-        if (dl.length === 0 && headingRef.current) {
-            headingRef.current.focus()
-        } else if (nextActionBtnRef.current) {
-            nextActionBtnRef.current.focus()
+        // Focus restoration: only fire after action (when
+        // pendingFocusTarget is set), not on initial mount.
+        // Move to next row's first action button, or the
+        // section heading if list is now empty.
+        if (!pendingFocusTarget.current) {
+            return
+        }
+
+        const target = pendingFocusTarget.current
+        pendingFocusTarget.current = null
+
+        if (target && target.ownerDocument.contains(target)) {
+            target.focus()
         }
     }, [deadLetters.value.length])
 
@@ -54,6 +62,7 @@ export const SyncStatusRoute:FunctionComponent<{
     const dl = deadLetters.value
     const ff = failedFeeds.value
     const announceText = announcement.value
+    const confirming = confirmingKey.value
 
     const hasProblems =
         currentStatus === 'error' || dl.length > 0 || ff.length > 0
@@ -63,22 +72,50 @@ export const SyncStatusRoute:FunctionComponent<{
         batch(() => {
             announcement.value = 'Change retried.'
         })
+
+        // Find the next row after this one in the list;
+        // if none, focus the heading
+        const idx = dl.findIndex(r => r.id === row.id)
+        const nextIdx = idx + 1
+        if (nextIdx < dl.length) {
+            const nextRowId = dl[nextIdx].id
+            const nextBtn = rowActionRefs.current.get(nextRowId)
+            if (nextBtn) {
+                pendingFocusTarget.current = nextBtn
+            }
+        } else if (headingRef.current) {
+            pendingFocusTarget.current = headingRef.current
+        }
     }
 
     const handleDiscardClick = (rowId:number) => {
-        setConfirmingId(rowId)
+        confirmingKey.value = 'dl:' + rowId
     }
 
     const handleCancel = () => {
-        setConfirmingId(null)
+        confirmingKey.value = null
     }
 
     const handleConfirmDiscard = async (row:typeof dl[0]) => {
         await state.discardDeadLetter(state, row.id)
         batch(() => {
+            confirmingKey.value = null
             announcement.value = 'Change discarded.'
         })
-        setConfirmingId(null)
+
+        // Find the next row after this one in the list;
+        // if none, focus the heading
+        const idx = dl.findIndex(r => r.id === row.id)
+        const nextIdx = idx + 1
+        if (nextIdx < dl.length) {
+            const nextRowId = dl[nextIdx].id
+            const nextBtn = rowActionRefs.current.get(nextRowId)
+            if (nextBtn) {
+                pendingFocusTarget.current = nextBtn
+            }
+        } else if (headingRef.current) {
+            pendingFocusTarget.current = headingRef.current
+        }
     }
 
     return html`
@@ -114,17 +151,13 @@ export const SyncStatusRoute:FunctionComponent<{
                         Blocked local changes
                     </h2>
                     <ul class="blocked-changes-list">
-                        ${dl.map((row, idx) => {
+                        ${dl.map((row) => {
                             const confirmingThis =
-                                confirmingId === row.id
-                            const isFirstRow = idx === 0
+                                confirming === 'dl:' + row.id
                             return html`
                                 <li
                                     class="blocked-change"
-                                    key=${'row-' + row.id + '-' +
-                                        (confirmingId === row.id ?
-                                            'confirming' :
-                                            'normal')}
+                                    key=${row.client_op_id}
                                 >
                                     <p class="op-description">
                                         ${describeOp(row)}
@@ -157,9 +190,19 @@ export const SyncStatusRoute:FunctionComponent<{
                                             <button
                                                 class="retry-btn"
                                                 type="button"
-                                                ref=${isFirstRow ?
-                                                    nextActionBtnRef :
-                                                    undefined}
+                                                ref=${(btn) => {
+                                                    if (btn) {
+                                                        rowActionRefs
+                                                            .current
+                                                            .set(row.id,
+                                                                btn)
+                                                    } else {
+                                                        rowActionRefs
+                                                            .current
+                                                            .delete(
+                                                                row.id)
+                                                    }
+                                                }}
                                                 onClick=${async () => {
                                                     await handleRetry(
                                                         row
@@ -198,9 +241,6 @@ export const SyncStatusRoute:FunctionComponent<{
                                                     class="cancel-btn"
                                                     type="button"
                                                     autoFocus
-                                                    ref=${isFirstRow ?
-                                                        nextActionBtnRef :
-                                                        undefined}
                                                     onClick=${() => {
                                                         handleCancel()
                                                     }}
