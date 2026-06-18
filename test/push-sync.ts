@@ -1836,6 +1836,29 @@ test(
                 'op-collision-id',
                 'seeded outbox row unchanged'
             )
+
+            // Verify no leaked transaction: the explicit ROLLBACK must
+            // have closed the failed transaction. A leaked-open
+            // transaction would make the next BEGIN throw "cannot start
+            // a transaction within a transaction". This assertion guards
+            // against a production defect where removing the ROLLBACK
+            // line would leave the DB in a broken state.
+            const {
+                execDb
+            } = await import('../src/client/db/local-db.js')
+            let noLeakedTxn = false
+            try {
+                await execDb(db, 'BEGIN')
+                await execDb(db, 'COMMIT')
+                noLeakedTxn = true
+            } catch (_err) {
+                // ignore; we'll assert below
+            }
+            t.equal(
+                noLeakedTxn,
+                true,
+                'no leaked transaction'
+            )
         } finally {
             db.close()
         }
