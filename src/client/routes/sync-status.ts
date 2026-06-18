@@ -21,6 +21,7 @@ import './sync-status.css'
 export const SyncStatusRoute:FunctionComponent<{
     state:AppState
 }> = function ({ state }) {
+    const pageHeadingRef = useRef<HTMLHeadingElement>(null)
     const headingRef = useRef<HTMLHeadingElement>(null)
     const rowActionRefs = useRef<Map<number, HTMLButtonElement>>(
         new Map()
@@ -74,7 +75,7 @@ export const SyncStatusRoute:FunctionComponent<{
         })
 
         // Find the next row after this one in the list;
-        // if none, focus the heading
+        // if none, focus the page heading (h1)
         const idx = dl.findIndex(r => r.id === row.id)
         const nextIdx = idx + 1
         if (nextIdx < dl.length) {
@@ -83,8 +84,8 @@ export const SyncStatusRoute:FunctionComponent<{
             if (nextBtn) {
                 pendingFocusTarget.current = nextBtn
             }
-        } else if (headingRef.current) {
-            pendingFocusTarget.current = headingRef.current
+        } else if (pageHeadingRef.current) {
+            pendingFocusTarget.current = pageHeadingRef.current
         }
     }
 
@@ -104,7 +105,7 @@ export const SyncStatusRoute:FunctionComponent<{
         })
 
         // Find the next row after this one in the list;
-        // if none, focus the heading
+        // if none, focus the page heading (h1)
         const idx = dl.findIndex(r => r.id === row.id)
         const nextIdx = idx + 1
         if (nextIdx < dl.length) {
@@ -113,14 +114,19 @@ export const SyncStatusRoute:FunctionComponent<{
             if (nextBtn) {
                 pendingFocusTarget.current = nextBtn
             }
-        } else if (headingRef.current) {
-            pendingFocusTarget.current = headingRef.current
+        } else if (pageHeadingRef.current) {
+            pendingFocusTarget.current = pageHeadingRef.current
         }
     }
 
     return html`
         <div class="route sync-status">
-            <h1>Sync Status</h1>
+            <h1
+                ref=${pageHeadingRef}
+                tabindex="-1"
+            >
+                Sync Status
+            </h1>
 
             <div
                 role="status"
