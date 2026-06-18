@@ -12,6 +12,7 @@ import type {
     ItemsResponse,
     CountsResponse
 } from './types.js'
+import { csrfToken } from '../csrf.js'
 
 export class FetchFullThrottledError extends Error {
     retryAfterSeconds:number
@@ -21,13 +22,6 @@ export class FetchFullThrottledError extends Error {
         this.name = 'FetchFullThrottledError'
         this.retryAfterSeconds = retryAfterSeconds
     }
-}
-
-function csrfToken ():string|undefined {
-    return document.cookie.split(';')
-        .map(part => part.trim())
-        .find(part => part.startsWith('csrf_token='))
-        ?.slice('csrf_token='.length)
 }
 
 const api = ky.create({

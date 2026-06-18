@@ -10,7 +10,8 @@ import {
     DEAD_LETTER_ATTEMPT_LIMIT,
     pushSync,
     PushSyncAuthError,
-    PushSyncBillingError
+    PushSyncBillingError,
+    PushSyncForbiddenError
 } from '../src/client/db/push-sync.js'
 import {
     syncStatus,
@@ -607,6 +608,92 @@ test('pushSync: 400 moves row to dead letters immediately', async (t) => {
         db.close()
     }
 })
+
+test(
+    'pushSync: state-changing request carries the X-CSRF-Token header',
+    async (t) => {
+        const db = await openLocalDb('did:test:push-csrf-header')
+        document.cookie = 'csrf_token=test-token-123; path=/'
+        try {
+            const feedId = seedFeed(db)
+            const itemId = seedItem(db, feedId)
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id,
+                     client_updated_at)
+                    VALUES ('update_item', ?, ?, 'op-uuid-csrf',
+                        '2026-01-02 00:00:00')`,
+                bind: [
+                    itemId,
+                    JSON.stringify({ id: itemId, is_read: true })
+                ]
+            })
+
+            let capturedToken:string|undefined
+            const capturingFetch:FakeFetch = async (_url, init) => {
+                const headers = (init?.headers ?? {}) as Record<
+                    string,
+                    string
+                >
+                capturedToken = headers['X-CSRF-Token']
+                return { ok: true, status: 200, json: async () => ({}) }
+            }
+
+            await pushSync(db, capturingFetch)
+
+            t.equal(
+                capturedToken,
+                'test-token-123',
+                'request includes the CSRF token from the cookie'
+            )
+        } finally {
+            document.cookie =
+                'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+            db.close()
+        }
+    }
+)
+
+test(
+    'pushSync: 403 halts the drain without dead-lettering',
+    async (t) => {
+        const db = await openLocalDb('did:test:push-403-halt')
+        try {
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id,
+                     client_updated_at)
+                    VALUES ('add_feed', NULL, ?, 'op-uuid-403',
+                        '2026-01-01 00:00:00')`,
+                bind: [JSON.stringify({ url: 'https://ex.com/feed.xml' })]
+            })
+
+            let threw:unknown = null
+            try {
+                await pushSync(db, makeFetch(403))
+            } catch (err) {
+                threw = err
+            }
+
+            t.ok(
+                threw instanceof PushSyncForbiddenError,
+                'throws PushSyncForbiddenError on 403'
+            )
+            t.equal(
+                queryAll(db, 'SELECT * FROM outbox').length,
+                1,
+                'outbox row preserved (not dead-lettered) on 403'
+            )
+            t.equal(
+                queryAll(db, 'SELECT * FROM dead_letter_outbox').length,
+                0,
+                'no dead-letter row created on 403'
+            )
+        } finally {
+            db.close()
+        }
+    }
+)
 
 test('pushSync: dead letters set a sync warning count', async (t) => {
     const db = await openLocalDb('did:test:push-deadletter-status')

@@ -17,6 +17,7 @@ import {
     localTabLockRevision
 } from './db/index.js'
 import { setCurrentlyOpenItemId } from './open-item-registry.js'
+import { csrfToken } from './csrf.js'
 import type {
     CountsResponse,
     Feed,
@@ -1596,13 +1597,6 @@ State.closeEventStream = function ():void {
 /**
  * API client
  */
-function csrfToken ():string|undefined {
-    return document.cookie.split(';')
-        .map(part => part.trim())
-        .find(part => part.startsWith('csrf_token='))
-        ?.slice('csrf_token='.length)
-}
-
 const api = ky.create({
     prefixUrl: '/api',
     hooks: {

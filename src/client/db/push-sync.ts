@@ -15,6 +15,7 @@ import {
     getFeedCachePolicy,
     isContentCachedForPolicy
 } from './feed-cache-policy.js'
+import { csrfToken } from '../csrf.js'
 
 export const DEAD_LETTER_ATTEMPT_LIMIT = 10
 
@@ -29,6 +30,13 @@ export class PushSyncBillingError extends Error {
     constructor () {
         super('pushSync: subscription required — halting drain')
         this.name = 'PushSyncBillingError'
+    }
+}
+
+export class PushSyncForbiddenError extends Error {
+    constructor () {
+        super('pushSync: 403 forbidden — halting drain')
+        this.name = 'PushSyncForbiddenError'
     }
 }
 
@@ -492,9 +500,18 @@ export async function pushSync (
         }
 
         try {
+            const headers:Record<string, string> = {
+                'Content-Type': 'application/json'
+            }
+            // State-changing requests must echo the CSRF cookie back as
+            // a header or the server rejects them with 403. The ky api
+            // client and remote adapter do the same via `csrfToken()`.
+            const token = csrfToken()
+            if (token) headers['X-CSRF-Token'] = token
+
             const res = await fetchFn(req.url, {
                 method: req.method,
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(req.body)
             })
 
@@ -530,6 +547,13 @@ export async function pushSync (
 
             if (res.status === 402) {
                 throw new PushSyncBillingError()
+            }
+
+            // A 403 is a recoverable auth/CSRF/origin rejection, not a
+            // permanently-bad op. Halt the drain (leaving the row in the
+            // outbox to retry) instead of dead-lettering it on attempt 1.
+            if (res.status === 403) {
+                throw new PushSyncForbiddenError()
             }
 
             if (res.status === 409) {
@@ -580,6 +604,7 @@ export async function pushSync (
         } catch (err) {
             if (err instanceof PushSyncAuthError) throw err
             if (err instanceof PushSyncBillingError) throw err
+            if (err instanceof PushSyncForbiddenError) throw err
             const errMsg = err instanceof Error ? err.message : String(err)
             await recordTransientFailure(db, row, errMsg)
             if (trackStatus) setSyncError(errMsg)
