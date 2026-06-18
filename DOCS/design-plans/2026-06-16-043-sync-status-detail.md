@@ -1,7 +1,27 @@
 # Sync Status Detail (`/sync-status`) Design
 
 ## Summary
-<!-- TO BE GENERATED after body is written -->
+
+The `/sync-status` route is a new authenticated page that gives users a
+detailed, actionable view of everything currently failing in the sync pipeline.
+Today the header shows a vague "Sync warning" or "Sync error" indicator; this
+feature turns it into a link that leads to a full diagnostic page. The page is
+client-only — no server or schema changes — and draws entirely from the local
+SQLite mirror that the app already maintains.
+
+The page is organized around its failure categories: a transient sync error
+from the most recent push attempt, dead-lettered outbox operations (local
+changes that have permanently failed to reach the server after exhausting their
+retry budget), and failed feeds (feeds whose last fetch or Bluesky publish
+attempt returned an error, shown as two labeled sections). Each category is a
+separate section shown only when it has content; each entry exposes just enough
+detail to act on — operation type and last error for outbox items, feed name and
+error type for feeds — along with per-row actions. Destructive actions (Discard,
+Unsubscribe) require an inline confirmation step before firing; non-destructive
+retries act immediately. The page is implemented in six phases: read-layer
+queries first, then dead-letter remediation primitives, then the route scaffold,
+then the blocked-changes section, then the failed-feeds sections, and finally
+the header link that ties it all together.
 
 ## Definition of Done
 
@@ -56,10 +76,150 @@ Concretely, this is done when:
 - No toast system, no undo affordance, no bulk "retry all" in this version.
 
 ## Acceptance Criteria
-<!-- TO BE GENERATED and validated before glossary -->
+
+### sync-status-detail.AC1: Header entry point & route reachability
+- **sync-status-detail.AC1.1 Success:** In the `warning` state, the sync
+  indicator renders a link to `/sync-status`.
+- **sync-status-detail.AC1.2 Success:** In the `error` state, the sync indicator
+  renders a link to `/sync-status`.
+- **sync-status-detail.AC1.3 Success:** In the `idle`, `syncing`, and `offline`
+  states, the indicator is not a link (no `href`).
+- **sync-status-detail.AC1.4 Success:** An authenticated user reaches the page
+  directly by URL.
+- **sync-status-detail.AC1.5 Failure:** An unauthenticated user at
+  `/sync-status` is redirected to `/login`.
+
+### sync-status-detail.AC2: Blocked local changes are listed
+- **sync-status-detail.AC2.1 Success:** Each `dead_letter_outbox` row appears as
+  a row in the "Blocked local changes" section.
+- **sync-status-detail.AC2.2 Success:** A row shows the op description, attempt
+  count, and last error.
+- **sync-status-detail.AC2.3 Edge:** With no dead-letter rows, the section is
+  omitted.
+
+### sync-status-detail.AC3: Failed feeds are listed and partitioned
+- **sync-status-detail.AC3.1 Success:** A feed with `last_error` (or
+  `last_status >= 400`) appears under "Feeds that couldn't fetch".
+- **sync-status-detail.AC3.2 Success:** A feed with `publish_error` appears under
+  "Feeds that couldn't share to Bluesky".
+- **sync-status-detail.AC3.3 Edge:** A feed with both a fetch error and a publish
+  error appears in both sections.
+- **sync-status-detail.AC3.4 Edge:** A feed with no error appears in neither
+  section.
+- **sync-status-detail.AC3.5 Edge:** An empty feed-failure section is omitted.
+
+### sync-status-detail.AC4: Blocked changes can be retried or discarded
+- **sync-status-detail.AC4.1 Success:** Retry moves the row from
+  `dead_letter_outbox` back into `outbox` with `attempts` reset to 0 and
+  `last_error` cleared.
+- **sync-status-detail.AC4.2 Success:** Retry removes the row from view and
+  decrements the dead-letter count signal.
+- **sync-status-detail.AC4.3 Success:** Discard deletes the `dead_letter_outbox`
+  row and decrements the count.
+- **sync-status-detail.AC4.4 Failure:** If the requeue transaction fails, neither
+  table is left partially modified (atomic) and the row remains dead-lettered.
+- **sync-status-detail.AC4.5 Edge:** A retried op that fails again returns to
+  `dead_letter_outbox` with refreshed `last_error`.
+
+### sync-status-detail.AC5: Empty state
+- **sync-status-detail.AC5.1 Success:** With no current error, no dead-letters,
+  and no failed feeds, the page shows the "everything's syncing" empty state.
+- **sync-status-detail.AC5.2 Success:** Resolving the last problem while the page
+  is open transitions it to the empty state.
+
+### sync-status-detail.AC6: Op descriptions
+- **sync-status-detail.AC6.1 Success:** Known ops render a human-readable
+  description derived from the payload.
+- **sync-status-detail.AC6.2 Edge:** An unrecognized op renders a safe fallback
+  description (no crash).
+
+### sync-status-detail.AC7: Current sync error section
+- **sync-status-detail.AC7.1 Success:** When `syncStatus === 'error'`, the page
+  shows the `syncError` message.
+- **sync-status-detail.AC7.2 Edge:** When `syncStatus !== 'error'`, the section
+  is omitted.
+
+### sync-status-detail.AC8: Inline confirmation for destructive actions
+- **sync-status-detail.AC8.1 Success:** Clicking Discard reveals an inline
+  confirm; the row is not removed yet.
+- **sync-status-detail.AC8.2 Success:** Confirming commits the discard;
+  cancelling restores the row.
+- **sync-status-detail.AC8.3 Success:** Clicking Unsubscribe reveals an inline
+  confirm before the feed is removed.
+- **sync-status-detail.AC8.4 Success:** Non-destructive actions (Retry) act
+  immediately with no confirm step.
+
+### sync-status-detail.AC9: Accessibility of live updates
+- **sync-status-detail.AC9.1 Success:** A persistent `role="status"`
+  `aria-live="polite"` region exists and is present before content is injected.
+- **sync-status-detail.AC9.2 Success:** Action outcomes announce via a single
+  batched message, not per row.
+- **sync-status-detail.AC9.3 Success:** When a row is removed, focus moves to the
+  next actionable element (or the section heading if the list is now empty).
+
+### sync-status-detail.AC10: Publish failures and re-authentication
+- **sync-status-detail.AC10.1 Success:** Retry share calls
+  `toggleFeedPublished(…, true)`; on success the feed leaves the publish-failed
+  section.
+- **sync-status-detail.AC10.2 Success:** When `publish_error === 'reauth_required'`,
+  the row shows a re-authentication affordance instead of a plain Retry.
+- **sync-status-detail.AC10.3 Failure:** A retry-share that fails leaves the feed
+  in the publish-failed section with refreshed error text.
+
+### sync-status-detail.AC11: Offline behavior
+- **sync-status-detail.AC11.1 Success:** While offline, server-dependent actions
+  (Retry fetch, Retry share) are disabled.
+- **sync-status-detail.AC11.2 Success:** While offline, local-only Discard
+  remains enabled.
 
 ## Glossary
-<!-- TO BE GENERATED after body is written -->
+
+- **Dead-letter outbox (`dead_letter_outbox`)**: A local SQLite table holding
+  outbox operations that have exhausted their retry budget
+  (`DEAD_LETTER_ATTEMPT_LIMIT`, currently 10). An operation lands here when it
+  has failed repeatedly and the app has stopped retrying it automatically. The
+  `/sync-status` page is the user's interface for resolving these stuck
+  operations.
+- **Outbox (`outbox`)**: A local SQLite table of pending write operations
+  (subscribe, delete feed, mark read, etc.) queued for push-sync to the server.
+  Operations move from `outbox` to `dead_letter_outbox` after exceeding the
+  attempt limit; a manual Retry copies one back the other way.
+- **Push-sync**: The client-to-server synchronization direction. The push-sync
+  loop reads from the `outbox`, sends operations to the server, and handles
+  failures — including dead-lettering ops that fail too many times. Implemented
+  in `src/client/db/push-sync.ts`.
+- **`syncDeadLetters` (signal)**: A `@preact/signals` reactive value holding the
+  current count of dead-letter rows. The header reads it to decide whether to
+  show the "N blocked" indicator; the `/sync-status` page subscribes to it to
+  trigger a reload when the count changes.
+- **`syncError` / `syncStatus` (signals)**: Reactive values tracking the result
+  of the most recent push-sync attempt. `syncStatus` is one of `'idle'`,
+  `'syncing'`, `'warning'`, `'error'`, or `'offline'`; `syncError` carries the
+  message when status is `'error'`.
+- **`publish_error` / `reauth_required`**: A column on the `feeds` table set when
+  a Bluesky feed-sharing attempt fails. The special value `'reauth_required'`
+  means the OAuth token has expired and the user must re-authenticate rather
+  than simply retrying.
+- **`last_error` / `last_status`**: Columns on the `feeds` table capturing the
+  outcome of the most recent RSS/Atom fetch. A non-null `last_error` or a
+  `last_status >= 400` means the feed could not be fetched.
+- **`batch()` (`@preact/signals`)**: Groups multiple signal writes into a single
+  reactive update, preventing intermediate renders. Required by project
+  convention whenever more than one signal is written in sequence.
+- **`queryDb` / `execDb`**: Helpers in `src/client/db/local-db.ts` that run SQL
+  against the in-browser SQLite database and return typed results. All local DB
+  reads and writes go through these.
+- **`role="status"` / `aria-live="polite"`**: Accessibility primitives for a
+  region whose content changes are announced by screen readers without
+  interrupting the user. The page uses one persistent such region for action
+  outcomes.
+- **Inline row confirmation**: The confirmation pattern chosen here instead of a
+  modal. Clicking a destructive action transforms the row in place to show
+  "are you sure?" with Cancel (default-focused) and a danger-styled commit
+  button, keeping the user on the page.
+- **`toggleFeedPublished`**: An existing `State` method that enables/disables
+  Bluesky sharing for a feed via `POST /api/feeds/:id/publish`. Retry-share
+  reuses it by calling it with `true`.
 
 ## Architecture
 
