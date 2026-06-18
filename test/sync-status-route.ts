@@ -20,6 +20,31 @@ function nextTask ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
 }
 
+function waitFor (
+    predicate:() => unknown,
+    maxTurns:number = 200
+):Promise<void> {
+    let turns = 0
+    return new Promise((resolve, reject) => {
+        const check = async () => {
+            if (predicate()) {
+                resolve()
+                return
+            }
+            turns++
+            if (turns >= maxTurns) {
+                reject(new Error(
+                    `waitFor: condition not met after ${maxTurns} turns`
+                ))
+                return
+            }
+            await nextTask()
+            check()
+        }
+        check()
+    })
+}
+
 function mountRoot () {
     const root = document.createElement('div')
     document.body.appendChild(root)
@@ -97,7 +122,8 @@ test('sync-status-detail.AC1.5: unauthenticated user redirects to login',
         try {
             const { state, setRouteCallbacks } = createTestState(false)
             render(html`<${SyncStatusRoute} state=${state} />`, root)
-            await nextTask()
+
+            await waitFor(() => setRouteCallbacks.includes('/login'), 50)
 
             t.ok(
                 setRouteCallbacks.includes('/login'),
