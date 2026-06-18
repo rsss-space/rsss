@@ -68,25 +68,28 @@ export const SyncStatusRoute:FunctionComponent<{
     const hasProblems =
         currentStatus === 'error' || dl.length > 0 || ff.length > 0
 
-    const handleRetry = async (row:typeof dl[0]) => {
-        await state.retryDeadLetter(state, row.id)
-        batch(() => {
-            announcement.value = 'Change retried.'
-        })
-
-        // Find the next row after this one in the list;
-        // if none, focus the page heading (h1)
+    // Set the focus target BEFORE the action's await. The await
+    // removes the row, which re-renders and runs the focus effect;
+    // the target must already be set or the effect sees null and
+    // never moves focus. Target the next remaining row's action
+    // button, or the page heading when the list becomes empty
+    // (the section <h2> unmounts when empty, so it cannot receive
+    // focus). AC9.3.
+    const setPendingFocusFor = (row:typeof dl[0]) => {
         const idx = dl.findIndex(r => r.id === row.id)
         const nextIdx = idx + 1
         if (nextIdx < dl.length) {
-            const nextRowId = dl[nextIdx].id
-            const nextBtn = rowActionRefs.current.get(nextRowId)
-            if (nextBtn) {
-                pendingFocusTarget.current = nextBtn
-            }
-        } else if (pageHeadingRef.current) {
+            const nextBtn = rowActionRefs.current.get(dl[nextIdx].id)
+            pendingFocusTarget.current = nextBtn ?? null
+        } else {
             pendingFocusTarget.current = pageHeadingRef.current
         }
+    }
+
+    const handleRetry = async (row:typeof dl[0]) => {
+        setPendingFocusFor(row)
+        await state.retryDeadLetter(state, row.id)
+        announcement.value = 'Change retried.'
     }
 
     const handleDiscardClick = (rowId:number) => {
@@ -98,25 +101,12 @@ export const SyncStatusRoute:FunctionComponent<{
     }
 
     const handleConfirmDiscard = async (row:typeof dl[0]) => {
+        setPendingFocusFor(row)
         await state.discardDeadLetter(state, row.id)
         batch(() => {
             confirmingKey.value = null
             announcement.value = 'Change discarded.'
         })
-
-        // Find the next row after this one in the list;
-        // if none, focus the page heading (h1)
-        const idx = dl.findIndex(r => r.id === row.id)
-        const nextIdx = idx + 1
-        if (nextIdx < dl.length) {
-            const nextRowId = dl[nextIdx].id
-            const nextBtn = rowActionRefs.current.get(nextRowId)
-            if (nextBtn) {
-                pendingFocusTarget.current = nextBtn
-            }
-        } else if (pageHeadingRef.current) {
-            pendingFocusTarget.current = pageHeadingRef.current
-        }
     }
 
     return html`
@@ -209,10 +199,8 @@ export const SyncStatusRoute:FunctionComponent<{
                                                                 row.id)
                                                     }
                                                 }}
-                                                onClick=${async () => {
-                                                    await handleRetry(
-                                                        row
-                                                    )
+                                                onClick=${() => {
+                                                    handleRetry(row)
                                                 }}
                                             >
                                                 Retry
@@ -256,8 +244,8 @@ export const SyncStatusRoute:FunctionComponent<{
                                                 <button
                                                     class="commit-btn"
                                                     type="button"
-                                                    onClick=${async () => {
-                                                        await handleConfirmDiscard(
+                                                    onClick=${() => {
+                                                        handleConfirmDiscard(
                                                             row
                                                         )
                                                     }}

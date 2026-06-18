@@ -98,6 +98,37 @@ function resetSignals ():void {
     })
 }
 
+// The route's mount effect calls loadSyncStatus, which clobbers
+// deadLetters to [] when there is no local DB (always, in tests).
+// Render with the rows seeded, wait out that one-time clobber, then
+// re-seed the rows the test exercises. syncDeadLetters is held
+// constant so the reactive reload never fires again and wipes them.
+async function mountWithRows (
+    root:HTMLElement,
+    state:AppState,
+    rows:DeadLetterRow[],
+    seed?:() => void
+):Promise<void> {
+    batch(() => {
+        deadLetters.value = rows
+        syncDeadLetters.value = rows.length
+        syncStatus.value = 'idle'
+        syncError.value = null
+        seed?.()
+    })
+    render(html`<${SyncStatusRoute} state=${state} />`, root)
+    await waitFor(() => deadLetters.value.length === 0, 50)
+    batch(() => {
+        deadLetters.value = rows
+        seed?.()
+    })
+    await waitFor(
+        () => document.querySelectorAll('.blocked-change').length ===
+            rows.length,
+        50
+    )
+}
+
 test('sync-status-detail.AC1.4: authenticated user renders the route',
     async t => {
         const { root, cleanup } = mountRoot()
@@ -490,8 +521,8 @@ test('sync-status-detail.AC8.4: Retry calls handler immediately ' +
     }
 })
 
-test('sync-status-detail.AC8.1: Discard click sets confirmingKey ' +
-    'and DOM reflects confirm-prompt', async t => {
+test('sync-status-detail.AC8.1: Discard click reveals the inline ' +
+    'confirm in the row', async t => {
     const { root, cleanup } = mountRoot()
     try {
         const { state } = createTestState(true)
@@ -511,38 +542,22 @@ test('sync-status-detail.AC8.1: Discard click sets confirmingKey ' +
             discardCallLog.push(discardId)
         }
 
-        batch(() => {
-            deadLetters.value = [dl]
-            syncStatus.value = 'idle'
-            syncError.value = null
-            confirmingKey.value = null
-        })
-
-        render(html`<${SyncStatusRoute} state=${state} />`, root)
-        await waitFor(
-            () => document.querySelector('.discard-btn') !== null,
-            50
-        )
+        await mountWithRows(root, state, [dl])
 
         t.equal(confirmingKey.value, null,
             'confirmingKey initially null')
+        t.ok(document.querySelector('.blocked-change .actions'),
+            'actions element present before discard')
+        t.equal(document.querySelector('.confirm-prompt'), null,
+            'no confirm-prompt before click')
 
-        const actionsBefore = document.querySelector(
-            '.blocked-change .actions'
+        ;(document.querySelector('.discard-btn') as HTMLButtonElement)
+            ?.click()
+
+        await waitFor(
+            () => document.querySelector('.confirm-prompt') !== null,
+            50
         )
-        t.ok(actionsBefore, 'actions element present before discard')
-
-        const confirmBefore = document.querySelector(
-            '.confirm-prompt'
-        )
-        t.equal(confirmBefore, null, 'no confirm-prompt before click')
-
-        const discardBtn = document.querySelector('.discard-btn')
-        t.ok(discardBtn, 'Discard button rendered')
-
-        ;(discardBtn as HTMLButtonElement)?.click()
-
-        await nextTask()
 
         t.equal(confirmingKey.value, 'dl:' + dl.id,
             'confirmingKey set to dl:<id> after click')
@@ -550,14 +565,15 @@ test('sync-status-detail.AC8.1: Discard click sets confirmingKey ' +
         t.deepEqual(discardCallLog, [],
             'discardDeadLetter not called on Discard click')
 
-        // Check that actions element is gone (indicating conditional
-        // rendered differently). This indirectly confirms that the
-        // confirm-prompt conditional branch executed.
-        const actionsAfter = document.querySelector(
-            '.blocked-change .actions'
-        )
-        t.equal(actionsAfter, null,
-            'actions element hidden when confirming is set')
+        // The inline confirm actually renders in the DOM. The
+        // original defect was that it did not, so assert the element
+        // and its buttons exist and the normal actions are gone.
+        t.ok(document.querySelector('.confirm-prompt .cancel-btn'),
+            'cancel button rendered in confirm-prompt')
+        t.ok(document.querySelector('.confirm-prompt .commit-btn'),
+            'commit button rendered in confirm-prompt')
+        t.equal(document.querySelector('.blocked-change .actions'),
+            null, 'normal actions hidden while confirming')
     } finally {
         resetSignals()
         cleanup()
@@ -812,98 +828,108 @@ test('sync-status-detail.AC9.2: single live region gets announcement',
     }
 )
 
-test('sync-status-detail.AC9.3: page h1 has tabindex=-1 ' +
-    'for focus-restore fallback', async t => {
+test('sync-status-detail.AC9.3: focus moves to the next row ' +
+    'action button when a non-last row is removed', async t => {
     const { root, cleanup } = mountRoot()
     try {
         const { state } = createTestState(true)
+        const rowA:DeadLetterRow = {
+            id: 60,
+            op: 'add_feed',
+            target_id: 1,
+            payload: JSON.stringify({ url: 'https://ex.com/a' }),
+            client_op_id: 'test-op-60',
+            client_updated_at: '2026-01-01T00:00:00Z',
+            attempts: 1,
+            last_error: null
+        }
+        const rowB:DeadLetterRow = {
+            id: 61,
+            op: 'add_feed',
+            target_id: 2,
+            payload: JSON.stringify({ url: 'https://ex.com/b' }),
+            client_op_id: 'test-op-61',
+            client_updated_at: '2026-01-01T00:00:00Z',
+            attempts: 1,
+            last_error: null
+        }
 
-        batch(() => {
-            deadLetters.value = []
-            syncStatus.value = 'idle'
-            syncError.value = null
+        // Discard removes only row A; row B survives. Leave
+        // syncDeadLetters untouched so the route's reactive reload
+        // (which would clobber the list to empty with no test DB)
+        // stays quiet for the duration of the assertion.
+        state.discardDeadLetter = async (_s, _id) => {
+            deadLetters.value = [rowB]
+        }
+
+        await mountWithRows(root, state, [rowA, rowB], () => {
+            confirmingKey.value = 'dl:' + rowA.id
         })
 
-        render(html`<${SyncStatusRoute} state=${state} />`, root)
-        await nextTask()
+        ;(document.querySelector('.commit-btn') as HTMLButtonElement)
+            ?.click()
 
-        const pageHeading = document.querySelector(
-            'h1[tabindex="-1"]'
-        )
-        t.ok(pageHeading, 'page h1 has tabindex="-1"')
-        t.ok(pageHeading?.textContent?.includes('Sync Status'),
-            'h1 is page heading')
+        // Wait until row A is gone AND focus has landed on the
+        // surviving row's action button (the focus effect runs after
+        // the removal render).
+        await waitFor(() => {
+            const rows = document.querySelectorAll('.blocked-change')
+            const retry = document.querySelector('.retry-btn')
+            return rows.length === 1 &&
+                document.activeElement === retry
+        }, 50)
+
+        const survivingRetry = document.querySelector('.retry-btn')
+        t.ok(survivingRetry, 'surviving row action button present')
+        t.equal(document.activeElement, survivingRetry,
+            'focus moved to the next row action button')
     } finally {
         resetSignals()
         cleanup()
     }
-}
-)
+})
 
-test('sync-status-detail.AC9.3: focus-restore in component ' +
-    'can target page heading', async t => {
+test('sync-status-detail.AC9.3: focus moves to the page heading ' +
+    'when the last row is removed', async t => {
     const { root, cleanup } = mountRoot()
     try {
         const { state } = createTestState(true)
-        const dl:DeadLetterRow = {
-            id: 53,
+        const row:DeadLetterRow = {
+            id: 62,
             op: 'add_feed',
             target_id: 1,
-            payload: JSON.stringify({
-                url: 'https://example.com/feed7'
-            }),
-            client_op_id: 'test-op-53',
+            payload: JSON.stringify({ url: 'https://ex.com/c' }),
+            client_op_id: 'test-op-62',
             client_updated_at: '2026-01-01T00:00:00Z',
             attempts: 1,
             last_error: null
         }
 
         state.retryDeadLetter = async (_s, _id) => {
-            batch(() => {
-                deadLetters.value = []
-                syncDeadLetters.value = 0
-            })
+            deadLetters.value = []
         }
 
-        batch(() => {
-            deadLetters.value = [dl]
-            syncDeadLetters.value = 1
-            syncStatus.value = 'idle'
-            syncError.value = null
-        })
+        await mountWithRows(root, state, [row])
 
-        render(html`<${SyncStatusRoute} state=${state} />`, root)
-        await waitFor(
-            () => document.querySelector('.retry-btn') !== null,
-            50
-        )
+        ;(document.querySelector('.retry-btn') as HTMLButtonElement)
+            ?.click()
 
-        const pageHeading = document.querySelector(
-            'h1[tabindex="-1"]'
-        )
-        t.ok(pageHeading, 'page h1 present with tabindex=-1')
+        // Wait until the list is empty AND focus has landed on the
+        // persistent page heading (the section <h2> unmounts when
+        // empty, so the page <h1> is the fallback target).
+        await waitFor(() => {
+            const rows = document.querySelectorAll('.blocked-change')
+            const h1 = document.querySelector('h1[tabindex="-1"]')
+            return rows.length === 0 && document.activeElement === h1
+        }, 50)
 
-        const retryBtn = document.querySelector('.retry-btn')
-        t.ok(retryBtn, 'retry button present')
-
-        ;(retryBtn as HTMLButtonElement)?.click()
-
-        await nextTask()
-
-        // After retry (which empties the list), the focus code
-        // should have targeted the page heading
-        const h1Focus = document.activeElement === pageHeading
-        const someButtonFocus = (
-            document.activeElement as HTMLElement
-        )?.className?.includes('btn')
-        t.ok(
-            h1Focus || someButtonFocus,
-            'focus set to page heading or button'
-        )
+        const pageHeading = document.querySelector('h1[tabindex="-1"]')
+        t.ok(pageHeading, 'page heading present')
+        t.equal(document.activeElement, pageHeading,
+            'focus moved to the page heading when the list emptied')
     } finally {
         resetSignals()
         cleanup()
     }
-}
-)
+})
 
