@@ -1576,3 +1576,66 @@ test(
         }
     }
 )
+
+// ── listDeadLetterOutbox ──────────────────────────────────────────────────
+
+test('listDeadLetterOutbox returns empty for no dead letters', async (t) => {
+    const db = await openLocalDb('did:test:list-dead-empty')
+    try {
+        const {
+            listDeadLetterOutbox
+        } = await import('../src/client/db/push-sync.js')
+        const rows = await listDeadLetterOutbox(db)
+        t.equal(rows.length, 0, 'returns empty array')
+    } finally {
+        db.close()
+    }
+})
+
+test(
+    'listDeadLetterOutbox returns all dead-letter rows ordered by id',
+    async (t) => {
+        const db = await openLocalDb('did:test:list-dead-rows')
+        try {
+            // Seed multiple dead-letter rows
+            db.exec({
+                sql: `INSERT INTO dead_letter_outbox
+                    (op, target_id, payload, client_op_id, client_updated_at,
+                     attempts, last_error)
+                    VALUES
+                        ('add_feed', NULL, ?, 'op-uuid-1', '2026-01-01 00:00:00',
+                         10, 'HTTP 400'),
+                        ('delete_feed', 5, ?, 'op-uuid-2', '2026-01-02 00:00:00',
+                         11, 'HTTP 410'),
+                        ('update_item', 42, ?, 'op-uuid-3', '2026-01-03 00:00:00',
+                         10, 'Network failure')`,
+                bind: [
+                    JSON.stringify({ url: 'https://example.com/1.xml' }),
+                    JSON.stringify({ id: 5 }),
+                    JSON.stringify({ id: 42, is_read: true })
+                ]
+            })
+
+            const {
+                listDeadLetterOutbox
+            } = await import('../src/client/db/push-sync.js')
+            const rows = await listDeadLetterOutbox(db)
+
+            t.equal(rows.length, 3, 'returns 3 rows')
+            t.equal(rows[0]?.op, 'add_feed', 'first row op preserved')
+            t.equal(rows[0]?.target_id, null, 'first row target_id')
+            t.equal(rows[0]?.attempts, 10, 'first row attempts')
+            t.ok(
+                rows[0]?.last_error?.includes('HTTP 400'),
+                'first row last_error'
+            )
+            t.equal(rows[1]?.op, 'delete_feed', 'second row op')
+            t.equal(rows[1]?.target_id, 5, 'second row target_id')
+            t.equal(rows[1]?.attempts, 11, 'second row attempts')
+            t.equal(rows[2]?.op, 'update_item', 'third row op')
+            t.equal(rows[2]?.target_id, 42, 'third row target_id')
+        } finally {
+            db.close()
+        }
+    }
+)

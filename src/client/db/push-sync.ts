@@ -51,6 +51,17 @@ interface OutboxRow {
     last_error:string|null
 }
 
+export interface DeadLetterRow {
+    id:number
+    op:string
+    target_id:number|null
+    payload:string
+    client_op_id:string
+    client_updated_at:string
+    attempts:number
+    last_error:string|null
+}
+
 interface FeedTargetRewrite {
     optimisticId:number
     serverId:number
@@ -72,6 +83,17 @@ export async function getDeadLetterOutboxCount (
         'SELECT COUNT(*) AS n FROM dead_letter_outbox'
     )
     return rows[0]?.n ?? 0
+}
+
+export async function listDeadLetterOutbox (
+    db:Sqlite3Db
+):Promise<DeadLetterRow[]> {
+    return queryDb<DeadLetterRow>(
+        db,
+        'SELECT id, op, target_id, payload, client_op_id, ' +
+        'client_updated_at, attempts, last_error ' +
+        'FROM dead_letter_outbox ORDER BY id ASC'
+    )
 }
 
 function getOutboxRows (db:Sqlite3Db):Promise<OutboxRow[]> {
