@@ -30,13 +30,18 @@ export const SyncStatusRoute:FunctionComponent<{
     const dl = deadLetters.value
     const ff = failedFeeds.value
 
-    const hasProblems = currentStatus === 'error' || dl.length > 0 || ff.length > 0
+    const hasProblems =
+        currentStatus === 'error' || dl.length > 0 || ff.length > 0
 
     return html`
         <div class="route sync-status">
             <h1>Sync Status</h1>
 
-            <div role="status" aria-live="polite" class="sync-status-announcements"></div>
+            <div
+                role="status"
+                aria-live="polite"
+                class="sync-status-announcements"
+            ></div>
 
             ${currentStatus === 'error' && html`
                 <div class="sync-status-section current-error">
