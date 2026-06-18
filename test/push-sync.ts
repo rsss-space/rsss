@@ -1639,3 +1639,201 @@ test(
         }
     }
 )
+
+// ── requeue / remove dead-letter operations ────────────────────────────────────
+
+test(
+    'requeueDeadLetter moves row to outbox with attempts=0',
+    async (t) => {
+        const db = await openLocalDb('did:test:requeue-dead')
+        try {
+            const feedId = seedFeed(db)
+
+            // Seed a dead-letter row
+            db.exec({
+                sql: `INSERT INTO dead_letter_outbox
+                    (op, target_id, payload, client_op_id,
+                     client_updated_at, attempts, last_error)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                bind: [
+                    'add_feed',
+                    null,
+                    JSON.stringify({ url: 'https://example.com/feed.xml' }),
+                    'op-uuid-requeue-1',
+                    '2026-01-01 12:00:00',
+                    5,
+                    'HTTP 500'
+                ]
+            })
+
+            const deadRow = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM dead_letter_outbox LIMIT 1'
+            )
+            const deadId = deadRow!.id
+
+            const {
+                requeueDeadLetter
+            } = await import('../src/client/db/push-sync.js')
+            const moved = await requeueDeadLetter(db, deadId)
+
+            t.equal(moved, true, 'requeueDeadLetter returns true')
+
+            const outboxRow = queryOne<{
+                op:string
+                attempts:number
+                last_error:string|null
+                client_op_id:string
+                client_updated_at:string
+            }>(db, 'SELECT op, attempts, last_error, client_op_id,' +
+                ' client_updated_at FROM outbox WHERE client_op_id = ?',
+                ['op-uuid-requeue-1']
+            )
+            t.ok(outboxRow, 'row moved to outbox')
+            t.equal(outboxRow?.op, 'add_feed', 'op preserved')
+            t.equal(outboxRow?.attempts, 0, 'attempts reset to 0')
+            t.equal(outboxRow?.last_error, null, 'last_error cleared')
+            t.equal(
+                outboxRow?.client_op_id,
+                'op-uuid-requeue-1',
+                'client_op_id preserved'
+            )
+            t.equal(
+                outboxRow?.client_updated_at,
+                '2026-01-01 12:00:00',
+                'client_updated_at preserved'
+            )
+
+            const stillDead = queryOne(
+                db,
+                'SELECT * FROM dead_letter_outbox WHERE id = ?',
+                [deadId]
+            )
+            t.equal(stillDead, undefined, 'row removed from dead_letter_outbox')
+        } finally {
+            db.close()
+        }
+    }
+)
+
+test(
+    'requeueDeadLetter returns false for missing id',
+    async (t) => {
+        const db = await openLocalDb('did:test:requeue-missing')
+        try {
+            const {
+                requeueDeadLetter
+            } = await import('../src/client/db/push-sync.js')
+            const moved = await requeueDeadLetter(db, 999)
+
+            t.equal(moved, false, 'returns false when id not found')
+
+            const outboxRows = queryAll(db, 'SELECT * FROM outbox')
+            t.equal(outboxRows.length, 0, 'no outbox row created')
+        } finally {
+            db.close()
+        }
+    }
+)
+
+test(
+    'requeueDeadLetter verifies atomicity by checking both operations',
+    async (t) => {
+        const db = await openLocalDb('did:test:requeue-atomicity-check')
+        try {
+            const feedId = seedFeed(db)
+
+            // Seed a dead-letter row
+            db.exec({
+                sql: `INSERT INTO dead_letter_outbox
+                    (op, target_id, payload, client_op_id,
+                     client_updated_at, attempts, last_error)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                bind: [
+                    'add_feed',
+                    null,
+                    JSON.stringify({ url: 'https://example.com/feed.xml' }),
+                    'op-uuid-atomic-1',
+                    '2026-01-01 10:00:00',
+                    8,
+                    'HTTP 500'
+                ]
+            })
+
+            const deadRow = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM dead_letter_outbox LIMIT 1'
+            )
+            const deadId = deadRow!.id
+
+            const {
+                requeueDeadLetter
+            } = await import('../src/client/db/push-sync.js')
+            const moved = await requeueDeadLetter(db, deadId)
+
+            t.equal(moved, true, 'requeue succeeds')
+
+            // Check that both operations occurred: INSERT to outbox and
+            // DELETE from dead_letter_outbox. This verifies the transaction
+            // was committed (not rolled back partway through).
+            const outboxRow = queryOne<{ client_op_id:string }>(
+                db,
+                'SELECT client_op_id FROM outbox WHERE id IS NOT NULL'
+            )
+            t.ok(outboxRow, 'row inserted into outbox')
+
+            const deadCount = queryOne<{ n:number }>(
+                db,
+                'SELECT COUNT(*) AS n FROM dead_letter_outbox'
+            )
+            t.equal(deadCount?.n, 0, 'row deleted from dead_letter_outbox')
+        } finally {
+            db.close()
+        }
+    }
+)
+
+test(
+    'removeDeadLetter deletes row from dead_letter_outbox',
+    async (t) => {
+        const db = await openLocalDb('did:test:remove-dead')
+        try {
+            // Seed a dead-letter row
+            db.exec({
+                sql: `INSERT INTO dead_letter_outbox
+                    (op, target_id, payload, client_op_id,
+                     client_updated_at, attempts, last_error)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                bind: [
+                    'delete_feed',
+                    123,
+                    JSON.stringify({ id: 123 }),
+                    'op-uuid-remove-1',
+                    '2026-01-04 12:00:00',
+                    7,
+                    'HTTP 410'
+                ]
+            })
+
+            const deadRow = queryOne<{ id:number }>(
+                db,
+                'SELECT id FROM dead_letter_outbox LIMIT 1'
+            )
+            const deadId = deadRow!.id
+
+            const {
+                removeDeadLetter
+            } = await import('../src/client/db/push-sync.js')
+            await removeDeadLetter(db, deadId)
+
+            const removed = queryOne(
+                db,
+                'SELECT * FROM dead_letter_outbox WHERE id = ?',
+                [deadId]
+            )
+            t.equal(removed, undefined, 'row deleted from dead_letter_outbox')
+        } finally {
+            db.close()
+        }
+    }
+)

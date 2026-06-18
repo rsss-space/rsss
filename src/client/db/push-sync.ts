@@ -150,6 +150,56 @@ async function moveOutboxRowToDeadLetters (
     }
 }
 
+export async function requeueDeadLetter (
+    db:Sqlite3Db,
+    id:number
+):Promise<boolean> {
+    const rows = await queryDb<DeadLetterRow>(
+        db,
+        'SELECT * FROM dead_letter_outbox WHERE id = ?',
+        [id]
+    )
+    const row = rows[0] ?? null
+    if (!row) return false
+
+    await execDb(db, 'BEGIN')
+    try {
+        await execDb(db, {
+            sql: `INSERT INTO outbox
+                (op, target_id, payload, client_op_id,
+                 client_updated_at, attempts, last_error)
+                VALUES (?, ?, ?, ?, ?, 0, NULL)`,
+            bind: [
+                row.op,
+                row.target_id,
+                row.payload,
+                row.client_op_id,
+                row.client_updated_at
+            ]
+        })
+        await execDb(db, {
+            sql: 'DELETE FROM dead_letter_outbox WHERE id = ?',
+            bind: [id]
+        })
+        await execDb(db, 'COMMIT')
+    } catch (err) {
+        await execDb(db, 'ROLLBACK')
+        throw err
+    }
+
+    return true
+}
+
+export async function removeDeadLetter (
+    db:Sqlite3Db,
+    id:number
+):Promise<void> {
+    await execDb(db, {
+        sql: 'DELETE FROM dead_letter_outbox WHERE id = ?',
+        bind: [id]
+    })
+}
+
 async function recordTransientFailure (
     db:Sqlite3Db,
     row:OutboxRow,
