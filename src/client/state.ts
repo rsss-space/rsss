@@ -41,15 +41,21 @@ import {
 } from './local-first-settings.js'
 import {
     getOutboxCount,
+    getDeadLetterOutboxCount,
     PushSyncAuthError,
     PushSyncBillingError,
-    upsertFeedFromServer
+    upsertFeedFromServer,
+    requeueDeadLetter,
+    removeDeadLetter
 } from './db/push-sync.js'
 import { runSync } from './db/sync.js'
 import {
     isLocalFirstActive,
     updateOnlineStatus,
-    setSyncOffline
+    setSyncOffline,
+    syncStatus,
+    syncPending,
+    syncDeadLetters
 } from './db/sync-status.js'
 import {
     findItemByRoute,
@@ -3057,6 +3063,61 @@ State.retryResolveFeed = async function (
         // to pull the server state when the response eventually arrives
         scheduleResolveConvergence(state, url)
     }
+}
+
+/**
+ * Refresh dead-letter counts after a retry/discard operation, being careful
+ * not to clobber a genuine transient syncError. Updates syncPending and
+ * syncDeadLetters, and only downgrades a warning-level syncStatus to
+ * idle/offline when the dead-letter count reaches 0.
+ */
+async function refreshDeadLetterCounts (db:any):Promise<void> {
+    const pending = await getOutboxCount(db)
+    const deadLetters = await getDeadLetterOutboxCount(db)
+    batch(() => {
+        syncPending.value = pending
+        syncDeadLetters.value = deadLetters
+        // Only downgrade a warning to idle/offline; leave error/syncing
+        // untouched so we don't clobber a real sync error (AC7 constraint).
+        if (syncStatus.value === 'warning' && deadLetters === 0) {
+            syncStatus.value = navigator.onLine ? 'idle' : 'offline'
+        }
+    })
+}
+
+/**
+ * Retry a dead-lettered operation by moving it back to the outbox with
+ * a fresh attempt budget, then kicking push-sync to send it.
+ */
+State.retryDeadLetter = async function (
+    state:AppState,
+    id:number
+):Promise<void> {
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+
+    const moved = await requeueDeadLetter(db, id)
+    if (!moved) return
+
+    await refreshDeadLetterCounts(db)
+    await _runSyncImpl(db)
+}
+
+/**
+ * Discard a dead-lettered operation by deleting it, then refresh counts.
+ * Does not kick push-sync (local-only operation; must work offline per AC11.2).
+ */
+State.discardDeadLetter = async function (
+    state:AppState,
+    id:number
+):Promise<void> {
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+
+    await removeDeadLetter(db, id)
+    await refreshDeadLetterCounts(db)
 }
 
 /**

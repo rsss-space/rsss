@@ -67,6 +67,7 @@ import './feed-share-toggle.js'
 import './feed-share-control.js'
 import './feed-nav.js'
 import './publish-consent-modal.js'
+import './retry-discard-dead-letter.js'
 
 test('all done', () => {
     if (window) {

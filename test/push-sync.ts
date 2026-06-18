@@ -1647,8 +1647,6 @@ test(
     async (t) => {
         const db = await openLocalDb('did:test:requeue-dead')
         try {
-            const feedId = seedFeed(db)
-
             // Seed a dead-letter row
             db.exec({
                 sql: `INSERT INTO dead_letter_outbox
@@ -1687,7 +1685,7 @@ test(
                 client_updated_at:string
             }>(db, 'SELECT op, attempts, last_error, client_op_id,' +
                 ' client_updated_at FROM outbox WHERE client_op_id = ?',
-                ['op-uuid-requeue-1']
+            ['op-uuid-requeue-1']
             )
             t.ok(outboxRow, 'row moved to outbox')
             t.equal(outboxRow?.op, 'add_feed', 'op preserved')
@@ -1741,7 +1739,7 @@ test(
     async (t) => {
         const db = await openLocalDb('did:test:requeue-atomicity-check')
         try {
-            const feedId = seedFeed(db)
+            seedFeed(db)
 
             // Seed a dead-letter row
             db.exec({
@@ -1806,7 +1804,7 @@ test(
                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
                 bind: [
                     'delete_feed',
-                    123,
+                    null,
                     JSON.stringify({ id: 123 }),
                     'op-uuid-remove-1',
                     '2026-01-04 12:00:00',
