@@ -1735,13 +1735,12 @@ test(
 )
 
 test(
-    'requeueDeadLetter verifies atomicity by checking both operations',
+    'requeueDeadLetter transaction rolls back atomically on UNIQUE ' +
+    'violation',
     async (t) => {
-        const db = await openLocalDb('did:test:requeue-atomicity-check')
+        const db = await openLocalDb('did:test:requeue-rollback')
         try {
-            seedFeed(db)
-
-            // Seed a dead-letter row
+            // Seed a dead-letter row with a specific client_op_id
             db.exec({
                 sql: `INSERT INTO dead_letter_outbox
                     (op, target_id, payload, client_op_id,
@@ -1751,7 +1750,7 @@ test(
                     'add_feed',
                     null,
                     JSON.stringify({ url: 'https://example.com/feed.xml' }),
-                    'op-uuid-atomic-1',
+                    'op-collision-id',
                     '2026-01-01 10:00:00',
                     8,
                     'HTTP 500'
@@ -1764,27 +1763,79 @@ test(
             )
             const deadId = deadRow!.id
 
+            // Pre-insert an outbox row with the SAME client_op_id to
+            // force a UNIQUE constraint violation when requeue tries
+            // to insert
+            db.exec({
+                sql: `INSERT INTO outbox
+                    (op, target_id, payload, client_op_id,
+                     client_updated_at, attempts, last_error)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                bind: [
+                    'delete_feed',
+                    null,
+                    JSON.stringify({ id: 999 }),
+                    'op-collision-id',
+                    '2026-01-02 11:00:00',
+                    0,
+                    null
+                ]
+            })
+
+            const preOutboxCount = queryOne<{ n:number }>(
+                db,
+                'SELECT COUNT(*) AS n FROM outbox'
+            )
+            t.equal(preOutboxCount?.n, 1, 'one outbox row seeded')
+
             const {
                 requeueDeadLetter
             } = await import('../src/client/db/push-sync.js')
-            const moved = await requeueDeadLetter(db, deadId)
 
-            t.equal(moved, true, 'requeue succeeds')
-
-            // Check that both operations occurred: INSERT to outbox and
-            // DELETE from dead_letter_outbox. This verifies the transaction
-            // was committed (not rolled back partway through).
-            const outboxRow = queryOne<{ client_op_id:string }>(
-                db,
-                'SELECT client_op_id FROM outbox WHERE id IS NOT NULL'
+            // Attempt to requeue; should reject due to UNIQUE
+            // constraint violation
+            let threwAsExpected = false
+            try {
+                await requeueDeadLetter(db, deadId)
+            } catch (_err) {
+                threwAsExpected = true
+            }
+            t.equal(
+                threwAsExpected,
+                true,
+                'requeue rejects on UNIQUE violation'
             )
-            t.ok(outboxRow, 'row inserted into outbox')
 
-            const deadCount = queryOne<{ n:number }>(
+            // Verify dead-letter row is still present (rolled back)
+            const deadStillExists = queryOne<{ id:number }>(
                 db,
-                'SELECT COUNT(*) AS n FROM dead_letter_outbox'
+                'SELECT id FROM dead_letter_outbox WHERE id = ?',
+                [deadId]
             )
-            t.equal(deadCount?.n, 0, 'row deleted from dead_letter_outbox')
+            t.equal(
+                deadStillExists?.id,
+                deadId,
+                'dead-letter row survives rollback'
+            )
+
+            // Verify outbox still has exactly one row (the seeded one,
+            // no partial/new row created)
+            const postOutboxCount = queryOne<{ n:number }>(
+                db,
+                'SELECT COUNT(*) AS n FROM outbox'
+            )
+            t.equal(postOutboxCount?.n, 1, 'outbox has exactly 1 row')
+
+            const outboxCollisionRow = queryOne<{ client_op_id:string }>(
+                db,
+                'SELECT client_op_id FROM outbox WHERE client_op_id = ?',
+                ['op-collision-id']
+            )
+            t.equal(
+                outboxCollisionRow?.client_op_id,
+                'op-collision-id',
+                'seeded outbox row unchanged'
+            )
         } finally {
             db.close()
         }

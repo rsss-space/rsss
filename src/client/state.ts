@@ -16,6 +16,7 @@ import {
     getRemoteItemByRoute,
     localTabLockRevision
 } from './db/index.js'
+import type { Sqlite3Db } from './db/sqlite-init.js'
 import { setCurrentlyOpenItemId } from './open-item-registry.js'
 import { csrfToken } from './csrf.js'
 import type {
@@ -3071,7 +3072,7 @@ State.retryResolveFeed = async function (
  * syncDeadLetters, and only downgrades a warning-level syncStatus to
  * idle/offline when the dead-letter count reaches 0.
  */
-async function refreshDeadLetterCounts (db:any):Promise<void> {
+async function refreshDeadLetterCounts (db:Sqlite3Db):Promise<void> {
     const pending = await getOutboxCount(db)
     const deadLetters = await getDeadLetterOutboxCount(db)
     batch(() => {
@@ -3080,7 +3081,7 @@ async function refreshDeadLetterCounts (db:any):Promise<void> {
         // Only downgrade a warning to idle/offline; leave error/syncing
         // untouched so we don't clobber a real sync error (AC7 constraint).
         if (syncStatus.value === 'warning' && deadLetters === 0) {
-            syncStatus.value = navigator.onLine ? 'idle' : 'offline'
+            syncStatus.value = isBrowserOnline() ? 'idle' : 'offline'
         }
     })
 }
