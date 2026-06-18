@@ -10,6 +10,8 @@ import { type AppState } from '../state.js'
 export const deadLetters:Signal<DeadLetterRow[]> = signal([])
 export const failedFeeds:Signal<Feed[]> = signal([])
 export const loading:Signal<boolean> = signal(false)
+export const confirmingKey:Signal<string|null> = signal(null)
+export const announcement:Signal<string> = signal('')
 
 export async function loadSyncStatus (state:AppState):Promise<void> {
     const did = state.user.value?.did
