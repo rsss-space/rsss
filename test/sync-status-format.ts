@@ -228,7 +228,7 @@ test('describeOp: distinct ops produce distinct descriptions', t => {
     t.equal(unique.size, 4, 'all four op types produce distinct strings')
 })
 
-test('isFetchFailed: true when last_error is set', t => {
+test('fetch-error predicate: true when last_error is set', t => {
     const feed:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -241,10 +241,10 @@ test('isFetchFailed: true when last_error is set', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.ok(isFetchFailed(feed), 'returns true when last_error is set')
+    t.ok(isFetchFailed(feed), 'fetch-error predicate true')
 })
 
-test('isFetchFailed: true when last_status >= 400', t => {
+test('fetch-error predicate: true when status >= 400', t => {
     const feed:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -257,10 +257,10 @@ test('isFetchFailed: true when last_status >= 400', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.ok(isFetchFailed(feed), 'returns true when last_status >= 400')
+    t.ok(isFetchFailed(feed), 'fetch-error predicate true')
 })
 
-test('isFetchFailed: true when last_status = 404', t => {
+test('fetch-error predicate: true when status = 404', t => {
     const feed:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -273,10 +273,10 @@ test('isFetchFailed: true when last_status = 404', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.ok(isFetchFailed(feed), 'returns true for 404')
+    t.ok(isFetchFailed(feed), 'fetch-error predicate true')
 })
 
-test('isFetchFailed: false when last_status < 400', t => {
+test('fetch-error predicate: false when status < 400', t => {
     const feed200:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -289,7 +289,7 @@ test('isFetchFailed: false when last_status < 400', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.equal(isFetchFailed(feed200), false, 'returns false for 200')
+    t.equal(isFetchFailed(feed200), false, 'fetch-error false for 200')
 
     const feed304:Feed = {
         id: 2,
@@ -303,10 +303,10 @@ test('isFetchFailed: false when last_status < 400', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.equal(isFetchFailed(feed304), false, 'returns false for 304')
+    t.equal(isFetchFailed(feed304), false, 'fetch-error false for 304')
 })
 
-test('isFetchFailed: false when no error and no status', t => {
+test('fetch-error predicate: false when no error', t => {
     const feed:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -319,10 +319,10 @@ test('isFetchFailed: false when no error and no status', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.equal(isFetchFailed(feed), false, 'returns false when clean')
+    t.equal(isFetchFailed(feed), false, 'fetch-error false')
 })
 
-test('isPublishFailed: true when publish_error is set', t => {
+test('publish-error predicate: true when set', t => {
     const feed:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -336,10 +336,10 @@ test('isPublishFailed: true when publish_error is set', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.ok(isPublishFailed(feed), 'returns true when publish_error is set')
+    t.ok(isPublishFailed(feed), 'publish-error true')
 })
 
-test('isPublishFailed: false when publish_error is null/undefined', t => {
+test('publish-error predicate: false when null/undefined', t => {
     const feed1:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -353,7 +353,11 @@ test('isPublishFailed: false when publish_error is null/undefined', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.equal(isPublishFailed(feed1), false, 'returns false when publish_error=null')
+    t.equal(
+        isPublishFailed(feed1),
+        false,
+        'returns false when publish_error=null'
+    )
 
     const feed2:Feed = {
         id: 2,
@@ -367,28 +371,35 @@ test('isPublishFailed: false when publish_error is null/undefined', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.equal(isPublishFailed(feed2), false, 'returns false when publish_error undefined')
+    t.equal(
+        isPublishFailed(feed2),
+        false,
+        'returns false when publish_error undefined'
+    )
 })
 
-test('isFetchFailed + isPublishFailed: both true for feed with all errors', t => {
-    const feed:Feed = {
-        id: 1,
-        url: 'http://example.com/feed',
-        title: 'Example Feed',
-        description: null,
-        site_url: null,
-        last_fetched: null,
-        last_error: 'Fetch failed',
-        last_status: 500,
-        publish_error: 'Publish failed',
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
+test(
+    'both predicates: true for feed with all errors',
+    t => {
+        const feed:Feed = {
+            id: 1,
+            url: 'http://example.com/feed',
+            title: 'Example Feed',
+            description: null,
+            site_url: null,
+            last_fetched: null,
+            last_error: 'Fetch error',
+            last_status: 500,
+            publish_error: 'Publish error',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z'
+        }
+        t.ok(isFetchFailed(feed), 'both true')
+        t.ok(isPublishFailed(feed), 'both true')
     }
-    t.ok(isFetchFailed(feed), 'isFetchFailed is true')
-    t.ok(isPublishFailed(feed), 'isPublishFailed is true')
-})
+)
 
-test('isFetchFailed + isPublishFailed: both false for clean feed', t => {
+test('both predicates: false for clean feed', t => {
     const feed:Feed = {
         id: 1,
         url: 'http://example.com/feed',
@@ -402,6 +413,6 @@ test('isFetchFailed + isPublishFailed: both false for clean feed', t => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
     }
-    t.equal(isFetchFailed(feed), false, 'isFetchFailed is false')
-    t.equal(isPublishFailed(feed), false, 'isPublishFailed is false')
+    t.equal(isFetchFailed(feed), false, 'both false')
+    t.equal(isPublishFailed(feed), false, 'both false')
 })
