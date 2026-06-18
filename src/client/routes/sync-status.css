@@ -34,4 +34,151 @@
         border-color: var(--color-error);
         background-color: var(--color-surface);
     }
+
+    & .blocked-changes {
+        & h2 {
+            margin: 0 0 1rem 0;
+            font-size: 1.25rem;
+            color: var(--color-text);
+        }
+
+        & .blocked-changes-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        & .blocked-change {
+            border: 1px solid var(--color-warning);
+            border-radius: 4px;
+            padding: 0.75rem 1rem;
+            background-color: var(--color-surface);
+
+            & .op-description {
+                font-size: 1rem;
+                color: var(--color-text);
+                font-weight: 500;
+                margin: 0 0 0.5rem 0;
+            }
+
+            & .op-details {
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+                font-size: 0.9rem;
+                color: var(--color-text-secondary);
+                margin: 0 0 0.75rem 0;
+
+                & .attempts {
+                    display: flex;
+                    gap: 0.25rem;
+
+                    & .label {
+                        font-weight: 500;
+                    }
+                }
+
+                & .last-error {
+                    display: flex;
+                    gap: 0.25rem;
+
+                    & .label {
+                        font-weight: 500;
+                    }
+
+                    & .error-text {
+                        word-break: break-word;
+                    }
+                }
+            }
+
+            & .actions {
+                display: flex;
+                gap: 0.75rem;
+
+                & button {
+                    padding: 0.5rem 1rem;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    background-color: var(--color-border);
+                    color: var(--color-text);
+
+                    &:hover {
+                        background-color: var(--color-border);
+                        opacity: 0.8;
+                    }
+
+                    &:focus {
+                        outline: 2px solid var(--color-primary);
+                        outline-offset: 2px;
+                    }
+                }
+
+                & .discard-btn {
+                    background-color: var(--color-error);
+                    color: var(--color-surface);
+
+                    &:hover {
+                        opacity: 0.8;
+                    }
+                }
+            }
+
+            & .confirm-prompt {
+                margin: 0.75rem 0 0 0;
+                padding: 0.75rem;
+                background-color: var(--color-border);
+                border-radius: 4px;
+                font-size: 0.9rem;
+                color: var(--color-text);
+
+                & .prompt-message {
+                    margin: 0 0 0.5rem 0;
+                }
+
+                & .confirm-actions {
+                    display: flex;
+                    gap: 0.5rem;
+
+                    & button {
+                        padding: 0.5rem 1rem;
+                        border: none;
+                        border-radius: 4px;
+                        font-size: 0.9rem;
+                        cursor: pointer;
+
+                        &:focus {
+                            outline: 2px solid var(--color-primary);
+                            outline-offset: 2px;
+                        }
+                    }
+
+                    & .cancel-btn {
+                        background-color: var(--color-surface);
+                        color: var(--color-text);
+                        border: 1px solid var(--color-border);
+
+                        &:hover {
+                            background-color: var(--color-text);
+                            color: var(--color-surface);
+                        }
+                    }
+
+                    & .commit-btn {
+                        background-color: var(--color-error);
+                        color: var(--color-surface);
+
+                        &:hover {
+                            opacity: 0.8;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -256,8 +256,136 @@ test('sync-status-detail.AC7.2: current-error section omitted ' +
         render(html`<${SyncStatusRoute} state=${state} />`, root)
         await nextTask()
 
-        const currentErrorSection = document.querySelector('.current-error')
-        t.equal(currentErrorSection, null, 'current-error section not rendered')
+        const currentErrorSection = document.querySelector(
+            '.current-error'
+        )
+        t.equal(currentErrorSection, null, 'current-error section ' +
+            'not rendered')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC2.1: deadLetters renders as ' +
+    'blocked-change rows', async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+        const dl1:DeadLetterRow = {
+            id: 1,
+            op: 'add_feed',
+            target_id: 1,
+            payload: JSON.stringify({url: 'https://example.com/feed'}),
+            client_op_id: 'test-op-1',
+            client_updated_at: '2026-01-01T00:00:00Z',
+            attempts: 2,
+            last_error: 'timeout-sentinel'
+        }
+        const dl2:DeadLetterRow = {
+            id: 2,
+            op: 'delete_feed',
+            target_id: 1,
+            payload: '{}',
+            client_op_id: 'test-op-2',
+            client_updated_at: '2026-01-01T00:00:01Z',
+            attempts: 1,
+            last_error: null
+        }
+
+        batch(() => {
+            deadLetters.value = [dl1, dl2]
+            syncStatus.value = 'idle'
+            syncError.value = null
+        })
+
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await waitFor(
+            () => document.querySelectorAll(
+                '.blocked-change'
+            ).length === 2,
+            50
+        )
+
+        const rows = document.querySelectorAll('.blocked-change')
+        t.equal(rows.length, 2, 'exactly 2 blocked-change rows ' +
+            'rendered')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC2.2: blocked-change row shows ' +
+    'description, attempts, and last_error', async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+        const dl:DeadLetterRow = {
+            id: 42,
+            op: 'add_feed',
+            target_id: 1,
+            payload: JSON.stringify({
+                url: 'https://example.com/feed1'
+            }),
+            client_op_id: 'test-op-42',
+            client_updated_at: '2026-01-01T00:00:00Z',
+            attempts: 3,
+            last_error: 'connection-broken-sentinel'
+        }
+
+        batch(() => {
+            deadLetters.value = [dl]
+            syncStatus.value = 'idle'
+            syncError.value = null
+        })
+
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await waitFor(
+            () => document.querySelector('.blocked-change') !== null,
+            50
+        )
+
+        const row = document.querySelector('.blocked-change')
+        t.ok(row, 'blocked-change row rendered')
+
+        const descEl = row?.querySelector('.op-description')
+        t.ok(descEl, 'op-description element present')
+        t.ok(descEl?.textContent?.includes('Add feed'),
+            'description contains op type')
+
+        const attemptsEl = row?.querySelector('.attempts .value')
+        t.equal(attemptsEl?.textContent?.trim(), '3',
+            'attempts value shows 3')
+
+        const errorEl = row?.querySelector('.last-error .error-text')
+        t.equal(errorEl?.textContent?.trim(),
+            'connection-broken-sentinel',
+            'last_error text present')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC2.3: blocked-changes section ' +
+    'omitted when deadLetters empty', async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+
+        batch(() => {
+            deadLetters.value = []
+            syncStatus.value = 'idle'
+            syncError.value = null
+        })
+
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await nextTask()
+
+        const section = document.querySelector('.blocked-changes')
+        t.equal(section, null, 'blocked-changes section not ' +
+            'rendered when empty')
     } finally {
         resetSignals()
         cleanup()

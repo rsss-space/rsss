@@ -8,6 +8,7 @@ import {
     failedFeeds
 } from './sync-status-state.js'
 import { syncStatus, syncError, syncDeadLetters } from '../db/sync-status.js'
+import { describeOp } from './sync-status-format.js'
 import './sync-status.css'
 
 export const SyncStatusRoute:FunctionComponent<{
@@ -52,6 +53,59 @@ export const SyncStatusRoute:FunctionComponent<{
             ${!hasProblems && html`
                 <div class="empty-state">
                     Everything is syncing smoothly.
+                </div>
+            `}
+
+            ${dl.length > 0 && html`
+                <div class="sync-status-section blocked-changes">
+                    <h2 tabindex="-1">Blocked local changes</h2>
+                    <ul class="blocked-changes-list">
+                        ${dl.map(row => html`
+                            <li
+                                class="blocked-change"
+                                key=${row.client_op_id}
+                            >
+                                <p class="op-description">
+                                    ${describeOp(row)}
+                                </p>
+                                <div class="op-details">
+                                    <div class="attempts">
+                                        <span class="label">
+                                            Attempts:
+                                        </span>
+                                        <span class="value">
+                                            ${row.attempts}
+                                        </span>
+                                    </div>
+                                    <div class="last-error">
+                                        <span class="label">
+                                            Error:
+                                        </span>
+                                        <span
+                                            class="error-text"
+                                        >
+                                            ${row.last_error ??
+                                              'unknown'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="actions">
+                                    <button
+                                        class="retry-btn"
+                                        type="button"
+                                    >
+                                        Retry
+                                    </button>
+                                    <button
+                                        class="discard-btn"
+                                        type="button"
+                                    >
+                                        Discard
+                                    </button>
+                                </div>
+                            </li>
+                        `)}
+                    </ul>
                 </div>
             `}
         </div>
