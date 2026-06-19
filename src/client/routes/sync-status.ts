@@ -15,7 +15,9 @@ import {
     syncError,
     syncDeadLetters
 } from '../db/sync-status.js'
-import { describeOp } from './sync-status-format.js'
+import { describeOp, isFetchFailed, isPublishFailed } from './sync-status-format.js'
+import { getBootstrappedDb, getLocalDb } from '../db/index.js'
+import { runSync } from '../db/sync.js'
 import './sync-status.css'
 
 export const SyncStatusRoute:FunctionComponent<{
@@ -108,6 +110,48 @@ export const SyncStatusRoute:FunctionComponent<{
         })
     }
 
+    // Feed actions
+    const handleRetryFetch = async (feed:typeof ff[0]) => {
+        await state.refreshFeed(state, String(feed.id))
+        // Follow-up sync + reload
+        const did = state.user.value?.did
+        const db = did ? (getBootstrappedDb() ?? getLocalDb(did)) : null
+        if (db) {
+            await runSync(db)
+            await loadSyncStatus(state)
+        }
+        announcement.value = 'Feed retry in progress.'
+    }
+
+    const handleRetryShare = async (feed:typeof ff[0]) => {
+        await state.toggleFeedPublished(state, feed.id, true)
+        // Follow-up sync + reload
+        const did = state.user.value?.did
+        const db = did ? (getBootstrappedDb() ?? getLocalDb(did)) : null
+        if (db) {
+            await runSync(db)
+            await loadSyncStatus(state)
+        }
+        announcement.value = 'Share retry in progress.'
+    }
+
+    const handleUnsubscribeClick = (feedId:number) => {
+        confirmingKey.value = 'feed:' + feedId
+    }
+
+    const handleConfirmUnsubscribe = async (feed:typeof ff[0]) => {
+        await state.deleteFeed(state, feed.id)
+        await loadSyncStatus(state)
+        batch(() => {
+            confirmingKey.value = null
+            announcement.value = 'Feed removed.'
+        })
+    }
+
+    const offline = syncStatus.value === 'offline'
+    const fetchFeeds = ff.filter(isFetchFailed)
+    const publishFeeds = ff.filter(isPublishFailed)
+
     return html`
         <div class="route sync-status">
             <h1
@@ -134,6 +178,185 @@ export const SyncStatusRoute:FunctionComponent<{
             ${!hasProblems && html`
                 <div class="empty-state">
                     Everything is syncing smoothly.
+                </div>
+            `}
+
+            ${fetchFeeds.length > 0 && html`
+                <div class="sync-status-section feeds-fetch-failed">
+                    <h2 tabindex="-1">Feeds that couldn't fetch</h2>
+                    <ul class="feeds-list">
+                        ${fetchFeeds.map((feed) => {
+                            return html`
+                                <li
+                                    class="failed-feed"
+                                    key=${feed.id}
+                                >
+                                    <p class="feed-name">
+                                        ${feed.title || feed.url}
+                                    </p>
+                                    <p class="feed-error">
+                                        ${feed.last_error ||
+                                          (feed.last_status ?
+                                            `HTTP ${feed.last_status}` :
+                                            'Unknown error')}
+                                    </p>
+                                    <div class="actions">
+                                        <button
+                                            type="button"
+                                            disabled=${offline}
+                                            onClick=${() => {
+                                                handleRetryFetch(feed)
+                                            }}
+                                        >
+                                            Retry fetch
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick=${() => {
+                                                handleUnsubscribeClick(
+                                                    feed.id
+                                                )
+                                            }}
+                                        >
+                                            Unsubscribe
+                                        </button>
+                                    </div>
+                                    ${confirmingKey.value ===
+                                      'feed:' + feed.id && html`
+                                        <div
+                                            class="confirm-prompt"
+                                        >
+                                            <p
+                                                class="prompt-message"
+                                            >
+                                                Are you sure? This
+                                                cannot be undone.
+                                            </p>
+                                            <div
+                                                class="confirm-actions"
+                                            >
+                                                <button
+                                                    class="cancel-btn"
+                                                    type="button"
+                                                    autoFocus
+                                                    onClick=${() => {
+                                                        confirmingKey.value =
+                                                            null
+                                                    }}
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    class="commit-btn"
+                                                    type="button"
+                                                    onClick=${() => {
+                                                        handleConfirmUnsubscribe(feed)
+                                                    }}
+                                                >
+                                                    Unsubscribe
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `}
+                                </li>
+                            `
+                        })}
+                    </ul>
+                </div>
+            `}
+
+            ${publishFeeds.length > 0 && html`
+                <div class="sync-status-section feeds-publish-failed">
+                    <h2 tabindex="-1">
+                        Feeds that couldn't share to Bluesky
+                    </h2>
+                    <ul class="feeds-list">
+                        ${publishFeeds.map((feed) => {
+                            const isReauth =
+                                feed.publish_error === 'reauth_required'
+                            return html`
+                                <li
+                                    class="failed-feed"
+                                    key=${feed.id}
+                                >
+                                    <p class="feed-name">
+                                        ${feed.title || feed.url}
+                                    </p>
+                                    <p class="feed-error">
+                                        ${feed.publish_error}
+                                    </p>
+                                    <div class="actions">
+                                        ${isReauth && html`
+                                            <a
+                                                class="reauth-link"
+                                                href="/login"
+                                            >
+                                                Sign in again
+                                            </a>
+                                        `}
+                                        ${!isReauth && html`
+                                            <button
+                                                type="button"
+                                                disabled=${offline}
+                                                onClick=${() => {
+                                                    handleRetryShare(feed)
+                                                }}
+                                            >
+                                                Retry share
+                                            </button>
+                                        `}
+                                        <button
+                                            type="button"
+                                            onClick=${() => {
+                                                handleUnsubscribeClick(
+                                                    feed.id
+                                                )
+                                            }}
+                                        >
+                                            Unsubscribe
+                                        </button>
+                                    </div>
+                                    ${confirmingKey.value ===
+                                      'feed:' + feed.id && html`
+                                        <div
+                                            class="confirm-prompt"
+                                        >
+                                            <p
+                                                class="prompt-message"
+                                            >
+                                                Are you sure? This
+                                                cannot be undone.
+                                            </p>
+                                            <div
+                                                class="confirm-actions"
+                                            >
+                                                <button
+                                                    class="cancel-btn"
+                                                    type="button"
+                                                    autoFocus
+                                                    onClick=${() => {
+                                                        confirmingKey.value =
+                                                            null
+                                                    }}
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    class="commit-btn"
+                                                    type="button"
+                                                    onClick=${() => {
+                                                        handleConfirmUnsubscribe(feed)
+                                                    }}
+                                                >
+                                                    Unsubscribe
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `}
+                                </li>
+                            `
+                        })}
+                    </ul>
                 </div>
             `}
 
