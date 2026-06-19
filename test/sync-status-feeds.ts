@@ -17,6 +17,7 @@ import {
 } from '../src/client/db/sync-status.js'
 import type { AppState } from '../src/client/state.js'
 import type { Feed } from '../src/client/db/types.js'
+import type { DeadLetterRow } from '../src/client/db/push-sync.js'
 
 function nextTask ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
@@ -912,6 +913,178 @@ async t => {
             'string',
             'argument is string type'
         )
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC3.5: empty publish-failed ' +
+    'section omitted when no feeds have publish_error',
+async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+        const feed:Feed = {
+            id: 17,
+            url: 'https://fetchonly.com/feed',
+            title: 'Fetch-only error',
+            last_error: 'connection-issue',
+            last_status: null,
+            publish_error: null
+        } as Feed
+
+        // Seed a fetch-only failed feed
+        batch(() => {
+            failedFeeds.value = [feed]
+            syncDeadLetters.value = 0
+            syncStatus.value = 'idle'
+            syncError.value = null
+        })
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await waitFor(() => failedFeeds.value.length === 0, 50)
+        batch(() => {
+            failedFeeds.value = [feed]
+        })
+        await waitFor(
+            () => document.querySelectorAll(
+                '.sync-status-section.feeds-fetch-failed'
+            ).length === 1,
+            50
+        )
+
+        const fetchSection = document.querySelector(
+            '.sync-status-section.feeds-fetch-failed'
+        )
+        const publishSection = document.querySelector(
+            '.sync-status-section.feeds-publish-failed'
+        )
+
+        t.ok(fetchSection, 'fetch-failed section rendered')
+        t.equal(publishSection, null,
+            'publish-failed section omitted when empty')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC11.1 tighten: both ' +
+    'retry-fetch and retry-share buttons disabled offline',
+async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+        const fetchFeed:Feed = {
+            id: 18,
+            url: 'https://fetchfail.com/feed',
+            title: 'Fetch fail',
+            last_error: 'connection-lost',
+            last_status: null,
+            publish_error: null
+        } as Feed
+        const publishFeed:Feed = {
+            id: 19,
+            url: 'https://pubfail.com/feed',
+            title: 'Publish fail',
+            last_error: null,
+            last_status: 200,
+            publish_error: 'pds_write_failed'
+        } as Feed
+
+        // Seed both fetch-failed and publish-failed feeds
+        batch(() => {
+            failedFeeds.value = [fetchFeed, publishFeed]
+            syncDeadLetters.value = 0
+            syncStatus.value = 'idle'
+            syncError.value = null
+        })
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await waitFor(() => failedFeeds.value.length === 0, 50)
+        batch(() => {
+            failedFeeds.value = [fetchFeed, publishFeed]
+            syncStatus.value = 'offline'
+        })
+        await waitFor(
+            () => document.querySelectorAll('.failed-feed').length === 2,
+            50
+        )
+
+        const fetchSection = document.querySelector(
+            '.sync-status-section.feeds-fetch-failed'
+        )
+        const publishSection = document.querySelector(
+            '.sync-status-section.feeds-publish-failed'
+        )
+
+        const fetchRetryBtn = Array.from(
+            fetchSection?.querySelectorAll('button') || []
+        ).find(btn => {
+            const text = btn.textContent || ''
+            return text.includes('Retry') &&
+                    !text.includes('Retry share')
+        }) as HTMLButtonElement | undefined
+
+        const publishRetryBtn = Array.from(
+            publishSection?.querySelectorAll('button') || []
+        ).find(btn => {
+            const text = btn.textContent || ''
+            return text.includes('Retry share')
+        }) as HTMLButtonElement | undefined
+
+        t.equal(fetchRetryBtn?.disabled, true,
+            'fetch retry button disabled offline')
+        t.equal(publishRetryBtn?.disabled, true,
+            'publish retry button disabled offline')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('sync-status-detail.AC11.2: dead-letter ' +
+    'discard button remains enabled when offline',
+async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+
+        const deadLetterRow:DeadLetterRow = {
+            id: 100,
+            op: 'add_feed',
+            target_id: 1,
+            payload: JSON.stringify({
+                url: 'https://example.com/test'
+            }),
+            client_op_id: 'test-dl-100',
+            client_updated_at: '2026-01-01T00:00:00Z',
+            attempts: 1,
+            last_error: null
+        }
+
+        batch(() => {
+            deadLetters.value = [deadLetterRow]
+            syncDeadLetters.value = 1
+            syncStatus.value = 'offline'
+            syncError.value = null
+        })
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await waitFor(() => deadLetters.value.length === 0, 50)
+        batch(() => {
+            deadLetters.value = [deadLetterRow]
+        })
+        await waitFor(
+            () => document.querySelector('.blocked-change') !== null,
+            50
+        )
+
+        const discardBtn = document.querySelector(
+            '.blocked-change .discard-btn'
+        ) as HTMLButtonElement | null
+
+        t.ok(discardBtn, 'discard button rendered')
+        t.equal(discardBtn?.disabled, false,
+            'discard button not disabled offline')
     } finally {
         resetSignals()
         cleanup()
