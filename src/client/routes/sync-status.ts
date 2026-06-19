@@ -15,7 +15,11 @@ import {
     syncError,
     syncDeadLetters
 } from '../db/sync-status.js'
-import { describeOp, isFetchFailed, isPublishFailed } from './sync-status-format.js'
+import {
+    describeOp,
+    isFetchFailed,
+    isPublishFailed
+} from './sync-status-format.js'
 import { getBootstrappedDb, getLocalDb } from '../db/index.js'
 import { runSync } from '../db/sync.js'
 import './sync-status.css'
@@ -40,10 +44,16 @@ export const SyncStatusRoute:FunctionComponent<{
     }, [syncDeadLetters.value])
 
     useEffect(() => {
-        // Focus restoration: only fire after action (when
-        // pendingFocusTarget is set), not on initial mount.
-        // Move to next row's first action button, or the
-        // section heading if list is now empty.
+        // Focus restoration: only fire after an action removes a
+        // row (when pendingFocusTarget is set), not on initial
+        // mount. Fires on either list shrinking (dead-letters or
+        // failed feeds). Dead-letter actions target the next row's
+        // action button or the page heading; feed actions target
+        // the page heading (a simplification of the next-row rule,
+        // since the two failed-feed sections + dual membership make
+        // precise next-row targeting impractical and no AC requires
+        // it — the goal is only to not strand focus on a removed
+        // element).
         if (!pendingFocusTarget.current) {
             return
         }
@@ -54,7 +64,7 @@ export const SyncStatusRoute:FunctionComponent<{
         if (target && target.ownerDocument.contains(target)) {
             target.focus()
         }
-    }, [deadLetters.value.length])
+    }, [deadLetters.value.length, failedFeeds.value.length])
 
     if (!state.isAuthenticated.value) return null
 
@@ -110,8 +120,13 @@ export const SyncStatusRoute:FunctionComponent<{
         })
     }
 
-    // Feed actions
+    // Feed actions. Set the focus target before the await so the
+    // post-removal re-render (driven by failedFeeds shrinking)
+    // moves focus to the page heading instead of stranding it on
+    // the removed row's button. If the row stays (e.g. a failed
+    // retry), failedFeeds is unchanged and focus is left in place.
     const handleRetryFetch = async (feed:typeof ff[0]) => {
+        pendingFocusTarget.current = pageHeadingRef.current
         await state.refreshFeed(state, String(feed.id))
         // Follow-up sync + reload
         const did = state.user.value?.did
@@ -124,6 +139,7 @@ export const SyncStatusRoute:FunctionComponent<{
     }
 
     const handleRetryShare = async (feed:typeof ff[0]) => {
+        pendingFocusTarget.current = pageHeadingRef.current
         await state.toggleFeedPublished(state, feed.id, true)
         // Follow-up sync + reload
         const did = state.user.value?.did
@@ -139,7 +155,8 @@ export const SyncStatusRoute:FunctionComponent<{
         confirmingKey.value = 'feed:' + feedId
     }
 
-    const handleConfirmUnsubscribe = async (feed:typeof ff[0]) => {
+    const handleUnsubCommit = async (feed:typeof ff[0]) => {
+        pendingFocusTarget.current = pageHeadingRef.current
         await state.deleteFeed(state, feed.id)
         await loadSyncStatus(state)
         batch(() => {
@@ -250,7 +267,7 @@ export const SyncStatusRoute:FunctionComponent<{
                                                     class="commit-btn"
                                                     type="button"
                                                     onClick=${() => {
-                                                        handleConfirmUnsubscribe(feed)
+                                                        handleUnsubCommit(feed)
                                                     }}
                                                 >
                                                     Unsubscribe
@@ -345,7 +362,7 @@ export const SyncStatusRoute:FunctionComponent<{
                                                     class="commit-btn"
                                                     type="button"
                                                     onClick=${() => {
-                                                        handleConfirmUnsubscribe(feed)
+                                                        handleUnsubCommit(feed)
                                                     }}
                                                 >
                                                     Unsubscribe
