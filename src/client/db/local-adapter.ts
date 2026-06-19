@@ -89,6 +89,17 @@ async function upsertUpdateItemOutbox (
     })
 }
 
+export async function listFailedFeeds (db:Sqlite3Db):Promise<Feed[]> {
+    return queryDb<Feed>(
+        db,
+        'SELECT * FROM feeds ' +
+        'WHERE last_error IS NOT NULL ' +
+        'OR last_status >= 400 ' +
+        'OR publish_error IS NOT NULL ' +
+        'ORDER BY title ASC'
+    )
+}
+
 export function createLocalAdapter (db:Sqlite3Db):DbAdapter {
     return {
         async getFeeds ():Promise<FeedsResponse> {

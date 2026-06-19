@@ -70,7 +70,7 @@ TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Correctness Conventions
 
-Last verified: 2026-06-15
+Last verified: 2026-06-19
 
 These are project-wide invariants confirmed by the correctness audit. They
 are durable contracts, not implementation notes — keep them true.
@@ -120,6 +120,20 @@ SQL bind.
   failures.** Transient (5xx/network) failures now count toward the cap, not
   just permanent ones; an op that keeps failing transiently is dead-lettered
   rather than retried forever. (Constant in `src/client/db/push-sync.ts`.)
+- **Dead-letter requeue is atomic and resets the attempt budget.**
+  `requeueDeadLetter(db, id)` (`src/client/db/push-sync.ts`) moves a row from
+  `dead_letter_outbox` back to `outbox` inside a single
+  `BEGIN`/`COMMIT`/`ROLLBACK` transaction with `attempts` reset to `0` and
+  `last_error` set to `NULL`; it returns `false` (no-op) for a missing id and
+  rolls back atomically on any error, so a row never exists in both tables or
+  neither. `removeDeadLetter(db, id)` is the discard counterpart (plain
+  delete). Retry kicks push-sync; discard does not (must work offline).
+- **`refreshDeadLetterCounts` must not clobber a transient `syncError`.** After
+  a retry/discard, `State` (`src/client/state.ts`) refreshes `syncPending` /
+  `syncDeadLetters` but only downgrades `syncStatus` from `warning` to
+  `idle`/`offline` when the dead-letter count reaches `0`; it never touches an
+  `error`/`syncing` status, so a genuine in-flight sync error survives a
+  dead-letter cleanup.
 - **Push-sync 409 reconcile is cache-policy-aware.** When the server reports a
   conflict it restores items and writes the sync-status columns; body columns
   are only overwritten when the per-feed cache policy says to keep content

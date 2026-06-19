@@ -15,6 +15,7 @@ import {
     getFeedCachePolicy,
     isContentCachedForPolicy
 } from './feed-cache-policy.js'
+import { csrfToken } from '../csrf.js'
 
 export const DEAD_LETTER_ATTEMPT_LIMIT = 10
 
@@ -32,7 +33,25 @@ export class PushSyncBillingError extends Error {
     }
 }
 
+export class PushSyncForbiddenError extends Error {
+    constructor () {
+        super('pushSync: 403 forbidden — halting drain')
+        this.name = 'PushSyncForbiddenError'
+    }
+}
+
 interface OutboxRow {
+    id:number
+    op:string
+    target_id:number|null
+    payload:string
+    client_op_id:string
+    client_updated_at:string
+    attempts:number
+    last_error:string|null
+}
+
+export interface DeadLetterRow {
     id:number
     op:string
     target_id:number|null
@@ -64,6 +83,17 @@ export async function getDeadLetterOutboxCount (
         'SELECT COUNT(*) AS n FROM dead_letter_outbox'
     )
     return rows[0]?.n ?? 0
+}
+
+export async function listDeadLetterOutbox (
+    db:Sqlite3Db
+):Promise<DeadLetterRow[]> {
+    return queryDb<DeadLetterRow>(
+        db,
+        'SELECT id, op, target_id, payload, client_op_id, ' +
+        'client_updated_at, attempts, last_error ' +
+        'FROM dead_letter_outbox ORDER BY id ASC'
+    )
 }
 
 function getOutboxRows (db:Sqlite3Db):Promise<OutboxRow[]> {
@@ -118,6 +148,56 @@ async function moveOutboxRowToDeadLetters (
         await execDb(db, 'ROLLBACK')
         throw err
     }
+}
+
+export async function requeueDeadLetter (
+    db:Sqlite3Db,
+    id:number
+):Promise<boolean> {
+    const rows = await queryDb<DeadLetterRow>(
+        db,
+        'SELECT * FROM dead_letter_outbox WHERE id = ?',
+        [id]
+    )
+    const row = rows[0] ?? null
+    if (!row) return false
+
+    await execDb(db, 'BEGIN')
+    try {
+        await execDb(db, {
+            sql: `INSERT INTO outbox
+                (op, target_id, payload, client_op_id,
+                 client_updated_at, attempts, last_error)
+                VALUES (?, ?, ?, ?, ?, 0, NULL)`,
+            bind: [
+                row.op,
+                row.target_id,
+                row.payload,
+                row.client_op_id,
+                row.client_updated_at
+            ]
+        })
+        await execDb(db, {
+            sql: 'DELETE FROM dead_letter_outbox WHERE id = ?',
+            bind: [id]
+        })
+        await execDb(db, 'COMMIT')
+    } catch (err) {
+        await execDb(db, 'ROLLBACK')
+        throw err
+    }
+
+    return true
+}
+
+export async function removeDeadLetter (
+    db:Sqlite3Db,
+    id:number
+):Promise<void> {
+    await execDb(db, {
+        sql: 'DELETE FROM dead_letter_outbox WHERE id = ?',
+        bind: [id]
+    })
 }
 
 async function recordTransientFailure (
@@ -492,9 +572,18 @@ export async function pushSync (
         }
 
         try {
+            const headers:Record<string, string> = {
+                'Content-Type': 'application/json'
+            }
+            // State-changing requests must echo the CSRF cookie back as
+            // a header or the server rejects them with 403. The ky api
+            // client and remote adapter do the same via `csrfToken()`.
+            const token = csrfToken()
+            if (token) headers['X-CSRF-Token'] = token
+
             const res = await fetchFn(req.url, {
                 method: req.method,
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(req.body)
             })
 
@@ -530,6 +619,13 @@ export async function pushSync (
 
             if (res.status === 402) {
                 throw new PushSyncBillingError()
+            }
+
+            // A 403 is a recoverable auth/CSRF/origin rejection, not a
+            // permanently-bad op. Halt the drain (leaving the row in the
+            // outbox to retry) instead of dead-lettering it on attempt 1.
+            if (res.status === 403) {
+                throw new PushSyncForbiddenError()
             }
 
             if (res.status === 409) {
@@ -580,6 +676,7 @@ export async function pushSync (
         } catch (err) {
             if (err instanceof PushSyncAuthError) throw err
             if (err instanceof PushSyncBillingError) throw err
+            if (err instanceof PushSyncForbiddenError) throw err
             const errMsg = err instanceof Error ? err.message : String(err)
             await recordTransientFailure(db, row, errMsg)
             if (trackStatus) setSyncError(errMsg)

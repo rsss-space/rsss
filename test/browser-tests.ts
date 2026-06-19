@@ -57,6 +57,7 @@ import './initial-feed.js'
 import './payment-method-modal.js'
 import './article-fetch-job.js'
 import './article-prefetch-eligible.js'
+import './sync-status-format.js'
 import './full-content-images.js'
 import './blur-hash-swap.js'
 import './atproto-lexicons.js'
@@ -66,6 +67,10 @@ import './feed-share-toggle.js'
 import './feed-share-control.js'
 import './feed-nav.js'
 import './publish-consent-modal.js'
+import './retry-discard-dead-letter.js'
+import './sync-status-route.js'
+import './sync-status-feeds.js'
+import './sync-status-header.js'
 
 test('all done', () => {
     if (window) {

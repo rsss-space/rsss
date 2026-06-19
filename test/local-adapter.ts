@@ -815,3 +815,181 @@ test('local getItems hides items past the cursor on synced feeds',
         }
     }
 )
+
+// ── listFailedFeeds
+
+test('lists feeds with errors (empty when none)', async (t) => {
+    const db = await openLocalDb('did:test:list-failed-empty')
+    try {
+        db.exec(`
+            INSERT INTO feeds
+                (url, title, created_at, updated_at)
+            VALUES
+                ('https://example.com/clean1', 'Clean Feed 1',
+                 '2024-01-01 00:00:00', '2024-01-01 00:00:00'),
+                ('https://example.com/clean2', 'Clean Feed 2',
+                 '2024-01-02 00:00:00', '2024-01-02 00:00:00');
+        `)
+
+        const { listFailedFeeds } = await import(
+            '../src/client/db/local-adapter.js'
+        )
+        const rows = await listFailedFeeds(db)
+        t.equal(rows.length, 0, 'empty array when no errors')
+    } finally {
+        db.close()
+    }
+})
+
+test(
+    'lists feed when last_error is set',
+    async (t) => {
+        const db = await openLocalDb('did:test:list-failed-last-error')
+        try {
+            db.exec(`
+                INSERT INTO feeds
+                    (url, title, last_error, created_at, updated_at)
+                VALUES
+                    ('https://example.com/fail1', 'Errored Feed',
+                     'Connection timeout',
+                     '2024-01-01 00:00:00', '2024-01-01 00:00:00');
+            `)
+
+            const { listFailedFeeds } = await import(
+                '../src/client/db/local-adapter.js'
+            )
+            const rows = await listFailedFeeds(db)
+
+            t.equal(rows.length, 1, 'returns 1 feed')
+            t.equal(rows[0]?.title, 'Errored Feed')
+            t.equal(rows[0]?.last_error, 'Connection timeout')
+        } finally {
+            db.close()
+        }
+    }
+)
+
+test('lists feed when status >= 400', async (t) => {
+    const db = await openLocalDb('did:test:list-failed-status')
+    try {
+        db.exec(`
+            INSERT INTO feeds
+                (url, title, last_status, created_at, updated_at)
+            VALUES
+                ('https://example.com/500', 'HTTP 500 Feed',
+                 500,
+                 '2024-01-01 00:00:00', '2024-01-01 00:00:00'),
+                ('https://example.com/404', 'HTTP 404 Feed',
+                 404,
+                 '2024-01-02 00:00:00', '2024-01-02 00:00:00'),
+                ('https://example.com/200', 'HTTP 200 Feed',
+                 200,
+                 '2024-01-03 00:00:00', '2024-01-03 00:00:00');
+        `)
+
+        const { listFailedFeeds } = await import(
+            '../src/client/db/local-adapter.js'
+        )
+        const rows = await listFailedFeeds(db)
+
+        t.equal(rows.length, 2, 'returns 2 feeds with http errors')
+        t.equal(rows[0]?.title, 'HTTP 404 Feed')
+        t.equal(rows[1]?.title, 'HTTP 500 Feed')
+    } finally {
+        db.close()
+    }
+})
+
+test('lists feed when publish_error is set', async (t) => {
+    const db = await openLocalDb('did:test:list-failed-publish')
+    try {
+        db.exec(`
+            INSERT INTO feeds
+                (url, title, publish_error, created_at, updated_at)
+            VALUES
+                ('https://example.com/pub-fail', 'Pub Errored Feed',
+                 'Bluesky API error',
+                 '2024-01-01 00:00:00', '2024-01-01 00:00:00');
+        `)
+
+        const { listFailedFeeds } = await import(
+            '../src/client/db/local-adapter.js'
+        )
+        const rows = await listFailedFeeds(db)
+
+        t.equal(rows.length, 1, 'returns 1 feed')
+        t.equal(rows[0]?.title, 'Pub Errored Feed')
+        t.equal(rows[0]?.publish_error, 'Bluesky API error')
+    } finally {
+        db.close()
+    }
+})
+
+test(
+    'lists feed with both fetch and publish errors',
+    async (t) => {
+        const db = await openLocalDb('did:test:list-failed-both')
+        try {
+            db.exec(`
+                INSERT INTO feeds
+                    (url, title, last_error, publish_error,
+                     created_at, updated_at)
+                VALUES
+                    ('https://example.com/both', 'Both Error Feed',
+                     'Fetch error', 'Publish error',
+                     '2024-01-01 00:00:00', '2024-01-01 00:00:00');
+            `)
+
+            const { listFailedFeeds } = await import(
+                '../src/client/db/local-adapter.js'
+            )
+            const rows = await listFailedFeeds(db)
+
+            t.equal(rows.length, 1, 'returns 1 feed with both errors')
+            t.equal(rows[0]?.title, 'Both Error Feed')
+            t.equal(rows[0]?.last_error, 'Fetch error')
+            t.equal(rows[0]?.publish_error, 'Publish error')
+        } finally {
+            db.close()
+        }
+    }
+)
+
+test(
+    'excludes clean feeds regardless of status',
+    async (t) => {
+        const db = await openLocalDb('did:test:list-failed-mixed')
+        try {
+            db.exec(`
+                INSERT INTO feeds
+                    (url, title, last_error, last_status, publish_error,
+                     created_at, updated_at)
+                VALUES
+                    ('https://example.com/clean', 'Clean Feed',
+                     NULL, 200, NULL,
+                     '2024-01-01 00:00:00', '2024-01-01 00:00:00'),
+                    ('https://example.com/fetch-error', 'Fetch Error Feed',
+                     'DNS error', 200, NULL,
+                     '2024-01-02 00:00:00', '2024-01-02 00:00:00'),
+                    ('https://example.com/status-error', 'Status Error Feed',
+                     NULL, 503, NULL,
+                     '2024-01-03 00:00:00', '2024-01-03 00:00:00');
+            `)
+
+            const { listFailedFeeds } = await import(
+                '../src/client/db/local-adapter.js'
+            )
+            const rows = await listFailedFeeds(db)
+
+            t.equal(rows.length, 2, 'returns 2 errored feeds')
+            const titles = rows.map(r => r.title).sort()
+            t.deepEqual(
+                titles,
+                ['Fetch Error Feed', 'Status Error Feed'],
+                'correct feeds returned'
+            )
+        } finally {
+            db.close()
+        }
+    }
+)

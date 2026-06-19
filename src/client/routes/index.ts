@@ -11,6 +11,7 @@ import { TermsRoute } from './terms.js'
 import { PrivacyRoute } from './privacy.js'
 import { ConfirmCloseRoute } from './confirm-close.js'
 import { UpdatesRoute } from './updates.js'
+import { SyncStatusRoute } from './sync-status.js'
 import { FeedsRoute } from './feeds.js'
 import { ProfileRoute } from './profile.js'
 import { GraphRoute } from './graph.js'
@@ -64,6 +65,13 @@ export default function _Router (state:AppState):InstanceType<typeof Router> {
             return state._setRoute('/login')
         }
         return UpdatesRoute
+    })
+
+    router.addRoute('/sync-status', () => {
+        if (!state.authLoading.value && !state.isAuthenticated.value) {
+            return state._setRoute('/login')
+        }
+        return SyncStatusRoute
     })
 
     router.addRoute('/feeds', () => {

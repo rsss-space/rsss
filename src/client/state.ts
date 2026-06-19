@@ -16,7 +16,9 @@ import {
     getRemoteItemByRoute,
     localTabLockRevision
 } from './db/index.js'
+import type { Sqlite3Db } from './db/sqlite-init.js'
 import { setCurrentlyOpenItemId } from './open-item-registry.js'
+import { csrfToken } from './csrf.js'
 import type {
     CountsResponse,
     Feed,
@@ -40,15 +42,21 @@ import {
 } from './local-first-settings.js'
 import {
     getOutboxCount,
+    getDeadLetterOutboxCount,
     PushSyncAuthError,
     PushSyncBillingError,
-    upsertFeedFromServer
+    upsertFeedFromServer,
+    requeueDeadLetter,
+    removeDeadLetter
 } from './db/push-sync.js'
 import { runSync } from './db/sync.js'
 import {
     isLocalFirstActive,
     updateOnlineStatus,
-    setSyncOffline
+    setSyncOffline,
+    syncStatus,
+    syncPending,
+    syncDeadLetters
 } from './db/sync-status.js'
 import {
     findItemByRoute,
@@ -709,7 +717,20 @@ export type AppState = {
     selectedFeedId:Signal<number|null>,
     viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
-    cleanup:() => void
+    cleanup:() => void,
+    // Action methods
+    refreshFeed:(state:AppState, feedId:string) => Promise<void>,
+    toggleFeedPublished:(
+        state:AppState,
+        feedId:number,
+        publish:boolean
+    ) => Promise<void>,
+    deleteFeed:(
+        state:AppState,
+        feedId:number
+    ) => Promise<{ success:boolean; error?:string }>,
+    retryDeadLetter:(state:AppState, id:number) => Promise<void>,
+    discardDeadLetter:(state:AppState, id:number) => Promise<void>
 }
 
 function clearFeedUpdateCounts (
@@ -1596,13 +1617,6 @@ State.closeEventStream = function ():void {
 /**
  * API client
  */
-function csrfToken ():string|undefined {
-    return document.cookie.split(';')
-        .map(part => part.trim())
-        .find(part => part.startsWith('csrf_token='))
-        ?.slice('csrf_token='.length)
-}
-
 const api = ky.create({
     prefixUrl: '/api',
     hooks: {
@@ -3063,6 +3077,61 @@ State.retryResolveFeed = async function (
         // to pull the server state when the response eventually arrives
         scheduleResolveConvergence(state, url)
     }
+}
+
+/**
+ * Refresh dead-letter counts after a retry/discard operation, being careful
+ * not to clobber a genuine transient syncError. Updates syncPending and
+ * syncDeadLetters, and only downgrades a warning-level syncStatus to
+ * idle/offline when the dead-letter count reaches 0.
+ */
+async function refreshDeadLetterCounts (db:Sqlite3Db):Promise<void> {
+    const pending = await getOutboxCount(db)
+    const deadLetters = await getDeadLetterOutboxCount(db)
+    batch(() => {
+        syncPending.value = pending
+        syncDeadLetters.value = deadLetters
+        // Only downgrade a warning to idle/offline; leave error/syncing
+        // untouched so we don't clobber a real sync error (AC7 constraint).
+        if (syncStatus.value === 'warning' && deadLetters === 0) {
+            syncStatus.value = isBrowserOnline() ? 'idle' : 'offline'
+        }
+    })
+}
+
+/**
+ * Retry a dead-lettered operation by moving it back to the outbox with
+ * a fresh attempt budget, then kicking push-sync to send it.
+ */
+State.retryDeadLetter = async function (
+    state:AppState,
+    id:number
+):Promise<void> {
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+
+    const moved = await requeueDeadLetter(db, id)
+    if (!moved) return
+
+    await refreshDeadLetterCounts(db)
+    await _runSyncImpl(db)
+}
+
+/**
+ * Discard a dead-lettered operation by deleting it, then refresh counts.
+ * Does not kick push-sync (local-only operation; must work offline per AC11.2).
+ */
+State.discardDeadLetter = async function (
+    state:AppState,
+    id:number
+):Promise<void> {
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+
+    await removeDeadLetter(db, id)
+    await refreshDeadLetterCounts(db)
 }
 
 /**
