@@ -22,7 +22,6 @@ export const SyncStatusRoute:FunctionComponent<{
     state:AppState
 }> = function ({ state }) {
     const pageHeadingRef = useRef<HTMLHeadingElement>(null)
-    const headingRef = useRef<HTMLHeadingElement>(null)
     const rowActionRefs = useRef<Map<number, HTMLButtonElement>>(
         new Map()
     )
@@ -140,12 +139,7 @@ export const SyncStatusRoute:FunctionComponent<{
 
             ${dl.length > 0 && html`
                 <div class="sync-status-section blocked-changes">
-                    <h2
-                        ref=${headingRef}
-                        tabindex="-1"
-                    >
-                        Blocked local changes
-                    </h2>
+                    <h2>Blocked local changes</h2>
                     <ul class="blocked-changes-list">
                         ${dl.map((row) => {
                             const confirmingThis =
