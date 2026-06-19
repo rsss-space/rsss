@@ -717,7 +717,20 @@ export type AppState = {
     selectedFeedId:Signal<number|null>,
     viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
-    cleanup:() => void
+    cleanup:() => void,
+    // Action methods
+    refreshFeed:(state:AppState, feedId:string) => Promise<void>,
+    toggleFeedPublished:(
+        state:AppState,
+        feedId:number,
+        publish:boolean
+    ) => Promise<void>,
+    deleteFeed:(
+        state:AppState,
+        feedId:number
+    ) => Promise<{ success:boolean; error?:string }>,
+    retryDeadLetter:(state:AppState, id:number) => Promise<void>,
+    discardDeadLetter:(state:AppState, id:number) => Promise<void>
 }
 
 function clearFeedUpdateCounts (
