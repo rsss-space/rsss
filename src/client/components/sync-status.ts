@@ -86,14 +86,24 @@ export const SyncStatus:FunctionComponent = function () {
         >${label}</span>
     `
 
+    const isLinked = status === 'warning' || status === 'error'
+
+    const statusElement = isLinked ?
+        html`
+            <a href="/sync-status" class="sync-status-link">
+                ${statusSpan}
+            </a>
+        ` :
+        statusSpan
+
     // Replace the native `title` tooltip with the styled tool-tip web
     // component for the states that carry an explanation (warning, error).
     // Other states have no tooltip text, so the span renders on its own.
     return title ?
         html`
             <tool-tip content=${title} placement="bottom" delay="500">
-                ${statusSpan}
+                ${statusElement}
             </tool-tip>
         ` :
-        statusSpan
+        statusElement
 }

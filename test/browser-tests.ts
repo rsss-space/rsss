@@ -70,6 +70,7 @@ import './publish-consent-modal.js'
 import './retry-discard-dead-letter.js'
 import './sync-status-route.js'
 import './sync-status-feeds.js'
+import './sync-status-header.js'
 
 test('all done', () => {
     if (window) {

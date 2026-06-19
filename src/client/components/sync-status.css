@@ -34,3 +34,8 @@
         }
     }
 }
+
+.sync-status-link {
+    text-decoration: none;
+    color: inherit;
+}
