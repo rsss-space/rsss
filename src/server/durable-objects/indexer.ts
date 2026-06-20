@@ -148,6 +148,21 @@ export class RsssIndexerDO extends DurableObject<IndexerEnv> {
             return c.json({ items: count, cursor })
         })
 
+        app.post('/internal/dev/drain-now', async (c) => {
+            if (this.env?.NODE_ENV !== 'development') return c.notFound()
+            const before = Number((this.sql.exec(
+                'SELECT count(*) AS c FROM items').one() as { c:number }).c)
+            await this.runDrain()
+            const after = Number((this.sql.exec(
+                'SELECT count(*) AS c FROM items').one() as { c:number }).c)
+            return c.json({
+                before,
+                after,
+                newItems: after - before,
+                cursor: await this.getCursor()
+            })
+        })
+
         return app
     }
 }

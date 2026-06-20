@@ -989,7 +989,6 @@ function getRegistryDO (
     return env.REGISTRY_DO.get(id)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getIndexerDO (
     env:Env
 ):DurableObjectStub<RsssIndexerDOBase>|null {
@@ -2230,6 +2229,20 @@ app.post(
             'http://do/internal/dev/poll-now',
             { method: 'POST' }
         ))
+    }
+)
+
+app.post('/api/dev/drain-now',
+    async (c, next) => {
+        if (c.env.NODE_ENV !== 'development') return c.notFound()
+        return next()
+    },
+    requireAuth,
+    async (c) => {
+        const stub = getIndexerDO(c.env)
+        if (!stub) return c.notFound()
+        return stub.fetch(new Request(
+            'http://do/internal/dev/drain-now', { method: 'POST' }))
     }
 )
 
