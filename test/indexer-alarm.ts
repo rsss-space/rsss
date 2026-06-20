@@ -3,11 +3,12 @@
  *
  * Tests the RsssIndexerDO alarm scheduling contract:
  * - alarm() reschedules BEFORE running the drain (AC4.1)
- * - Cold-start arms at now + DRAIN_INTERVAL_MS (AC4.2)
- * - Overdue alarm is re-armed at now + OVERDUE_ALARM_REARM_DELAY_MS (AC4.3)
- * - Future alarm is left unchanged (AC4.4)
- * - runDrain() persists advanced cursor (AC4.5)
- * - dev drain-now route 404s outside development (AC4.6)
+ * - ensureDrainArmed cold-start arms at now + DRAIN_INTERVAL_MS (AC4.2)
+ * - ensureDrainArmed overdue re-arm at now + OVERDUE_ALARM_REARM_DELAY_MS
+ *   (AC4.3)
+ * - ensureDrainArmed idempotent when future alarm exists (AC4.4)
+ * - runDrain() persists advanced cursor via real drainDeps seam (AC4.5)
+ * - dev drain-now route 404s outside development via real router (AC4.6)
  */
 import { test } from '@substrate-system/tapzero'
 import { RsssIndexerDO } from '../src/server/durable-objects/indexer.js'
@@ -17,6 +18,7 @@ import type { DrainSocket, DrainDeps } from '../src/server/indexer/drain.js'
 // FakeSocket implementing DrainSocket for tests
 class FakeSocket implements DrainSocket {
     closed = false
+    emittedTime_us:number|null = null
 
     private listeners:Map<
         'message' | 'close' | 'error',
@@ -81,7 +83,28 @@ function createIndexerDo (initial:{
     let existingAlarm = initial?.existingAlarm ?? null
     let drainDepsOverride:DrainDeps|null = null
 
-    const indexerDo = Object.create(RsssIndexerDO.prototype) as {
+    // Create a subclass so we can access protected methods
+    class TestableIndexerDO extends RsssIndexerDO {
+        getSetAlarms ():number[] {
+            return setAlarms
+        }
+
+        setExistingAlarm (t:number|null):void {
+            existingAlarm = t
+        }
+
+        setDrainDeps (deps:DrainDeps):void {
+            drainDepsOverride = deps
+        }
+
+        // Override protected method to inject test deps
+        protected override drainDeps ():DrainDeps {
+            if (drainDepsOverride) return drainDepsOverride
+            return { open: async () => new FakeSocket() }
+        }
+    }
+
+    const indexerDo = Object.create(TestableIndexerDO.prototype) as {
         sql:{ exec:(query:string, ...params:unknown[]) => ReturnType<typeof fakeResult> }
         ctx:{ storage:{
             get:<T>(key:string) => Promise<T | undefined>
@@ -98,10 +121,17 @@ function createIndexerDo (initial:{
         scheduleNextDrain:() => Promise<void>
         ensureDrainArmed:() => Promise<void>
         fetch:(req:Request) => Promise<Response>
+        getSetAlarms:() => number[]
+        setExistingAlarm:(t:number|null) => void
+        setDrainDeps:(deps:DrainDeps) => void
     }
 
     indexerDo.sql = {
-        exec (_query:string) {
+        exec (query:string) {
+            // Return a result with a count of 0 for SELECT count queries
+            if (query.includes('SELECT count(*)')) {
+                return fakeResult([{ c: 0 }])
+            }
             return fakeResult([])
         }
     }
@@ -134,7 +164,7 @@ function createIndexerDo (initial:{
         NODE_ENV: 'test'
     }
 
-    // Bind the real methods from the prototype
+    // Bind all the real methods from the prototype
     indexerDo.alarm = RsssIndexerDO.prototype.alarm.bind(indexerDo)
     indexerDo.scheduleNextDrain = (
         RsssIndexerDO.prototype as unknown as Record<string, unknown>
@@ -144,16 +174,18 @@ function createIndexerDo (initial:{
         RsssIndexerDO.prototype as unknown as Record<string, unknown>
     ).ensureDrainArmed as () => Promise<void>
     indexerDo.ensureDrainArmed = indexerDo.ensureDrainArmed.bind(indexerDo)
+    indexerDo.runDrain = (
+        RsssIndexerDO.prototype as unknown as Record<string, unknown>
+    ).runDrain as () => Promise<void>
+    indexerDo.runDrain = indexerDo.runDrain.bind(indexerDo)
 
-    // Allow test override of runDrain and drainDeps
-    Object.defineProperty(indexerDo, 'runDrain', {
-        value: async function () {
-            // Default: no-op
-        },
-        writable: true,
-        configurable: true
-    })
+    // Bind the test helper methods
+    indexerDo.getSetAlarms = TestableIndexerDO.prototype.getSetAlarms.bind(indexerDo)
+    indexerDo.setExistingAlarm = TestableIndexerDO.prototype
+        .setExistingAlarm.bind(indexerDo)
+    indexerDo.setDrainDeps = TestableIndexerDO.prototype.setDrainDeps.bind(indexerDo)
 
+    // Override drainDeps via prototype chain
     Object.defineProperty(indexerDo, 'drainDeps', {
         value: function ():DrainDeps {
             if (drainDepsOverride) return drainDepsOverride
@@ -179,19 +211,27 @@ function createIndexerDo (initial:{
         configurable: true
     })
 
-    // Simple fetch for route testing
+    // Manually build the router for fetch
+    // Since createRouter is private, we need to get it via bracket access
+    const createRouterMethod = (
+        RsssIndexerDO.prototype as unknown as Record<string, unknown>
+        // eslint-disable-next-line dot-notation
+    )['createRouter'] as (this:unknown) => { fetch:(r:Request) => Promise<Response> }
+
+    let app:{ fetch:(r:Request) => Promise<Response> }
+    if (createRouterMethod) {
+        app = createRouterMethod.call(indexerDo)
+    } else {
+        // Fallback: basic router that just returns 404
+        app = {
+            fetch: async () => new Response(null, { status: 404 })
+        }
+    }
+
     Object.defineProperty(indexerDo, 'fetch', {
         value: async function (req:Request) {
-            if (req.url === 'http://do/internal/dev/drain-now' &&
-                req.method === 'POST') {
-                if (this.env?.NODE_ENV !== 'development') {
-                    return new Response(null, { status: 404 })
-                }
-                return new Response(JSON.stringify({ ok: true }), {
-                    status: 200
-                })
-            }
-            return new Response(null, { status: 404 })
+            // Use the real router for real gate testing
+            return app.fetch(req)
         },
         writable: true,
         configurable: true
@@ -269,7 +309,7 @@ test(
 )
 
 test(
-    'AC4.2: constructor cold-start arms alarm at now + DRAIN_INTERVAL_MS',
+    'AC4.2: ensureDrainArmed cold-start arms at now + DRAIN_INTERVAL_MS',
     async t => {
         const harness = createIndexerDo({
             existingAlarm: null,
@@ -295,7 +335,8 @@ test(
 )
 
 test(
-    'AC4.3: constructor re-arms overdue alarm at now + OVERDUE_ALARM_REARM_DELAY_MS',
+    'AC4.3: ensureDrainArmed re-arms overdue at now + '
+        + 'OVERDUE_ALARM_REARM_DELAY_MS',
     async t => {
         const pastTime = Date.now() - 5_000
         const harness = createIndexerDo({
@@ -322,7 +363,7 @@ test(
 )
 
 test(
-    'AC4.4: constructor idempotent when future alarm already set',
+    'AC4.4: ensureDrainArmed idempotent when future alarm exists',
     async t => {
         const futureTime = Date.now() + 100_000
         const harness = createIndexerDo({
@@ -341,62 +382,99 @@ test(
 )
 
 test(
-    'AC4.5: runDrain persists cursor when advanced',
+    'AC4.5: runDrain persists advanced cursor via real drainDeps seam',
     async t => {
         const harness = createIndexerDo({
             existingAlarm: null,
             cursorValue: 1000  // Start with an existing cursor
         })
 
-        // Override runDrain to verify cursor persistence behavior
-        // We'll test by mocking drainDeps to return a higher cursor value
         let setCursorCalled = false
         let setCursorValue:number|null = null
+        let drainDepsWasCalled = false
+        let drainOnceWasNotCalled = true
 
+        // Spy directly on setCursor
         const origSetCursor = harness.indexerDo.setCursor
-        Object.defineProperty(harness.indexerDo, 'setCursor', {
-            value: async function (v:number) {
-                setCursorCalled = true
-                setCursorValue = v
-                await origSetCursor.call(this, v)
+        harness.indexerDo.setCursor = async function (v:number) {
+            setCursorCalled = true
+            setCursorValue = v
+            await origSetCursor.call(this, v)
+        }
+
+        // Also spy on storage.put to track writes
+        const origPut = harness.indexerDo.ctx.storage.put
+        harness.indexerDo.ctx.storage.put = async (key:string, value:unknown) => {
+            if (key === 'cursor') {
+                t.comment(`storage.put('cursor', ${value})`)
+            }
+            await origPut.call(harness.indexerDo.ctx.storage, key, value)
+        }
+
+        // Override drainDeps to return a socket that emits 2 commit events
+        // then idles. This exercises the real runDrain body via drainDeps.
+        const now = Date.now()
+        let capturedUrl:string|null = null
+
+        harness.setDrainDeps({
+            open: async (url:string) => {
+                drainDepsWasCalled = true
+                drainOnceWasNotCalled = false
+                capturedUrl = url
+                const fakeSocket = new FakeSocket()
+                // Delay emits so event listeners are attached first
+                setTimeout(() => {
+                    // Emit first event that is 10s old (not caught-up yet)
+                    fakeSocket.emitMessage(JSON.stringify({
+                        kind: 'commit',
+                        time_us: (now - 10_000) * 1000
+                    }))
+                    // Emit second event that is 6s old (still not caught-up)
+                    fakeSocket.emitMessage(JSON.stringify({
+                        kind: 'commit',
+                        time_us: (now - 6_000) * 1000
+                    }))
+                }, 1)
+                // Close to trigger end (after idle timeout)
+                setTimeout(() => fakeSocket.emitClose(), 50)
+                return fakeSocket
             },
-            writable: true,
-            configurable: true
+            idleMs: 20,
+            now: () => now
         })
 
-        // Simulate the runDrain logic with a custom implementation
-        // that verifies the cursor persistence behavior
-        Object.defineProperty(harness.indexerDo, 'runDrain', {
-            value: async function () {
-                const cursor = await this.getCursor()
-                const next = (cursor ?? 0) + 1000  // Simulate drainOnce returning higher value
-                if (next > (cursor ?? 0)) await this.setCursor(next)
-            },
-            writable: true,
-            configurable: true
-        })
-
-        await harness.indexerDo.runDrain()
+        try {
+            await harness.indexerDo.runDrain()
+        } catch (err) {
+            t.comment(`runDrain threw: ${err instanceof Error ? err.message : String(err)}`)
+        }
 
         t.ok(
+            drainDepsWasCalled,
+            'drainDeps.open was called'
+        )
+        t.ok(
+            !drainOnceWasNotCalled,
+            'drainOnce was called (drainDeps.open called)'
+        )
+        t.ok(
             setCursorCalled,
-            'setCursor was called when next > cursor'
+            'setCursor was called'
         )
         t.equal(
             setCursorValue,
-            2000,
-            'cursor advanced from 1000 to 2000'
+            (now - 6_000) * 1000,
+            'cursor advanced to 2nd event time_us (6s old)'
         )
-        t.equal(
-            harness.getCursorValue(),
-            2000,
-            'cursor value persisted'
+        t.ok(
+            (capturedUrl as string | null)?.includes('cursor=1000'),
+            'URL includes cursor=1000 (advancing from existing cursor)'
         )
     }
 )
 
 test(
-    'AC4.5: runDrain from null (live-from-now) persists any advancement',
+    'AC4.5: runDrain from null (live-from-now) no cursor param, persists',
     async t => {
         const harness = createIndexerDo({
             existingAlarm: null,
@@ -406,27 +484,37 @@ test(
         let setCursorCalled = false
         let setCursorValue:number|null = null
 
+        // Spy directly on setCursor
         const origSetCursor = harness.indexerDo.setCursor
-        Object.defineProperty(harness.indexerDo, 'setCursor', {
-            value: async function (v:number) {
-                setCursorCalled = true
-                setCursorValue = v
-                await origSetCursor.call(this, v)
-            },
-            writable: true,
-            configurable: true
-        })
+        harness.indexerDo.setCursor = async function (v:number) {
+            setCursorCalled = true
+            setCursorValue = v
+            await origSetCursor.call(this, v)
+        }
 
-        // Override runDrain to simulate drainOnce returning a value > 0
-        // (since null ?? 0 === 0, any positive value will be persisted)
-        Object.defineProperty(harness.indexerDo, 'runDrain', {
-            value: async function () {
-                const cursor = await this.getCursor()
-                const next = 1000  // Simulate drainOnce returning a value
-                if (next > (cursor ?? 0)) await this.setCursor(next)
+        // Override drainDeps to return a socket that emits 1 event
+        const now = Date.now()
+        let capturedUrl:string|null = null
+
+        harness.setDrainDeps({
+            open: async (url:string) => {
+                capturedUrl = url
+                const fakeSocket = new FakeSocket()
+                // Delay emits so event listeners are attached first
+                setTimeout(() => {
+                    // Emit one commit event that is 10s old
+                    // (so it's far from caught-up and will be kept)
+                    fakeSocket.emitMessage(JSON.stringify({
+                        kind: 'commit',
+                        time_us: (now - 10_000) * 1000
+                    }))
+                }, 1)
+                // Close to trigger end (after idle timeout)
+                setTimeout(() => fakeSocket.emitClose(), 50)
+                return fakeSocket
             },
-            writable: true,
-            configurable: true
+            idleMs: 20,
+            now: () => now
         })
 
         await harness.indexerDo.runDrain()
@@ -437,22 +525,36 @@ test(
         )
         t.equal(
             setCursorValue,
-            1000,
-            'cursor advanced from null (live-from-now) to 1000'
+            (now - 10_000) * 1000,
+            'cursor advanced from null to event time_us'
+        )
+        t.ok(
+            !(
+                (capturedUrl as string | null)?.includes('cursor=')
+            ),
+            'URL does not include cursor param (live-from-now)'
         )
     }
 )
 
 test(
-    'AC4.6: dev drain-now route returns 404 when NODE_ENV !== development',
+    'AC4.6: dev drain-now route gate 404s when NODE_ENV !== development',
     async t => {
         const harness = createIndexerDo({
             existingAlarm: null,
             cursorValue: null
         })
 
+        // Set NODE_ENV to test (not development)
         harness.indexerDo.env = { NODE_ENV: 'test' }
 
+        // Override drainDeps to verify the gate (no-op so it doesn't open
+        // real socket)
+        harness.setDrainDeps({
+            open: async () => new FakeSocket()
+        })
+
+        // Call the REAL fetch (which uses the real router)
         const response = await harness.indexerDo.fetch(
             new Request('http://do/internal/dev/drain-now', { method: 'POST' })
         )
@@ -460,7 +562,7 @@ test(
         t.equal(
             response.status,
             404,
-            'returns 404 when NODE_ENV is test'
+            'real router returns 404 when NODE_ENV is test'
         )
     }
 )
@@ -473,8 +575,27 @@ test(
             cursorValue: null
         })
 
+        // Set NODE_ENV to development
         harness.indexerDo.env = { NODE_ENV: 'development' }
 
+        // Override drainDeps to avoid real socket (no-op drain)
+        const fakeSocket = new FakeSocket()
+        const now = Date.now()
+        harness.setDrainDeps({
+            open: async () => {
+                // Emit and close immediately
+                fakeSocket.emitMessage(JSON.stringify({
+                    kind: 'commit',
+                    time_us: now * 1000
+                }))
+                setImmediate(() => fakeSocket.emitClose())
+                return fakeSocket
+            },
+            idleMs: 5,
+            now: () => now
+        })
+
+        // Call the REAL fetch (which uses the real router)
         const response = await harness.indexerDo.fetch(
             new Request('http://do/internal/dev/drain-now', { method: 'POST' })
         )
@@ -482,7 +603,15 @@ test(
         t.equal(
             response.status,
             200,
-            'returns 200 when NODE_ENV is development'
+            'real router returns 200 when NODE_ENV is development'
         )
+        const body = await response.json<{
+            before:number
+            after:number
+            newItems:number
+        }>()
+        t.ok(body.before !== undefined, 'response includes before count')
+        t.ok(body.after !== undefined, 'response includes after count')
+        t.ok(body.newItems !== undefined, 'response includes newItems count')
     }
 )
