@@ -60,6 +60,11 @@ const commands = [
         '--platform=node --format=esm',
         '| node --input-type=module | tap-spec'
     ].join(' '),
+    [
+        'esbuild ./test/lexicon-validate.ts --bundle',
+        '--platform=node --format=esm',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
 
     // --- consolidated browser tests: one esbuild bundle, one tapout
     // (one headless-browser spawn for the whole set). Running these as
