@@ -46,6 +46,16 @@ const CURSOR_KEY = 'cursor'
 const DRAIN_INTERVAL_MS = 60_000           // 60s (spec default)
 const OVERDUE_ALARM_REARM_DELAY_MS = 5_000
 
+function clampLimit (raw:string|undefined):number {
+    const n = Number.parseInt(raw ?? '', 10)
+    if (!Number.isFinite(n) || n <= 0) return 50
+    return Math.min(n, 200)
+}
+
+function safeParse (json:string):unknown {
+    try { return JSON.parse(json) } catch { return null }
+}
+
 export class RsssIndexerDO extends DurableObject<IndexerEnv> {
     private sql:SqlStorage
     private app:Hono
@@ -146,6 +156,39 @@ export class RsssIndexerDO extends DurableObject<IndexerEnv> {
             )
             const cursor = await this.getCursor()
             return c.json({ items: count, cursor })
+        })
+
+        app.get('/internal/index/feed', (c) => {
+            const collection = c.req.query('collection')
+            const did = c.req.query('did')
+            const limit = clampLimit(c.req.query('limit'))
+            const conds:string[] = []
+            const binds:unknown[] = []
+            if (collection) {
+                conds.push('collection = ?')
+                binds.push(collection)
+            }
+            if (did) {
+                conds.push('did = ?')
+                binds.push(did)
+            }
+            const where = conds.length ?
+                `WHERE ${conds.join(' AND ')}` :
+                ''
+            const rows = this.sql.exec(
+                `SELECT uri, did, collection, rkey, cid, record,
+                        time_us, indexed_at
+                 FROM items ${where}
+                 ORDER BY time_us DESC
+                 LIMIT ?`,
+                ...binds,
+                limit
+            ).toArray() as unknown as IndexItem[]
+            const items = rows.map((r) => ({
+                ...r,
+                record: safeParse(r.record)
+            }))
+            return c.json({ items })
         })
 
         app.post('/internal/dev/drain-now', async (c) => {
