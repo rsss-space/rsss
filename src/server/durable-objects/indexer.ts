@@ -1,5 +1,30 @@
 import { DurableObject } from 'cloudflare:workers'
 import { Hono } from 'hono'
+import {
+    drainOnce,
+    openJetstreamSocketWithFailover,
+    type DrainDeps
+} from '../indexer/drain.js'
+import { applyCommit } from '../indexer/apply-commit.js'
+import type { JetstreamEvent } from '../indexer/types.js'
+
+/**
+ * RsssIndexerDO: Global singleton ingestion indexer (read-only on the client side).
+ *
+ * Freshness and retention contract:
+ * - The index trails the live network by up to one alarm interval
+ *   (DRAIN_INTERVAL_MS, ~60s) plus firehose propagation. The feed does not need
+ *   sub-second freshness; if it ever does, this is the wrong design.
+ * - First run with no saved cursor starts **live-from-now** (approved cold-start),
+ *   so records committed before the singleton's first construction are not indexed.
+ * - Jetstream retains only a bounded replay window (the server's `event-ttl`,
+ *   **~24h by default**, operator-configurable). If the indexer is down longer
+ *   than that window, cursor replay cannot fill the gap and those records are
+ *   permanently missed.
+ * - Full history (older than the replay window) is NOT a Jetstream job and is out
+ *   of scope here — backfill via `com.atproto.repo.listRecords` per DID or a
+ *   Hubble mirror is a separate, one-shot process (deferred per the spec).
+ */
 
 export interface IndexerEnv {
     NODE_ENV?:string
@@ -18,6 +43,8 @@ export interface IndexItem {
 }
 
 const CURSOR_KEY = 'cursor'
+const DRAIN_INTERVAL_MS = 60_000           // 60s (spec default)
+const OVERDUE_ALARM_REARM_DELAY_MS = 5_000
 
 export class RsssIndexerDO extends DurableObject<IndexerEnv> {
     private sql:SqlStorage
@@ -46,6 +73,7 @@ export class RsssIndexerDO extends DurableObject<IndexerEnv> {
                 `CREATE INDEX IF NOT EXISTS items_by_coll
                     ON items(collection, time_us)`
             )
+            await this.ensureDrainArmed()
         })
         this.app = this.createRouter()
     }
@@ -60,6 +88,50 @@ export class RsssIndexerDO extends DurableObject<IndexerEnv> {
 
     private async setCursor (next:number):Promise<void> {
         await this.ctx.storage.put(CURSOR_KEY, next)
+    }
+
+    async alarm ():Promise<void> {
+        // Reschedule first: a throw in the drain must not strand the alarm.
+        await this.scheduleNextDrain()
+        try {
+            await this.runDrain()
+        } catch (err) {
+            // Next tick retries from the saved cursor; writes are idempotent.
+            console.error('indexer drain failed', err)
+        }
+    }
+
+    private async scheduleNextDrain ():Promise<void> {
+        await this.ctx.storage.setAlarm(Date.now() + DRAIN_INTERVAL_MS)
+    }
+
+    private async ensureDrainArmed ():Promise<void> {
+        const existing = await this.ctx.storage.getAlarm()
+        if (existing == null) {
+            await this.ctx.storage.setAlarm(Date.now() + DRAIN_INTERVAL_MS)
+            return
+        }
+        if (existing <= Date.now()) {
+            await this.ctx.storage.setAlarm(
+                Date.now() + OVERDUE_ALARM_REARM_DELAY_MS
+            )
+        }
+    }
+
+    // Injectable for tests; production uses the failover opener — primary
+    // host, then secondary on an open failure (Phase 4 drain.ts).
+    protected drainDeps ():DrainDeps {
+        return { open: openJetstreamSocketWithFailover }
+    }
+
+    protected async runDrain ():Promise<void> {
+        const cursor = await this.getCursor()        // null => live-from-now
+        const next = await drainOnce(
+            this.drainDeps(),
+            (evt:JetstreamEvent) => applyCommit(this.sql, evt),
+            cursor
+        )
+        if (next > (cursor ?? 0)) await this.setCursor(next)
     }
 
     private createRouter ():Hono {
