@@ -223,6 +223,12 @@ const commands = [
         '| node --input-type=module | tap-spec'
     ].join(' '),
     [
+        'esbuild ./test/indexer-alarm.ts --bundle',
+        '--platform=node --format=esm',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
         'esbuild ./test/dev-poll-now.ts --bundle',
         '--platform=node --format=esm',
         '--external:./src/server/blurhash-runtime.js',
