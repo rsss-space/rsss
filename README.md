@@ -396,13 +396,5 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-06-16-043-sync-status-detail.md .
+/ed3d-plan-and-execute:execute-implementation-plan /Users/nick/code/rsss/docs/implementation-plans/2026-06-19-scheduled-drain/ /Users/nick/code/rsss/
 ```
-
-```
-Use specs/040-fix-updates-count/clarification.md as the confirmed 
-clarification bundle. Start with the key open question (does the DO alarm 
-fire under wrangler dev) before designing strand 2.
-```
-
---------------------------------------------------------------
