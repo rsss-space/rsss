@@ -166,11 +166,12 @@ test('scheduled-drain.AC3.2: live-edge', async (t) => {
 test('scheduled-drain.AC3.3: budget', async (t) => {
     const fakeSocket = new FakeSocket()
     let nowValue = 1000
+    const idleMs = 100
     const deps = {
         open: async () => fakeSocket,
         now: () => nowValue,
         maxWallMs: 5,
-        idleMs: 100,
+        idleMs,
         caughtUpUs: CAUGHT_UP_US
     }
 
@@ -194,6 +195,7 @@ test('scheduled-drain.AC3.3: budget', async (t) => {
     nowValue = 1006
 
     // Trigger chain processing by emitting another event
+    const start = Date.now()
     fakeSocket.emitMessage(JSON.stringify({
         did: 'did:2',
         time_us: staleTime + 1000,
@@ -202,12 +204,16 @@ test('scheduled-drain.AC3.3: budget', async (t) => {
 
     // Should resolve due to budget timeout
     const cursor = await promise
+    const elapsed = Date.now() - start
 
     // Should resolve with an event's time_us
     t.ok(
         cursor === staleTime || cursor === staleTime + 1000,
         'cursor matches one of the events'
     )
+
+    // Must stop due to budget, not idle — elapsed << idleMs/2
+    t.ok(elapsed < idleMs / 2, 'budget stop, not idle')
 })
 
 test('scheduled-drain.AC3.4: in-order persist', async (t) => {
@@ -290,6 +296,7 @@ test('scheduled-drain.AC3.5: persist-before-advance', async (t) => {
 
     const time1 = nowValue * 1000 - 100 * CAUGHT_UP_US
     const time2 = time1 + 1000
+    const time3 = time2 + 1000
 
     fakeSocket.emitMessage(JSON.stringify({
         did: 'did:1',
@@ -299,6 +306,12 @@ test('scheduled-drain.AC3.5: persist-before-advance', async (t) => {
     fakeSocket.emitMessage(JSON.stringify({
         did: 'did:2',
         time_us: time2,
+        kind: 'commit'
+    }))
+    // Emit a 3rd event to prove it is skipped
+    fakeSocket.emitMessage(JSON.stringify({
+        did: 'did:3',
+        time_us: time3,
         kind: 'commit'
     }))
 
@@ -313,6 +326,8 @@ test('scheduled-drain.AC3.5: persist-before-advance', async (t) => {
     }
 
     t.ok(rejected, 'drainOnce rejects on apply error')
+    // Prove the 3rd event's apply was skipped (cursor did not advance past 2nd)
+    t.equal(applyCount, 2, '3rd apply was skipped after error')
 })
 
 test('scheduled-drain.AC3.6: close', async (t) => {

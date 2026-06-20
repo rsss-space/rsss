@@ -1,5 +1,7 @@
 import type { JetstreamEvent } from './types.js'
 
+export type { JetstreamEvent }
+
 export const MAX_WALL_MS = 20_000      // backstop, well under DO limits
 export const IDLE_MS = 2_000           // quiet => replay buffer drained
 export const CAUGHT_UP_US = 5_000_000  // within 5s of now => live edge
