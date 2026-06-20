@@ -70,7 +70,7 @@ TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Correctness Conventions
 
-Last verified: 2026-06-19
+Last verified: 2026-06-20
 
 These are project-wide invariants confirmed by the correctness audit. They
 are durable contracts, not implementation notes — keep them true.
@@ -164,6 +164,28 @@ drives background feed discovery on a `FEED_REFRESH_INTERVAL_MS` (1h) cadence.
   cold-start arming path (constructor) and the returning-user resume path
   (`maybeKickCatchUp`). Idempotent: a no-op when a future alarm is already set.
 
+### Indexer drain alarm contracts
+
+The global-singleton `RsssIndexerDO`
+(`src/server/durable-objects/indexer.ts`, `idFromName('rsss-indexer')`)
+tails the Jetstream firehose on a `DRAIN_INTERVAL_MS` (60s) cadence. See
+`src/server/indexer/CLAUDE.md` for the full App View contract.
+
+- **`alarm()` reschedules BEFORE the fallible `runDrain`.** It calls
+  `scheduleNextDrain()` (now + interval) first, then runs `runDrain()` in
+  try/catch (swallow-and-log, no re-throw) — mirroring the `RsssUserDO`
+  feed-refresh contract. A throw in the drain must never strand the alarm;
+  the next tick retries from the saved cursor and writes are idempotent.
+- **`ensureDrainArmed()` self-heals an overdue alarm.** It arms a fresh
+  alarm when none exists and re-arms an already-overdue stored alarm to
+  fire in `OVERDUE_ALARM_REARM_DELAY_MS` (5s), not a full interval out. It
+  is the cold-start arming path (constructor); the first authed
+  `GET /api/index/feed` is therefore the production arming trigger.
+- **`runDrain()` persists the cursor only when it advances.** It guards
+  `next > (cursor ?? 0)` before `setCursor`, so a no-progress drain never
+  rewinds. A `null` cursor means live-from-now (no pre-construction
+  backfill).
+
 ### Dev-only poll trigger
 
 - **`POST /api/dev/poll-now` is development-gated, defense-in-depth.** The
@@ -178,6 +200,14 @@ drives background feed discovery on a `FEED_REFRESH_INTERVAL_MS` (1h) cadence.
   feeds, ignoring per-feed due times and WITHOUT advancing `last_pulled_at`, so
   the pending "N updates" count grows observably; returns
   `{ polledFeeds, newItems, counts }`. Both layers `404` outside development.
+- **`POST /api/dev/drain-now` follows the same two-layer dev gate.** The
+  worker route (`src/server/index.ts`) gates on `NODE_ENV === 'development'`
+  BEFORE `requireAuth` and is registered above the `/api` `dataRouter`
+  mount; it forwards to the singleton's `POST /internal/dev/drain-now`
+  (`src/server/durable-objects/indexer.ts`), which independently re-checks
+  `this.env?.NODE_ENV === 'development'`. The DO route runs the real
+  `runDrain` once and returns `{ before, after, newItems, cursor }`. Both
+  layers `404` outside development.
 
 ### Cache-storage / OPFS atomicity
 
