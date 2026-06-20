@@ -20,6 +20,10 @@
 			{
 				"name": "REGISTRY_DO",
 				"class_name": "RsssRegistryDO"
+			},
+			{
+				"name": "INDEXER_DO",
+				"class_name": "RsssIndexerDO"
 			}
 		]
 	},
@@ -58,6 +62,10 @@
 		{
 			"tag": "v4",
 			"new_sqlite_classes": ["RsssRegistryDO"]
+		},
+		{
+			"tag": "v5",
+			"new_sqlite_classes": ["RsssIndexerDO"]
 		}
 	],
 
@@ -158,6 +166,10 @@
 					{
 						"name": "REGISTRY_DO",
 						"class_name": "RsssRegistryDO"
+					},
+					{
+						"name": "INDEXER_DO",
+						"class_name": "RsssIndexerDO"
 					}
 				]
 			},
@@ -180,6 +192,10 @@
 				{
 					"tag": "v4",
 					"new_sqlite_classes": ["RsssRegistryDO"]
+				},
+				{
+					"tag": "v5",
+					"new_sqlite_classes": ["RsssIndexerDO"]
 				}
 			],
 			"kv_namespaces": [
@@ -239,6 +255,10 @@
 					{
 						"name": "REGISTRY_DO",
 						"class_name": "RsssRegistryDO"
+					},
+					{
+						"name": "INDEXER_DO",
+						"class_name": "RsssIndexerDO"
 					}
 				]
 			},
@@ -261,6 +281,10 @@
 				{
 					"tag": "v4",
 					"new_sqlite_classes": ["RsssRegistryDO"]
+				},
+				{
+					"tag": "v5",
+					"new_sqlite_classes": ["RsssIndexerDO"]
 				}
 			],
 			"kv_namespaces": [
