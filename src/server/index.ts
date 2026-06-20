@@ -2246,6 +2246,14 @@ app.post('/api/dev/drain-now',
     }
 )
 
+app.get('/api/index/feed', requireAuth, async (c) => {
+    const stub = getIndexerDO(c.env)
+    if (!stub) return c.notFound()
+    const doUrl = new URL('http://do/internal/index/feed')
+    doUrl.search = new URL(c.req.url).search   // forward filters + limit
+    return stub.fetch(new Request(doUrl.toString()))
+})
+
 app.route('/api', dataRouter)
 
 function extractPdsUrl (didDoc:unknown):string | null {
