@@ -20,6 +20,9 @@ import {
 import {
     RsssRegistryDO as RsssRegistryDOBase
 } from './durable-objects/registry.js'
+import {
+    RsssIndexerDO as RsssIndexerDOBase
+} from './durable-objects/indexer.js'
 import { withIsolationHeaders } from './isolation-headers.js'
 import {
     BILLING_PLAN_IDS,
@@ -86,6 +89,7 @@ import type * as BlurhashRuntime from './blurhash-runtime.js'
 export interface Env {
     USER_DO:DurableObjectNamespace<RsssUserDOBase>;
     REGISTRY_DO?:DurableObjectNamespace<RsssRegistryDOBase>;
+    INDEXER_DO?:DurableObjectNamespace<RsssIndexerDOBase>;
     SESSIONS:KVNamespace;
     BLURHASH_KV:KVNamespace;
     HTML_KV?:KVNamespace;
@@ -983,6 +987,14 @@ function getRegistryDO (
     if (!env.REGISTRY_DO) return null
     const id = env.REGISTRY_DO.idFromName('global')
     return env.REGISTRY_DO.get(id)
+}
+
+function getIndexerDO (
+    env:Env
+):DurableObjectStub<RsssIndexerDOBase>|null {
+    if (!env.INDEXER_DO) return null
+    const id = env.INDEXER_DO.idFromName('rsss-indexer')
+    return env.INDEXER_DO.get(id)
 }
 
 async function upsertRegistryUser (
@@ -2220,6 +2232,28 @@ app.post(
     }
 )
 
+app.post('/api/dev/drain-now',
+    async (c, next) => {
+        if (c.env.NODE_ENV !== 'development') return c.notFound()
+        return next()
+    },
+    requireAuth,
+    async (c) => {
+        const stub = getIndexerDO(c.env)
+        if (!stub) return c.notFound()
+        return stub.fetch(new Request(
+            'http://do/internal/dev/drain-now', { method: 'POST' }))
+    }
+)
+
+app.get('/api/index/feed', requireAuth, async (c) => {
+    const stub = getIndexerDO(c.env)
+    if (!stub) return c.notFound()
+    const doUrl = new URL('http://do/internal/index/feed')
+    doUrl.search = new URL(c.req.url).search   // forward filters + limit
+    return stub.fetch(new Request(doUrl.toString()))
+})
+
 app.route('/api', dataRouter)
 
 function extractPdsUrl (didDoc:unknown):string | null {
@@ -2565,6 +2599,9 @@ export const RsssUserDO = Sentry.instrumentDurableObjectWithSentry(
 
 // Wrangler resolves by export name — keep this named `RsssRegistryDO`.
 export const RsssRegistryDO = RsssRegistryDOBase
+
+// Wrangler resolves by export name — keep this named `RsssIndexerDO`.
+export const RsssIndexerDO = RsssIndexerDOBase
 
 // Wrap the worker so fetch and queue handlers report to Sentry.
 export default Sentry.withSentry(getSentryOptions, worker)

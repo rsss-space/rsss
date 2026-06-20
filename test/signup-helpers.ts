@@ -74,6 +74,7 @@ export interface TestEnv {
     SESSION_SECRET:string;
     USER_DO:unknown;
     ASSETS:unknown;
+    INDEXER_DO?:unknown;
     AUTUMN_SECRET_KEY?:string;
     AUTUMN_DISABLED?:string;
     RESEND_API_KEY?:string;

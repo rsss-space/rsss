@@ -60,6 +60,21 @@ const commands = [
         '--platform=node --format=esm',
         '| node --input-type=module | tap-spec'
     ].join(' '),
+    [
+        'esbuild ./test/lexicon-validate.ts --bundle',
+        '--platform=node --format=esm',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
+        'esbuild ./test/apply-commit.ts --bundle',
+        '--platform=node --format=esm',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
+        'esbuild ./test/drain-once.ts --bundle',
+        '--platform=node --format=esm',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
 
     // --- consolidated browser tests: one esbuild bundle, one tapout
     // (one headless-browser spawn for the whole set). Running these as
@@ -205,6 +220,27 @@ const commands = [
         'esbuild ./test/account-deletion-alarm.ts --bundle',
         '--platform=node --format=esm',
         '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
+        'esbuild ./test/indexer-alarm.ts --bundle',
+        '--platform=node --format=esm',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
+        'esbuild ./test/indexer-feed.ts --bundle',
+        '--platform=node --format=esm',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '| node --input-type=module | tap-spec'
+    ].join(' '),
+    [
+        'esbuild ./test/index-feed-route.ts --bundle',
+        '--platform=node --format=esm',
+        '--external:./src/server/blurhash-runtime.js',
+        '--external:stripe',
+        '--alias:cloudflare:workers=./test/cloudflare-workers-stub.ts',
+        '--alias:@sentry/cloudflare=./test/sentry-cloudflare-stub.ts',
         '| node --input-type=module | tap-spec'
     ].join(' '),
     [
