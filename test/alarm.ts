@@ -255,8 +255,16 @@ test('alarm resumes refresh after a mid-run kill', async t => {
 
     // AC2.2: alarm() does NOT throw even when refreshFeedBatches fails;
     // the error is caught and logged. Instead, the reschedule happens
-    // before the fallible work, so the next tick is armed.
-    await firstRun.alarm()
+    // before the fallible work, so the next tick is armed. The expected
+    // error log is silenced so the browser harness does not treat the
+    // swallow-and-log path as a test failure.
+    const consoleError = console.error
+    console.error = () => {}
+    try {
+        await firstRun.alarm()
+    } finally {
+        console.error = consoleError
+    }
     t.deepEqual(
         fetched,
         [1, 2, 3, 4, 5, 6, 7, 8],
