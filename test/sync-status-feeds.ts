@@ -88,6 +88,8 @@ function createTestState (
         },
         feeds: signal([]),
         feedsWithUpdates: signal([]),
+        feedSyncStatus: signal('idle'),
+        feedSyncError: signal(null),
         refreshFeed: async (_:AppState, feedId:string) => {
             dispatchedCalls.push({ method: 'refreshFeed', args: [feedId] })
         },

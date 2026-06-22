@@ -79,7 +79,9 @@ function createTestState (
             setRouteCallbacks.push(route)
         },
         feeds: signal([]),
-        feedsWithUpdates: signal([])
+        feedsWithUpdates: signal([]),
+        feedSyncStatus: signal('idle'),
+        feedSyncError: signal(null)
     } as unknown as AppState
 
     return { state, setRouteCallbacks }
@@ -291,6 +293,78 @@ test('sync-status-detail.AC7.2: current-error section omitted ' +
         )
         t.equal(currentErrorSection, null, 'current-error section ' +
             'not rendered')
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('feed-refresh-error: section shows feedSyncError when the ' +
+    'feed-refresh status is error', async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+        const sentinel = 'sentinel-feed-refresh-failure'
+
+        batch(() => {
+            state.feedSyncStatus.value = 'error'
+            state.feedSyncError.value = sentinel
+            syncStatus.value = 'idle'
+            syncError.value = null
+            deadLetterRows.value = []
+            failedFeeds.value = []
+        })
+
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await nextTask()
+
+        const section = document.querySelector('.feed-refresh-error')
+        t.ok(section, 'feed-refresh-error section rendered')
+        t.ok(
+            section?.textContent?.includes(sentinel),
+            `section contains sentinel string: ${sentinel}`
+        )
+
+        // A live feed-refresh error counts as a problem, so the
+        // "everything is smooth" empty-state must not render.
+        t.equal(
+            document.querySelector('.empty-state'),
+            null,
+            'empty-state suppressed when a feed-refresh error is present'
+        )
+    } finally {
+        resetSignals()
+        cleanup()
+    }
+})
+
+test('feed-refresh-error: section omitted when feed-refresh status ' +
+    'is not error', async t => {
+    const { root, cleanup } = mountRoot()
+    try {
+        const { state } = createTestState(true)
+
+        batch(() => {
+            state.feedSyncStatus.value = 'synced'
+            state.feedSyncError.value = 'this-error-should-not-appear'
+            syncStatus.value = 'idle'
+            syncError.value = null
+            deadLetterRows.value = []
+            failedFeeds.value = []
+        })
+
+        render(html`<${SyncStatusRoute} state=${state} />`, root)
+        await nextTask()
+
+        t.equal(
+            document.querySelector('.feed-refresh-error'),
+            null,
+            'feed-refresh-error section not rendered when status is synced'
+        )
+        t.ok(
+            document.querySelector('.empty-state'),
+            'empty-state rendered when there are no problems'
+        )
     } finally {
         resetSignals()
         cleanup()
