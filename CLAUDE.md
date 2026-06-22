@@ -70,7 +70,7 @@ TypeScript (Cloudflare Workers runtime, ES2022 lib): Follow standard conventions
 
 ## Correctness Conventions
 
-Last verified: 2026-06-20
+Last verified: 2026-06-22
 
 These are project-wide invariants confirmed by the correctness audit. They
 are durable contracts, not implementation notes — keep them true.
@@ -142,6 +142,33 @@ SQL bind.
   and report truncation. `getBlueskyFollows` returns `{ follows, ok }` where
   `ok:false` signals a fetch error, page cap, or cursor stall truncated the
   result; callers must treat a partial list as incomplete.
+- **`deadLetterRows` (the LIST) must refresh wherever the dead-letter COUNT
+  refreshes.** The blocked-feed UI (sidebar dot, `FeedBlockedBanner`) reads
+  the app-wide `deadLetterRows` signal (`src/client/db/sync-status.ts`), not
+  the count. `refreshDeadLetterRows(db)` (`src/client/db/push-sync.ts`) must
+  be called after every `setSyncDone` and inside `refreshDeadLetterCounts` —
+  i.e. in `runSyncCycle` (`sync.ts`), `pushSync` (`push-sync.ts`), and
+  `State.refreshDeadLetterCounts` (`state.ts`). Refresh the count without the
+  list and the banner/dot go stale.
+- **`removeLocalFeedRow` must NOT enqueue a `delete_feed` outbox op.** This
+  low-level helper (`src/client/db/local-adapter.ts`) deletes a feed and its
+  items in one `BEGIN`/`COMMIT`/`ROLLBACK` transaction. It is for discarding a
+  feed the server never accepted (a dead-lettered `add_feed`), so pushing a
+  server delete would be wrong — the server has no such feed. Never route this
+  path through the normal `delete_feed` flow.
+- **`discardBlockedFeedAdd` removes the dead-letter BEFORE the local row.**
+  `State.discardBlockedFeedAdd(state, feedId, deadLetterId)` (`state.ts`)
+  calls `removeDeadLetter` first, then `removeLocalFeedRow`, then reloads /
+  refreshes counts and navigates to `/`. Op-first ordering means a mid-discard
+  failure never strands a dead-letter row pointing at an already-deleted feed.
+- **`feedRowState` precedence is blocked > failed > resolving > none.**
+  `feedRowState(feed, blockedOps)` (`src/client/blocked-ops.ts`) is the single
+  classifier for a feed row's UI state: any blocked op wins; else a feed with
+  `last_fetched === null` is `failed` when `last_error` is set, otherwise
+  `resolving`. `mapBlockedOpsByFeed` keys dead-letters to a feed id —
+  `add_feed`/`delete_feed`/`mark_all_read` by `target_id`, `update_item` by
+  resolving its item's `feed_id` — so an `update_item` whose item is gone maps
+  to no feed.
 
 ### Feed-polling alarm contracts
 
