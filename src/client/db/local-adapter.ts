@@ -100,6 +100,13 @@ export async function listFailedFeeds (db:Sqlite3Db):Promise<Feed[]> {
     )
 }
 
+export async function removeLocalFeedRow (
+    _db:Sqlite3Db,
+    _feedId:number
+):Promise<void> {
+    // implemented in Task 2
+}
+
 export function createLocalAdapter (db:Sqlite3Db):DbAdapter {
     return {
         async getFeeds ():Promise<FeedsResponse> {
