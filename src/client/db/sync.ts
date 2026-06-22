@@ -9,7 +9,8 @@ import {
     getOutboxCount,
     PushSyncAuthError,
     PushSyncBillingError,
-    pushSync
+    pushSync,
+    refreshDeadLetterRows
 } from './push-sync.js'
 import {
     evictByMaxAge,
@@ -157,5 +158,6 @@ async function runSyncCycle (
             await getOutboxCount(db),
             await getDeadLetterOutboxCount(db)
         )
+        await refreshDeadLetterRows(db)
     }
 }

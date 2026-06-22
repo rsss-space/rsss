@@ -41,6 +41,14 @@
         }
     }
 
+    /* The feed-refresh error reuses the section heading style; only its
+       message paragraph needs the error colour. */
+    & .feed-refresh-error > p {
+        margin: 0.5rem 0 0;
+        font-size: 1rem;
+        color: var(--color-error);
+    }
+
     /* Sections are plain heading + ruled list. No box around them, so
        the items are not cards nested inside a card. */
     & .sync-status-section {

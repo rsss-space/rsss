@@ -1,13 +1,13 @@
 import { signal, batch, type Signal } from '@preact/signals'
 import { getBootstrappedDb, getLocalDb } from '../db/index.js'
 import {
-    listDeadLetterOutbox,
-    type DeadLetterRow
+    listDeadLetterOutbox
 } from '../db/push-sync.js'
+import { deadLetterRows } from '../db/sync-status.js'
 import { listFailedFeeds, type Feed } from '../db/local-adapter.js'
 import { type AppState } from '../state.js'
 
-export const deadLetters:Signal<DeadLetterRow[]> = signal([])
+export { deadLetterRows } from '../db/sync-status.js'
 export const failedFeeds:Signal<Feed[]> = signal([])
 export const loading:Signal<boolean> = signal(false)
 export const confirmingKey:Signal<string|null> = signal(null)
@@ -19,7 +19,7 @@ export async function loadSyncStatus (state:AppState):Promise<void> {
 
     if (!db) {
         batch(() => {
-            deadLetters.value = []
+            deadLetterRows.value = []
             failedFeeds.value = []
             loading.value = false
         })
@@ -37,7 +37,7 @@ export async function loadSyncStatus (state:AppState):Promise<void> {
         ])
 
         batch(() => {
-            deadLetters.value = deadLettersData
+            deadLetterRows.value = deadLettersData
             failedFeeds.value = failedFeedsData
             loading.value = false
         })

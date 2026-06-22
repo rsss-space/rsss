@@ -78,18 +78,24 @@ export const FeedStatus:FunctionComponent<{
     const color = DOT_COLORS[status]
 
     if (status === 'error') {
+        // The pill links to the sync-status detail page so the error
+        // is reachable, not just stashed in a hover title. The status
+        // span keeps its role/aria/title so its semantics survive the
+        // wrapping link (route-event handles the navigation globally).
         return html`
-            <span
-                key=${status}
-                class="feed-status"
-                role="status"
-                aria-live="polite"
-                aria-label=${`Feed sync error: ${error}`}
-                title=${error}
-            >
-                <${Dot} color=${color} />
-                sync failed
-            </span>
+            <a href="/sync-status" class="feed-status-link">
+                <span
+                    key=${status}
+                    class="feed-status"
+                    role="status"
+                    aria-live="polite"
+                    aria-label=${`Feed sync error: ${error}`}
+                    title=${error}
+                >
+                    <${Dot} color=${color} />
+                    sync failed
+                </span>
+            </a>
         `
     }
 

@@ -1,4 +1,5 @@
 import { type Signal, signal, batch } from '@preact/signals'
+import type { DeadLetterRow } from './push-sync.js'
 
 export type SyncStatusType =
     'idle' |
@@ -12,6 +13,7 @@ export const syncedAt:Signal<Date|null> = signal(null)
 export const syncError:Signal<string|null> = signal(null)
 export const syncPending:Signal<number> = signal(0)
 export const syncDeadLetters:Signal<number> = signal(0)
+export const deadLetterRows:Signal<DeadLetterRow[]> = signal([])
 export const isLocalFirstActive:Signal<boolean> = signal(false)
 
 export function setSyncSyncing ():void {

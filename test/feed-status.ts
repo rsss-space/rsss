@@ -149,6 +149,34 @@ test(
 )
 
 test(
+    'FeedStatus error state links to the /sync-status detail page',
+    t => {
+        const { root, cleanup } = renderFeedStatus(feedStatusState({
+            feedSyncStatus: 'error',
+            feedSyncError: 'fetch failed'
+        }))
+
+        try {
+            const link = root.querySelector('a')
+            t.ok(link, 'error state renders a link')
+            t.equal(
+                link?.getAttribute('href'),
+                '/sync-status',
+                'link points at the sync-status detail page'
+            )
+            // The status pill stays nested inside the link so its
+            // existing role/aria/title semantics are preserved.
+            t.ok(
+                link?.querySelector('.feed-status'),
+                'status pill is nested inside the link'
+            )
+        } finally {
+            cleanup()
+        }
+    }
+)
+
+test(
     'FeedStatus renders green "up to date" pill when synced and zero pending',
     t => {
         const { root, cleanup } = renderFeedStatus(feedStatusState({

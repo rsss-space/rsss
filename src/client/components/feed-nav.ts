@@ -14,6 +14,7 @@ import {
     State,
     stripProtocol
 } from '../state.js'
+import { feedRowState } from '../blocked-ops.js'
 import './sidebar.css'
 import Debug from '@substrate-system/debug'
 const debug = Debug('rsss:view')
@@ -166,12 +167,11 @@ export const FeedNav:FunctionComponent<{
                             .perFeed[String(feed.id)] ?? 0
                         const pending = (state
                             .feedUpdateCounts.value[String(feed.id)] ?? 0)
-                        const isResolving = (
-                            feed.last_fetched === null && !feed.last_error
-                        )
-                        const hasFailed = (
-                            feed.last_fetched === null && !!feed.last_error
-                        )
+                        const blockedOps = state.blockedOpsForFeed(feed.id)
+                        const rowState = feedRowState(feed, blockedOps)
+                        const isResolving = rowState === 'resolving'
+                        const hasFailed = rowState === 'failed'
+                        const isBlocked = rowState === 'blocked'
                         const stateClass = hasFailed ?
                             ' failed' :
                             isResolving ? ' resolving' : ''
@@ -192,6 +192,21 @@ export const FeedNav:FunctionComponent<{
                                             aria-label="Resolving feed"
                                             role="status"
                                         ></span>
+                                    `}
+                                    ${(isBlocked || hasFailed) && html`
+                                        <span
+                                            class="feed-warning-dot"
+                                            role="img"
+                                            aria-label=${isBlocked ?
+                                                'Blocked' :
+                                                'Failed to fetch'}
+                                        >
+                                            <span class="visually-hidden">
+                                                ${isBlocked ?
+                                                    'Blocked' :
+                                                    'Failed to fetch'}
+                                            </span>
+                                        </span>
                                     `}
                                     <a
                                         class="feed-select"

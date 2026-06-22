@@ -6,12 +6,12 @@ import '@substrate-system/button'
 import { type AppState } from '../state.js'
 import {
     loadSyncStatus,
-    deadLetters,
     failedFeeds,
     confirmingKey,
     announcement
 } from './sync-status-state.js'
 import {
+    deadLetterRows,
     syncStatus,
     syncError,
     syncDeadLetters
@@ -109,20 +109,29 @@ export const SyncStatusRoute:FunctionComponent<{
         if (target && target.ownerDocument.contains(target)) {
             target.focus()
         }
-    }, [deadLetters.value.length, failedFeeds.value.length])
+    }, [deadLetterRows.value.length, failedFeeds.value.length])
 
     if (!state.isAuthenticated.value) return null
 
     // Read signals at component level to ensure preact subscribes
     const currentStatus = syncStatus.value
     const currentError = syncError.value
-    const dl = deadLetters.value
+    const dl = deadLetterRows.value
     const ff = failedFeeds.value
     const announceText = announcement.value
     const confirming = confirmingKey.value
 
+    // Feed-refresh (the "fetch updates" path) reports its failures on
+    // `state.feedSyncStatus` / `feedSyncError`, separate from push-sync's
+    // `syncError`. Surface it here so the "sync failed" pill has a real
+    // detail page to link to.
+    const feedRefreshError = state.feedSyncStatus.value === 'error' ?
+        state.feedSyncError.value :
+        null
+
     const hasProblems =
-        currentStatus === 'error' || dl.length > 0 || ff.length > 0
+        currentStatus === 'error' || dl.length > 0 || ff.length > 0 ||
+        feedRefreshError !== null
 
     // Set the focus target BEFORE the action's await. The await
     // removes the row, which re-renders and runs the focus effect;
@@ -291,6 +300,13 @@ export const SyncStatusRoute:FunctionComponent<{
             ${currentStatus === 'error' && html`
                 <div class="sync-status-section current-error">
                     <p>${currentError}</p>
+                </div>
+            `}
+
+            ${feedRefreshError && html`
+                <div class="sync-status-section feed-refresh-error">
+                    <h2>Feed refresh failed</h2>
+                    <p>${feedRefreshError}</p>
                 </div>
             `}
 

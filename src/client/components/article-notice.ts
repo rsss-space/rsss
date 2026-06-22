@@ -14,7 +14,7 @@ const InfoIcon:FunctionComponent = function () {
         stroke-linecap="round" /></svg>`
 }
 
-const WarningIcon:FunctionComponent = function () {
+export const WarningIcon:FunctionComponent = function () {
     return html`<svg viewBox="0 0 24 24" fill="none" width="18"
         height="18"><path d="M12 4 2.5 20h19L12 4Z"
         stroke="currentColor" stroke-width="2"

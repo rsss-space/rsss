@@ -40,6 +40,7 @@ import {
     defaultCacheMode,
     loadLocalFirstSettings
 } from './local-first-settings.js'
+import { removeLocalFeedRow } from './db/local-adapter.js'
 import {
     getOutboxCount,
     getDeadLetterOutboxCount,
@@ -47,7 +48,9 @@ import {
     PushSyncBillingError,
     upsertFeedFromServer,
     requeueDeadLetter,
-    removeDeadLetter
+    removeDeadLetter,
+    refreshDeadLetterRows,
+    type DeadLetterRow
 } from './db/push-sync.js'
 import { runSync } from './db/sync.js'
 import {
@@ -56,7 +59,8 @@ import {
     setSyncOffline,
     syncStatus,
     syncPending,
-    syncDeadLetters
+    syncDeadLetters,
+    deadLetterRows
 } from './db/sync-status.js'
 import {
     findItemByRoute,
@@ -116,6 +120,7 @@ import {
     liveChannelSocketUrl,
     parseLiveMessage
 } from './live-channel.js'
+import { mapBlockedOpsByFeed } from './blocked-ops.js'
 const debug = Debug('rsss:state')
 
 /**
@@ -715,6 +720,8 @@ export type AppState = {
     showStarredOnly:Signal<boolean>,
     pageSize:Signal<number>,
     selectedFeedId:Signal<number|null>,
+    blockedOpsByFeed:ReadonlySignal<Map<number, DeadLetterRow[]>>,
+    blockedOpsForFeed:(feedId:number) => DeadLetterRow[],
     viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
     cleanup:() => void,
@@ -730,7 +737,12 @@ export type AppState = {
         feedId:number
     ) => Promise<{ success:boolean; error?:string }>,
     retryDeadLetter:(state:AppState, id:number) => Promise<void>,
-    discardDeadLetter:(state:AppState, id:number) => Promise<void>
+    discardDeadLetter:(state:AppState, id:number) => Promise<void>,
+    discardBlockedFeedAdd:(
+        state:AppState,
+        feedId:number,
+        deadLetterId:number
+    ) => Promise<void>
 }
 
 function clearFeedUpdateCounts (
@@ -837,6 +849,16 @@ export function State ():AppState {
                 'syncing' :
                 state.feedSyncStatus.value
         )),
+        blockedOpsByFeed: computed(() => (
+            mapBlockedOpsByFeed(
+                deadLetterRows.value,
+                state.feeds.value,
+                state.items.value
+            )
+        )),
+        blockedOpsForFeed: (feedId:number) => (
+            state.blockedOpsByFeed.value.get(feedId) ?? []
+        ),
         items: signal<Item[]>(seededItems),
         itemsLoading: signal(false),
         itemsTotal: signal(seededItems.length),
@@ -3097,6 +3119,7 @@ async function refreshDeadLetterCounts (db:Sqlite3Db):Promise<void> {
             syncStatus.value = isBrowserOnline() ? 'idle' : 'offline'
         }
     })
+    await refreshDeadLetterRows(db)
 }
 
 /**
@@ -3132,6 +3155,30 @@ State.discardDeadLetter = async function (
 
     await removeDeadLetter(db, id)
     await refreshDeadLetterCounts(db)
+}
+
+/**
+ * Discard a blocked add_feed op by removing the dead-letter, deleting
+ * the local feed and items, refreshing counts, and navigating to home.
+ */
+State.discardBlockedFeedAdd = async function (
+    state:AppState,
+    feedId:number,
+    deadLetterId:number
+):Promise<void> {
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+
+    await removeDeadLetter(db, deadLetterId)
+    await removeLocalFeedRow(db, feedId)
+
+    await State.loadFeeds(state)
+    await State.loadItems(state)
+    await State.loadCounts(state)
+    await refreshDeadLetterCounts(db)
+
+    state._setRoute('/')
 }
 
 /**

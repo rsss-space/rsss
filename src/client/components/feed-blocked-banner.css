@@ -1,0 +1,96 @@
+.feed-blocked-banner {
+    display:flex;
+    gap:0.875rem;
+    align-items:flex-start;
+    margin:0 0 1.5rem;
+    padding:1rem 1.25rem;
+    border-radius:4px;
+    border-left:4px solid var(--color-warning);
+    background:var(--color-warning-bg);
+    font-size:1rem;
+    line-height:1.5;
+
+    & .feed-blocked-icon {
+        flex:0 0 auto;
+        display:inline-flex;
+        color:var(--color-warning);
+    }
+
+    & .feed-blocked-content {
+        flex:1;
+        min-width:0;
+    }
+
+    & .feed-blocked-op {
+        margin-bottom:1rem;
+
+        & .feed-blocked-op-description {
+            font-weight:500;
+            margin:0 0 0.375rem;
+        }
+
+        & .feed-blocked-op-attempts,
+        & .feed-blocked-op-error {
+            font-size:1rem;
+            color:var(--color-muted);
+            margin:0.25rem 0;
+        }
+
+        & .feed-blocked-actions {
+            display:flex;
+            gap:0.875rem;
+            margin-top:0.875rem;
+            flex-wrap:wrap;
+        }
+
+        & .feed-blocked-discard {
+            padding:0.5rem 1rem;
+            font-size:1rem;
+            border:1px solid var(--color-border);
+            background:var(--color-surface);
+            border-radius:4px;
+            cursor:pointer;
+
+            &:hover {
+                opacity:0.85;
+            }
+        }
+    }
+
+    & .feed-blocked-confirm {
+        margin-top:0.875rem;
+        padding:0.875rem;
+        background:var(--color-surface);
+        border:1px solid var(--color-border);
+        border-radius:4px;
+
+        & .feed-blocked-confirm-message {
+            font-size:1rem;
+            margin:0 0 0.875rem;
+            color:var(--color-text);
+        }
+
+        & .feed-blocked-confirm-actions {
+            display:flex;
+            gap:0.875rem;
+            flex-wrap:wrap;
+        }
+
+        & .feed-blocked-confirm-cancel,
+        & .feed-blocked-confirm-commit {
+            padding:0.5rem 1rem;
+            font-size:1rem;
+            border-radius:4px;
+            cursor:pointer;
+        }
+
+        & .feed-blocked-confirm-cancel {
+            border:1px solid var(--color-border);
+            background:var(--color-surface);
+
+            &:hover {
+                opacity:0.85;
+            }
+        }
+    }
+}
