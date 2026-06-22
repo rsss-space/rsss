@@ -66,7 +66,10 @@ function seedItem (db:Sqlite3Db, feedId:number):number {
     return row!.id
 }
 
-function makeTestState ():AppState {
+function makeTestState (
+    onSetRoute?:(r:string) => void,
+    initialRoute:string = '/'
+):AppState {
     const refreshInProgress = signal(false)
     const feedSyncStatus = signal<
         'inactive'|'updates'|'syncing'|'error'|'synced'
@@ -78,10 +81,11 @@ function makeTestState ():AppState {
             'syncing' :
             feedSyncStatus.value
     ))
-    let lastRoute:string|null = null
     const state = {
-        _setRoute: (r:string) => { lastRoute = r },
-        route: signal('/'),
+        _setRoute: (r:string) => {
+            if (onSetRoute) onSetRoute(r)
+        },
+        route: signal(initialRoute),
         routeItem: signal(null),
         routeItemLoading: signal(false),
         user: signal({
@@ -118,10 +122,9 @@ function makeTestState ():AppState {
         selectedFeedId: signal<number|null>(null),
         viewItemsCache: new Map(),
         cleanup: () => {}
-    } as unknown as AppState & { _lastRoute?:string|null }
+    } as unknown as AppState
 
     _registerRefreshSignalForTest(state, refreshInProgress)
-    state._lastRoute = lastRoute
 
     return state
 }
@@ -154,14 +157,20 @@ function jsonResponse (body:unknown, status = 200):Response {
 test(
     'discardBlockedFeedAdd removes dead-letter and feed, navigates',
     async (t) => {
-        const state = makeTestState()
+        let lastRoute:string|null = null
+        const feedId = 999
+        const state = makeTestState(
+            (r) => { lastRoute = r },
+            `/reader/${feedId}`
+        )
         const db = await openLocalDb('did:plc:test-discard-add')
 
         try {
-            const feedId = seedFeed(db)
-            seedItem(db, feedId)
+            const actualFeedId = seedFeed(db)
+            seedItem(db, actualFeedId)
 
-            // Seed a dead-letter add_feed row with target_id = feedId
+            // Seed a dead-letter add_feed row with target_id =
+            // actualFeedId
             db.exec({
                 sql: `INSERT INTO dead_letter_outbox
                     (op, target_id, payload, client_op_id,
@@ -169,8 +178,10 @@ test(
                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
                 bind: [
                     'add_feed',
-                    feedId,
-                    JSON.stringify({ url: 'https://example.com/feed' }),
+                    actualFeedId,
+                    JSON.stringify({
+                        url: 'https://example.com/feed'
+                    }),
                     'op-uuid-discard-add-1',
                     '2026-01-01 10:00:00',
                     10,
@@ -180,7 +191,8 @@ test(
 
             const deadRow = queryOne<{ id:number }>(
                 db,
-                'SELECT id FROM dead_letter_outbox WHERE client_op_id = ?',
+                'SELECT id FROM dead_letter_outbox WHERE' +
+                ' client_op_id = ?',
                 ['op-uuid-discard-add-1']
             )
             const deadId = deadRow!.id
@@ -205,7 +217,9 @@ test(
             _setRunResolveConvergenceDepsForTest({
                 runSync: async () => {},
                 getLocalDb: (did) => {
-                    return did === state.user.value?.did ? db : null
+                    return did === state.user.value?.did ?
+                        db :
+                        null
                 }
             })
 
@@ -215,7 +229,7 @@ test(
                     async () => {
                         await State.discardBlockedFeedAdd(
                             state,
-                            feedId,
+                            actualFeedId,
                             deadId
                         )
                     }
@@ -237,7 +251,7 @@ test(
                 const removedFeed = queryOne<{ cnt:number }>(
                     db,
                     'SELECT COUNT(*) as cnt FROM feeds WHERE id = ?',
-                    [feedId]
+                    [actualFeedId]
                 )
                 t.equal(
                     removedFeed?.cnt,
@@ -248,8 +262,9 @@ test(
                 // AC5.1: items gone
                 const removedItems = queryOne<{ cnt:number }>(
                     db,
-                    'SELECT COUNT(*) as cnt FROM items WHERE feed_id = ?',
-                    [feedId]
+                    'SELECT COUNT(*) as cnt FROM items WHERE' +
+                    ' feed_id = ?',
+                    [actualFeedId]
                 )
                 t.equal(
                     removedItems?.cnt,
@@ -259,11 +274,7 @@ test(
 
                 // AC5.1: navigated to '/'
                 t.equal(
-                    state._setRoute === undefined ||
-                    typeof state._setRoute !== 'function' ?
-                        '/' :
-                        (state as any)._lastRoute ??
-                        state.route.value,
+                    lastRoute,
                     '/',
                     'navigated to /'
                 )
