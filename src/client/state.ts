@@ -736,7 +736,12 @@ export type AppState = {
         feedId:number
     ) => Promise<{ success:boolean; error?:string }>,
     retryDeadLetter:(state:AppState, id:number) => Promise<void>,
-    discardDeadLetter:(state:AppState, id:number) => Promise<void>
+    discardDeadLetter:(state:AppState, id:number) => Promise<void>,
+    discardBlockedFeedAdd:(
+        state:AppState,
+        feedId:number,
+        deadLetterId:number
+    ) => Promise<void>
 }
 
 function clearFeedUpdateCounts (
@@ -3149,6 +3154,18 @@ State.discardDeadLetter = async function (
 
     await removeDeadLetter(db, id)
     await refreshDeadLetterCounts(db)
+}
+
+/**
+ * Discard a blocked add_feed op by removing the dead-letter, deleting
+ * the local feed and items, refreshing counts, and navigating to home.
+ */
+State.discardBlockedFeedAdd = async function (
+    state:AppState,
+    feedId:number,
+    deadLetterId:number
+):Promise<void> {
+    // implemented in Task 4
 }
 
 /**
