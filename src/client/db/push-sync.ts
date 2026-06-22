@@ -8,7 +8,8 @@ import {
     setSyncSyncing,
     setSyncDone,
     setSyncError,
-    isLocalFirstActive
+    isLocalFirstActive,
+    deadLetterRows
 } from './sync-status.js'
 import { ensureItemFullContentColumns } from './pull-sync.js'
 import {
@@ -94,6 +95,12 @@ export async function listDeadLetterOutbox (
         'client_updated_at, attempts, last_error ' +
         'FROM dead_letter_outbox ORDER BY id ASC'
     )
+}
+
+export async function refreshDeadLetterRows (
+    db:Sqlite3Db
+):Promise<void> {
+    deadLetterRows.value = await listDeadLetterOutbox(db)
 }
 
 function getOutboxRows (db:Sqlite3Db):Promise<OutboxRow[]> {
@@ -687,5 +694,6 @@ export async function pushSync (
         const pending = await getOutboxCount(db)
         const deadLetters = await getDeadLetterOutboxCount(db)
         setSyncDone(pending, deadLetters)
+        await refreshDeadLetterRows(db)
     }
 }
