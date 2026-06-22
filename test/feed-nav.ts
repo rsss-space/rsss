@@ -46,6 +46,7 @@ function makeState (feeds:Feed[]):AppState {
             perFeed: { 1: 3 }
         }),
         feedUpdateCounts: signal({}),
+        blockedOpsForFeed: () => [],
         _setRoute: () => {}
     } as unknown as AppState
 }
