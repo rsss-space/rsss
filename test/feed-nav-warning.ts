@@ -5,9 +5,9 @@ import { test } from '@substrate-system/tapzero'
 import { FeedNav } from '../src/client/components/feed-nav.js'
 import {
     type AppState,
-    type Feed,
-    type DeadLetterRow
+    type Feed
 } from '../src/client/state.js'
+import { type DeadLetterRow } from '../src/client/db/push-sync.js'
 
 function feed (
     id:number,
