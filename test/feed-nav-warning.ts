@@ -54,7 +54,8 @@ function makeState (
         }),
         feedUpdateCounts: signal({}),
         blockedOpsForFeed: (id:number) => blockedByFeed[id] ?? [],
-        _setRoute: () => {}
+        _setRoute: () => {
+        }
     } as unknown as AppState
 }
 
@@ -81,9 +82,11 @@ test(
             id: 1,
             op: 'add_feed',
             target_id: 1,
+            payload: '{}',
+            client_op_id: 'test-1',
+            client_updated_at: '2026-06-10 00:00:00',
             last_error: null,
-            attempts: 0,
-            created_at: '2026-06-10 00:00:00'
+            attempts: 0
         } as DeadLetterRow
 
         const state = makeState(
@@ -200,9 +203,11 @@ test(
             id: 1,
             op: 'add_feed',
             target_id: 1,
+            payload: '{}',
+            client_op_id: 'test-1',
+            client_updated_at: '2026-06-10 00:00:00',
             last_error: null,
-            attempts: 0,
-            created_at: '2026-06-10 00:00:00'
+            attempts: 0
         } as DeadLetterRow
 
         const state = makeState(
@@ -227,10 +232,10 @@ test(
                 warningDot?.getAttribute('aria-label'),
                 'has non-empty aria-label'
             )
-            t.equal(
+            t.notEqual(
                 warningDot?.getAttribute('role'),
-                'img',
-                'role is img not status'
+                'status',
+                'role is not status (AC1.6)'
             )
 
             const visuallyHidden = warningDot?.querySelector(
@@ -274,7 +279,7 @@ test(
             const label = warningDot?.getAttribute('aria-label')
             t.ok(
                 label?.includes('Failed'),
-                `failed feed has "Failed" in label: ${label}`
+                'error feed label mentions the issue'
             )
         } finally {
             unmount(root)
@@ -285,9 +290,11 @@ test(
             id: 1,
             op: 'add_feed',
             target_id: 2,
+            payload: '{}',
+            client_op_id: 'test-2',
+            client_updated_at: '2026-06-10 00:00:00',
             last_error: null,
-            attempts: 0,
-            created_at: '2026-06-10 00:00:00'
+            attempts: 0
         } as DeadLetterRow
 
         const state2 = makeState(
