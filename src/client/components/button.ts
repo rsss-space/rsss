@@ -12,10 +12,21 @@ export interface ButtonProps {
     isSpinning?:Signal<boolean>;
     className?:string;
     disabled?:boolean;
+    // Forwarded to the real <button> so callers can capture the
+    // focusable element (e.g. for focus restoration). Named `btnRef`
+    // because Preact strips a plain `ref` from a function component's
+    // props rather than forwarding it.
+    btnRef?:(el:HTMLButtonElement|null)=>void;
+}
+
+export const ButtonPrimary:FunctionComponent<ButtonProps> = function (props) {
+    const className = (props.class || props.className || '') + ' btn-primary'
+
+    return Button({ ...props, class: className })
 }
 
 export const Button:FunctionComponent<ButtonProps> = function (props) {
-    const { isSpinning: _isSpinning, ..._props } = props
+    const { isSpinning: _isSpinning, btnRef, ..._props } = props
     const isControlled = Boolean(_isSpinning)
     const isSpinning = _isSpinning || useSignal<boolean>(false)
 
@@ -52,6 +63,7 @@ export const Button:FunctionComponent<ButtonProps> = function (props) {
 
     return html`<button
         ...${_props}
+        ref=${btnRef}
         onClick=${click}
         disabled=${isSpinning.value || _props.disabled}
         aria-busy=${isSpinning.value}

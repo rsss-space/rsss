@@ -61,3 +61,18 @@ a.btn, button.btn, .btn-link {
         }
     }
 }
+
+/*
+    .primary style
+*/
+a.btn.btn-primary, button.btn.btn-primary {
+    border-color: var(--color-primary);
+
+    &:hover:not(:disabled), &:focus, &:focus-visible {
+        border-color: var(--color-primary);
+    }
+
+    &.spinning::after {
+        border-top-color: white;
+    }
+}

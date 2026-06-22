@@ -396,5 +396,5 @@ user for repeated requests.
 --------------------------------------------------------------
 
 ```
-/ed3d-plan-and-execute:execute-implementation-plan /Users/nick/code/rsss/docs/implementation-plans/2026-06-19-scheduled-drain/ /Users/nick/code/rsss/
+/ed3d-plan-and-execute:start-implementation-plan @DOCS/design-plans/2026-06-21-blocked-feed-controls.md .
 ```

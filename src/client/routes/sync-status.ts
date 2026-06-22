@@ -2,6 +2,7 @@ import { html } from 'htm/preact'
 import { type FunctionComponent } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
 import { batch } from '@preact/signals'
+import '@substrate-system/button'
 import { type AppState } from '../state.js'
 import {
     loadSyncStatus,
@@ -22,7 +23,51 @@ import {
 } from './sync-status-format.js'
 import { getBootstrappedDb, getLocalDb } from '../db/index.js'
 import { runSync } from '../db/sync.js'
+import { ButtonPrimary } from '../components/button.js'
 import './sync-status.css'
+
+// A single action button, rendered through the `@substrate-system/button`
+// web component using its client/SSR pattern: we provide the inner
+// `<button>` ourselves so Preact fully owns the real, focusable element.
+// That keeps the focus ref and structural class names on the control that
+// actually receives focus and clicks, and lets the web component enhance
+// it (keyboard handling, styling) without re-rendering over Preact.
+const ActionButton:FunctionComponent<{
+    text:string;
+    label?:string;
+    className?:string;
+    disabled?:boolean;
+    autoFocus?:boolean;
+    describedBy?:string;
+    onClick:() => void;
+    btnRef?:(el:HTMLButtonElement|null) => void;
+}> = function ({
+    text,
+    label,
+    className,
+    disabled,
+    autoFocus,
+    describedBy,
+    onClick,
+    btnRef
+}) {
+    return html`
+        <substrate-button>
+            <button
+                class=${className || undefined}
+                type="button"
+                aria-label=${label || undefined}
+                aria-describedby=${describedBy || undefined}
+                disabled=${disabled || undefined}
+                autofocus=${autoFocus || undefined}
+                ref=${btnRef || undefined}
+                onClick=${onClick}
+            >
+                <span class="btn-content">${text}</span>
+            </button>
+        </substrate-button>
+    `
+}
 
 export const SyncStatusRoute:FunctionComponent<{
     state:AppState
@@ -169,6 +214,57 @@ export const SyncStatusRoute:FunctionComponent<{
     const fetchFeeds = ff.filter(isFetchFailed)
     const publishFeeds = ff.filter(isPublishFailed)
 
+    // One-line aggregate summary across categories — orientation
+    // before the per-category detail below.
+    const summaryParts:string[] = []
+    if (fetchFeeds.length > 0) {
+        summaryParts.push(
+            `${fetchFeeds.length} ` +
+            `${fetchFeeds.length === 1 ? 'feed' : 'feeds'} not fetching`
+        )
+    }
+    if (publishFeeds.length > 0) {
+        summaryParts.push(
+            `${publishFeeds.length} ` +
+            `${publishFeeds.length === 1 ? 'feed' : 'feeds'} not sharing`
+        )
+    }
+    if (dl.length > 0) {
+        summaryParts.push(
+            `${dl.length} blocked ` +
+            `${dl.length === 1 ? 'change' : 'changes'}`
+        )
+    }
+
+    // The shared confirm prompt for a failed feed (fetch + share
+    // sections both use it). Cancel takes focus; the destructive
+    // commit is described by the irreversibility warning.
+    const renderFeedConfirm = (feed:typeof ff[0], feedLabel:string) => {
+        const msgId = 'confirm-msg-feed-' + feed.id
+        return html`
+            <div class="confirm-prompt">
+                <p class="prompt-message" id=${msgId}>
+                    Are you sure? This cannot be undone.
+                </p>
+                <div class="confirm-actions">
+                    <${ActionButton}
+                        className="cancel-btn"
+                        text="Cancel"
+                        autoFocus=${true}
+                        onClick=${handleCancel}
+                    />
+                    <${ActionButton}
+                        className="commit-btn"
+                        text="Unsubscribe"
+                        label=${`Unsubscribe from ${feedLabel}`}
+                        describedBy=${msgId}
+                        onClick=${() => handleUnsubCommit(feed)}
+                    />
+                </div>
+            </div>
+        `
+    }
+
     return html`
         <div class="route sync-status">
             <h1
@@ -177,6 +273,12 @@ export const SyncStatusRoute:FunctionComponent<{
             >
                 Sync Status
             </h1>
+
+            ${hasProblems && summaryParts.length > 0 && html`
+                <p class="sync-summary">
+                    ${summaryParts.join(' · ')}
+                </p>
+            `}
 
             <div
                 role="status"
@@ -203,13 +305,14 @@ export const SyncStatusRoute:FunctionComponent<{
                     <h2 tabindex="-1">Feeds that couldn't fetch</h2>
                     <ul class="feeds-list">
                         ${fetchFeeds.map((feed) => {
+                            const feedLabel = feed.title || feed.url
                             return html`
                                 <li
                                     class="failed-feed"
                                     key=${feed.id}
                                 >
                                     <p class="feed-name">
-                                        ${feed.title || feed.url}
+                                        ${feedLabel}
                                     </p>
                                     <p class="feed-error">
                                         ${feed.last_error ||
@@ -218,63 +321,29 @@ export const SyncStatusRoute:FunctionComponent<{
                                             'Unknown error')}
                                     </p>
                                     <div class="actions">
-                                        <button
-                                            type="button"
+                                        <${ButtonPrimary}
+                                            className="retry-fetch-btn"
+                                            aria-label=${'Retry fetch ' +
+                                                feedLabel}
                                             disabled=${offline}
                                             onClick=${() => {
                                                 handleRetryFetch(feed)
                                             }}
-                                        >
-                                            Retry fetch
-                                        </button>
-                                        <button
-                                            type="button"
+                                        >Retry fetch<//>
+                                        <${ActionButton}
+                                            className="unsub-btn"
+                                            text="Unsubscribe"
+                                            label=${'Unsubscribe from ' +
+                                                feedLabel}
                                             onClick=${() => {
                                                 handleUnsubscribeClick(
                                                     feed.id
                                                 )
                                             }}
-                                        >
-                                            Unsubscribe
-                                        </button>
+                                        />
                                     </div>
-                                    ${confirmingKey.value ===
-                                      'feed:' + feed.id && html`
-                                        <div
-                                            class="confirm-prompt"
-                                        >
-                                            <p
-                                                class="prompt-message"
-                                            >
-                                                Are you sure? This
-                                                cannot be undone.
-                                            </p>
-                                            <div
-                                                class="confirm-actions"
-                                            >
-                                                <button
-                                                    class="cancel-btn"
-                                                    type="button"
-                                                    autoFocus
-                                                    onClick=${() => {
-                                                        confirmingKey.value =
-                                                            null
-                                                    }}
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    class="commit-btn"
-                                                    type="button"
-                                                    onClick=${() => {
-                                                        handleUnsubCommit(feed)
-                                                    }}
-                                                >
-                                                    Unsubscribe
-                                                </button>
-                                            </div>
-                                        </div>
-                                    `}
+                                    ${confirming === 'feed:' + feed.id &&
+                                      renderFeedConfirm(feed, feedLabel)}
                                 </li>
                             `
                         })}
@@ -289,6 +358,7 @@ export const SyncStatusRoute:FunctionComponent<{
                     </h2>
                     <ul class="feeds-list">
                         ${publishFeeds.map((feed) => {
+                            const feedLabel = feed.title || feed.url
                             const isReauth =
                                 feed.publish_error === 'reauth_required'
                             return html`
@@ -297,7 +367,7 @@ export const SyncStatusRoute:FunctionComponent<{
                                     key=${feed.id}
                                 >
                                     <p class="feed-name">
-                                        ${feed.title || feed.url}
+                                        ${feedLabel}
                                     </p>
                                     <p class="feed-error">
                                         ${feed.publish_error}
@@ -312,64 +382,31 @@ export const SyncStatusRoute:FunctionComponent<{
                                             </a>
                                         `}
                                         ${!isReauth && html`
-                                            <button
-                                                type="button"
+                                            <${ButtonPrimary}
+                                                className="retry-share-btn"
+                                                aria-label=${'Retry share ' +
+                                                    feedLabel +
+                                                    ' to Bluesky'}
                                                 disabled=${offline}
                                                 onClick=${() => {
                                                     handleRetryShare(feed)
                                                 }}
-                                            >
-                                                Retry share
-                                            </button>
+                                            >Retry share<//>
                                         `}
-                                        <button
-                                            type="button"
+                                        <${ActionButton}
+                                            className="unsub-btn"
+                                            text="Unsubscribe"
+                                            label=${'Unsubscribe from ' +
+                                                feedLabel}
                                             onClick=${() => {
                                                 handleUnsubscribeClick(
                                                     feed.id
                                                 )
                                             }}
-                                        >
-                                            Unsubscribe
-                                        </button>
+                                        />
                                     </div>
-                                    ${confirmingKey.value ===
-                                      'feed:' + feed.id && html`
-                                        <div
-                                            class="confirm-prompt"
-                                        >
-                                            <p
-                                                class="prompt-message"
-                                            >
-                                                Are you sure? This
-                                                cannot be undone.
-                                            </p>
-                                            <div
-                                                class="confirm-actions"
-                                            >
-                                                <button
-                                                    class="cancel-btn"
-                                                    type="button"
-                                                    autoFocus
-                                                    onClick=${() => {
-                                                        confirmingKey.value =
-                                                            null
-                                                    }}
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    class="commit-btn"
-                                                    type="button"
-                                                    onClick=${() => {
-                                                        handleUnsubCommit(feed)
-                                                    }}
-                                                >
-                                                    Unsubscribe
-                                                </button>
-                                            </div>
-                                        </div>
-                                    `}
+                                    ${confirming === 'feed:' + feed.id &&
+                                      renderFeedConfirm(feed, feedLabel)}
                                 </li>
                             `
                         })}
@@ -384,13 +421,15 @@ export const SyncStatusRoute:FunctionComponent<{
                         ${dl.map((row) => {
                             const confirmingThis =
                                 confirming === 'dl:' + row.id
+                            const opText = describeOp(row)
+                            const msgId = 'confirm-msg-dl-' + row.id
                             return html`
                                 <li
                                     class="blocked-change"
                                     key=${row.client_op_id}
                                 >
                                     <p class="op-description">
-                                        ${describeOp(row)}
+                                        ${opText}
                                     </p>
                                     <div class="op-details">
                                         <div class="attempts">
@@ -417,10 +456,10 @@ export const SyncStatusRoute:FunctionComponent<{
                                     </div>
                                     ${!confirmingThis && html`
                                         <div class="actions">
-                                            <button
-                                                class="retry-btn"
-                                                type="button"
-                                                ref=${(btn) => {
+                                            <${ButtonPrimary}
+                                                className="retry-btn"
+                                                aria-label=${'Retry ' + opText}
+                                                btnRef=${(btn) => {
                                                     if (btn) {
                                                         rowActionRefs
                                                             .current
@@ -436,20 +475,18 @@ export const SyncStatusRoute:FunctionComponent<{
                                                 onClick=${() => {
                                                     handleRetry(row)
                                                 }}
-                                            >
-                                                Retry
-                                            </button>
-                                            <button
-                                                class="discard-btn"
-                                                type="button"
+                                            >Retry<//>
+                                            <${ActionButton}
+                                                className="discard-btn"
+                                                text="Discard"
+                                                label=${'Discard ' +
+                                                    opText}
                                                 onClick=${() => {
                                                     handleDiscardClick(
                                                         row.id
                                                     )
                                                 }}
-                                            >
-                                                Discard
-                                            </button>
+                                            />
                                         </div>
                                     `}
                                     ${confirmingThis && html`
@@ -458,6 +495,7 @@ export const SyncStatusRoute:FunctionComponent<{
                                         >
                                             <p
                                                 class="prompt-message"
+                                                id=${msgId}
                                             >
                                                 Are you sure? This
                                                 cannot be undone.
@@ -465,27 +503,24 @@ export const SyncStatusRoute:FunctionComponent<{
                                             <div
                                                 class="confirm-actions"
                                             >
-                                                <button
-                                                    class="cancel-btn"
-                                                    type="button"
-                                                    autoFocus
-                                                    onClick=${() => {
-                                                        handleCancel()
-                                                    }}
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    class="commit-btn"
-                                                    type="button"
+                                                <${ActionButton}
+                                                    className="cancel-btn"
+                                                    text="Cancel"
+                                                    autoFocus=${true}
+                                                    onClick=${handleCancel}
+                                                />
+                                                <${ActionButton}
+                                                    className="commit-btn"
+                                                    text="Discard"
+                                                    label=${'Discard ' +
+                                                        opText}
+                                                    describedBy=${msgId}
                                                     onClick=${() => {
                                                         handleConfirmDiscard(
                                                             row
                                                         )
                                                     }}
-                                                >
-                                                    Discard
-                                                </button>
+                                                />
                                             </div>
                                         </div>
                                     `}

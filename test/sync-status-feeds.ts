@@ -546,9 +546,11 @@ async t => {
             }
         )
 
-        const unsubButton = document.querySelector(
-            '.failed-feed button:nth-of-type(2)'
-        ) as HTMLButtonElement | null
+        const unsubButton = Array.from(
+            document.querySelectorAll(
+                '.failed-feed button'
+            ) as NodeListOf<HTMLButtonElement>
+        ).find(btn => btn.textContent?.includes('Unsubscribe'))
 
         const isUnsub = unsubButton?.textContent?.includes('Unsubscribe')
         t.ok(isUnsub, 'button is unsubscribe')

@@ -59,17 +59,24 @@ The learnings section is critical - it helps future iterations avoid repeating m
 
 ## Consolidate Patterns
 
-If you discover a **reusable pattern** that future iterations should know, add it to the `## Codebase Patterns` section at the TOP of progress.log (create it if it doesn't exist). This section should consolidate the most important learnings:
+If you discover a **reusable pattern** that future iterations should know,
+add it to the `## Codebase Patterns` section at the TOP of progress.log
+(create it if it doesn't exist). This section should consolidate the most
+important learnings:
 
 Only add patterns that are **general and reusable**, not story-specific details.
 
 ## Update AGENTS.md Files
 
-Before committing, check if any edited files have learnings worth preserving in nearby AGENTS.md files:
+Before committing, check if any edited files have learnings worth preserving
+in nearby AGENTS.md files:
 
-1. **Identify directories with edited files** - Look at which directories you modified
-2. **Check for existing AGENTS.md** - Look for AGENTS.md in those directories or parent directories
-3. **Add valuable learnings** - If you discovered something future developers/agents should know:
+1. **Identify directories with edited files** - Look at which directories you
+   modified
+2. **Check for existing AGENTS.md** - Look for AGENTS.md in those directories
+   or parent directories
+3. **Add valuable learnings** - If you discovered something future
+   developers/agents should know:
    - API patterns or conventions specific to that module
    - Gotchas or non-obvious requirements
    - Dependencies between files
@@ -87,7 +94,8 @@ Before committing, check if any edited files have learnings worth preserving in 
 - Temporary debugging notes
 - Information already in progress.log
 
-Only update AGENTS.md if you have **genuinely reusable knowledge** that would help future work in that directory.
+Only update AGENTS.md if you have **genuinely reusable knowledge** that would
+help future work in that directory.
 
 
 ## STOP CONDITION

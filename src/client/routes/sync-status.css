@@ -1,10 +1,18 @@
 .route.sync-status {
-    padding: 1rem;
+    padding: 1.5rem 1rem;
+    max-width: 52rem;
 
     & h1 {
-        margin: 0 0 1.5rem 0;
+        margin: 0 0 0.25rem;
         font-size: 1.5rem;
         color: var(--color-text);
+    }
+
+    /* Aggregate status line under the title. */
+    & .sync-summary {
+        margin: 0 0 1.5rem;
+        font-size: 1rem;
+        color: var(--color-muted);
     }
 
     & .sync-status-announcements {
@@ -17,291 +25,131 @@
         margin: 0;
     }
 
-    & .sync-status-section {
-        border: 1px solid var(--color-border);
+    /* Standalone alert for the live sync error (full border, not a
+       card-in-a-card). */
+    & .current-error {
+        margin: 1.5rem 0 0;
+        padding: 0.85rem 1rem;
+        border: 1px solid var(--color-error);
         border-radius: 4px;
-        padding: 1rem;
-        margin: 1rem 0;
+        background-color: var(--color-surface);
 
         & p {
             margin: 0;
             font-size: 1rem;
+            color: var(--color-error);
         }
     }
 
-    & .current-error {
-        color: var(--color-error);
-        border-color: var(--color-error);
-        background-color: var(--color-surface);
+    /* Sections are plain heading + ruled list. No box around them, so
+       the items are not cards nested inside a card. */
+    & .sync-status-section {
+        margin: 2rem 0 0;
+
+        & > h2 {
+            margin: 0 0 0.5rem;
+            font-size: 1.125rem;
+            color: var(--color-text);
+        }
     }
 
-    & .feeds-fetch-failed,
-    & .feeds-publish-failed {
-        & h2 {
-            margin: 0 0 1rem 0;
-            font-size: 1.25rem;
+    & .feeds-list,
+    & .blocked-changes-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border-top: 1px solid var(--color-border);
+    }
+
+    & .failed-feed,
+    & .blocked-change {
+        padding: 1rem 0;
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    & .feed-name,
+    & .op-description {
+        font-size: 1rem;
+        color: var(--color-text);
+        font-weight: 600;
+        margin: 0 0 0.35rem;
+        overflow-wrap: break-word;
+    }
+
+    /* Machine-readable detail (status codes, attempt counts, error
+       strings) in the app's monospace convention. */
+    & .feed-error,
+    & .op-details {
+        font-family: monospace;
+        font-size: 1rem;
+        color: var(--color-text-secondary);
+        overflow-wrap: break-word;
+    }
+
+    & .feed-error {
+        margin: 0 0 0.85rem;
+    }
+
+    & .op-details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.15rem 1.25rem;
+        margin: 0 0 0.85rem;
+
+        & .attempts,
+        & .last-error {
+            display: flex;
+            gap: 0.4rem;
+        }
+
+        & .label {
+            color: var(--color-text-secondary);
+        }
+    }
+
+    & .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* Use the substrate-button default look; only tighten the wide
+       default horizontal padding for these dense action rows. The
+       primary "retry" action renders through the ButtonPrimary
+       component (a plain .btn, not a substrate-button), so match its
+       padding too to keep the row aligned. */
+    & substrate-button button,
+    & button.btn {
+        padding: 0.4rem 1.1rem;
+    }
+
+    /* Style the reauth navigation link to read like a sibling action
+       without pretending to be a button. */
+    & .reauth-link {
+        align-self: center;
+        font-size: 1rem;
+        color: var(--color-primary);
+    }
+
+    /* Inline confirmation for destructive actions: a softly tinted,
+       fully bordered caution region (no accent stripe). */
+    & .confirm-prompt {
+        margin: 0.85rem 0 0.15rem;
+        padding: 0.85rem 1rem;
+        background-color: var(--color-warning-bg);
+        border: 1px solid var(--color-warning);
+        border-radius: 4px;
+
+        & .prompt-message {
+            margin: 0 0 0.6rem;
+            font-size: 1rem;
             color: var(--color-text);
         }
 
-        & .feeds-list {
-            list-style: none;
-            margin: 0;
-            padding: 0;
+        & .confirm-actions {
             display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        & .failed-feed {
-            border: 1px solid var(--color-warning);
-            border-radius: 4px;
-            padding: 0.75rem 1rem;
-            background-color: var(--color-surface);
-
-            & .feed-name {
-                font-size: 1rem;
-                color: var(--color-text);
-                font-weight: 500;
-                margin: 0 0 0.25rem 0;
-                word-break: break-word;
-            }
-
-            & .feed-error {
-                font-size: 1rem;
-                color: var(--color-text-secondary);
-                margin: 0 0 0.75rem 0;
-                word-break: break-word;
-            }
-
-            & .actions {
-                display: flex;
-                gap: 0.75rem;
-
-                & button,
-                & a {
-                    padding: 0.5rem 1rem;
-                    border: none;
-                    border-radius: 4px;
-                    font-size: 1rem;
-                    cursor: pointer;
-                    background-color: var(--color-border);
-                    color: var(--color-text);
-                    text-decoration: none;
-                    display: inline-block;
-
-                    &:hover {
-                        opacity: 0.8;
-                    }
-
-                    &:focus {
-                        outline: 2px solid var(--color-primary);
-                        outline-offset: 2px;
-                    }
-
-                    &:disabled {
-                        cursor: not-allowed;
-                        opacity: 0.5;
-                    }
-                }
-            }
-
-            & .confirm-prompt {
-                margin: 0.75rem 0 0 0;
-                padding: 0.75rem;
-                background-color: var(--color-border);
-                border-radius: 4px;
-                font-size: 1rem;
-                color: var(--color-text);
-
-                & .prompt-message {
-                    margin: 0 0 0.5rem 0;
-                }
-
-                & .confirm-actions {
-                    display: flex;
-                    gap: 0.5rem;
-
-                    & button {
-                        padding: 0.5rem 1rem;
-                        border: none;
-                        border-radius: 4px;
-                        font-size: 1rem;
-                        cursor: pointer;
-
-                        &:focus {
-                            outline: 2px solid var(--color-primary);
-                            outline-offset: 2px;
-                        }
-                    }
-
-                    & .cancel-btn {
-                        background-color: var(--color-surface);
-                        color: var(--color-text);
-                        border: 1px solid var(--color-border);
-
-                        &:hover {
-                            background-color: var(--color-text);
-                            color: var(--color-surface);
-                        }
-                    }
-
-                    & .commit-btn {
-                        background-color: var(--color-error);
-                        color: var(--color-surface);
-
-                        &:hover {
-                            opacity: 0.8;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    & .blocked-changes {
-        & h2 {
-            margin: 0 0 1rem 0;
-            font-size: 1.25rem;
-            color: var(--color-text);
-        }
-
-        & .blocked-changes-list {
-            list-style: none;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        & .blocked-change {
-            border: 1px solid var(--color-warning);
-            border-radius: 4px;
-            padding: 0.75rem 1rem;
-            background-color: var(--color-surface);
-
-            & .op-description {
-                font-size: 1rem;
-                color: var(--color-text);
-                font-weight: 500;
-                margin: 0 0 0.5rem 0;
-            }
-
-            & .op-details {
-                display: flex;
-                flex-direction: column;
-                gap: 0.25rem;
-                font-size: 1rem;
-                color: var(--color-text-secondary);
-                margin: 0 0 0.75rem 0;
-
-                & .attempts {
-                    display: flex;
-                    gap: 0.25rem;
-
-                    & .label {
-                        font-weight: 500;
-                    }
-                }
-
-                & .last-error {
-                    display: flex;
-                    gap: 0.25rem;
-
-                    & .label {
-                        font-weight: 500;
-                    }
-
-                    & .error-text {
-                        word-break: break-word;
-                    }
-                }
-            }
-
-            & .actions {
-                display: flex;
-                gap: 0.75rem;
-
-                & button {
-                    padding: 0.5rem 1rem;
-                    border: none;
-                    border-radius: 4px;
-                    font-size: 1rem;
-                    cursor: pointer;
-                    background-color: var(--color-border);
-                    color: var(--color-text);
-
-                    &:hover {
-                        background-color: var(--color-border);
-                        opacity: 0.8;
-                    }
-
-                    &:focus {
-                        outline: 2px solid var(--color-primary);
-                        outline-offset: 2px;
-                    }
-                }
-
-                & .discard-btn {
-                    background-color: var(--color-error);
-                    color: var(--color-surface);
-
-                    &:hover {
-                        opacity: 0.8;
-                    }
-                }
-            }
-
-            & .confirm-prompt {
-                margin: 0.75rem 0 0 0;
-                padding: 0.75rem;
-                background-color: var(--color-border);
-                border-radius: 4px;
-                font-size: 1rem;
-                color: var(--color-text);
-
-                & .prompt-message {
-                    margin: 0 0 0.5rem 0;
-                }
-
-                & .confirm-actions {
-                    display: flex;
-                    gap: 0.5rem;
-
-                    & button {
-                        padding: 0.5rem 1rem;
-                        border: none;
-                        border-radius: 4px;
-                        font-size: 1rem;
-                        cursor: pointer;
-
-                        &:focus {
-                            outline: 2px solid var(--color-primary);
-                            outline-offset: 2px;
-                        }
-                    }
-
-                    & .cancel-btn {
-                        background-color: var(--color-surface);
-                        color: var(--color-text);
-                        border: 1px solid var(--color-border);
-
-                        &:hover {
-                            background-color: var(--color-text);
-                            color: var(--color-surface);
-                        }
-                    }
-
-                    & .commit-btn {
-                        background-color: var(--color-error);
-                        color: var(--color-surface);
-
-                        &:hover {
-                            opacity: 0.8;
-                        }
-                    }
-                }
-            }
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
     }
 }
