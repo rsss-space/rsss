@@ -12,6 +12,8 @@ import { Sidebar } from '../components/sidebar.js'
 import { CacheSettings } from '../components/cache-settings.js'
 import { EmptyState } from '../components/empty-state.js'
 import { Pagination } from '../components/pagination.js'
+import { FeedBlockedBanner } from '../components/feed-blocked-banner.js'
+import { feedRowState } from '../blocked-ops.js'
 import Debug from '@substrate-system/debug'
 import { ELLIPSIS } from '../constants.js'
 const debug = Debug('rsss:view:feed-reader')
@@ -42,6 +44,15 @@ export const FeedReader:FunctionComponent<{
         if (!feedUrl) return null
         return feeds.value.find(f => stripProtocol(f.url) === feedUrl) || null
     }, [feedUrl, feeds.value])
+
+    const blockedOps = selectedFeed ?
+        state.blockedOpsForFeed(selectedFeed.id) :
+        []
+    const rowState = selectedFeed ?
+        feedRowState(selectedFeed, blockedOps) :
+        'none'
+    const showBanner = selectedFeed !== null &&
+        (rowState === 'blocked' || rowState === 'failed')
 
     const pendingCount = (() => {
         const updateCounts = state.feedUpdateCounts.value
@@ -158,6 +169,14 @@ export const FeedReader:FunctionComponent<{
                         </button>
                     </div>
 
+                    ${showBanner && html`
+                        <${FeedBlockedBanner}
+                            state=${state}
+                            feed=${selectedFeed}
+                            blockedOps=${blockedOps}
+                        />
+                    `}
+
                     <ul class="items-list">
                         ${itemsLoading.value && items.value.length === 0 && html`
                             <div class="loading-text">
@@ -174,7 +193,8 @@ export const FeedReader:FunctionComponent<{
                             </li>
                         `)}
 
-                        ${!itemsLoading.value && items.value.length === 0 && html`
+                        ${!itemsLoading.value && items.value.length === 0 &&
+                            !showBanner && html`
                             <${EmptyState}
                                 state=${state}
                                 pendingCount=${pendingCount}
