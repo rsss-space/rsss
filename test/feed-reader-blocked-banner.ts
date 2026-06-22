@@ -15,6 +15,7 @@ import {
     type Feed,
     type Item,
     paintCacheHydratedOnBootstrap,
+    State,
 } from '../src/client/state.js'
 import { type DeadLetterRow } from '../src/client/db/push-sync.js'
 import {
@@ -135,136 +136,160 @@ function nextTick ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
 }
 
+// Save original State.loadItems before tests
+const originalLoadItems = State.loadItems
+
 test('AC3.4: blocked feed renders banner and hides empty state',
     async t => {
-        const f1 = feed(1)
-        const blockedOp = deadLetter(100, {
-            target_id: 1,
-            op: 'add_feed'
-        })
-
-        const state = makeState({
-            feeds: [f1],
-            items: [],
-            blockedByFeed: {
-                1: [blockedOp]
-            }
-        })
-
-        const root = mount(state, ['example.com/feed-1.xml'])
+        // Stub State.loadItems to prevent flaky async state updates
+        State.loadItems = async () => {}
 
         try {
-            await nextTick()
+            const f1 = feed(1)
+            const blockedOp = deadLetter(100, {
+                target_id: 1,
+                op: 'add_feed'
+            })
 
-            const banner = root.querySelector(
-                '.feed-blocked-banner'
-            )
-            const emptyState = root.querySelector(
-                '.empty-state'
-            )
-            const itemsList = root.querySelector(
-                '.items-list'
-            )
+            const state = makeState({
+                feeds: [f1],
+                items: [],
+                blockedByFeed: {
+                    1: [blockedOp]
+                }
+            })
 
-            t.ok(banner, 'blocked banner renders')
-            t.equal(emptyState, null,
-                'empty state is null when banner present')
-            t.ok(itemsList, 'items-list element exists')
+            const root = mount(state, ['example.com/feed-1.xml'])
 
-            // Verify banner is above items-list by checking
-            // they are siblings and banner comes first
-            if (banner && itemsList) {
-                const bannerParent = banner.parentElement
-                const itemsParent = itemsList.parentElement
-                t.equal(bannerParent, itemsParent,
-                    'banner and items-list share parent')
-                // Check banner comes before items-list
-                const bannerIndex = Array.from(
-                    bannerParent?.children ?? []
-                ).indexOf(banner)
-                const listIndex = Array.from(
-                    itemsParent?.children ?? []
-                ).indexOf(itemsList)
-                t.ok(
-                    bannerIndex < listIndex,
-                    'banner renders before items-list'
+            try {
+                await nextTick()
+
+                const banner = root.querySelector(
+                    '.feed-blocked-banner'
                 )
+                const emptyState = root.querySelector(
+                    '.empty-state'
+                )
+                const itemsList = root.querySelector(
+                    '.items-list'
+                )
+
+                t.ok(banner, 'blocked banner renders')
+                t.equal(emptyState, null,
+                    'empty state is null when banner present')
+                t.ok(itemsList, 'items-list element exists')
+
+                // Verify banner is above items-list by checking
+                // they are siblings and banner comes first
+                if (banner && itemsList) {
+                    const bannerParent = banner.parentElement
+                    const itemsParent = itemsList.parentElement
+                    t.equal(bannerParent, itemsParent,
+                        'banner and items-list share parent')
+                    // Check banner comes before items-list
+                    const bannerIndex = Array.from(
+                        bannerParent?.children ?? []
+                    ).indexOf(banner)
+                    const listIndex = Array.from(
+                        itemsParent?.children ?? []
+                    ).indexOf(itemsList)
+                    t.ok(
+                        bannerIndex < listIndex,
+                        'banner renders before items-list'
+                    )
+                }
+            } finally {
+                unmount(root)
             }
         } finally {
-            unmount(root)
+            State.loadItems = originalLoadItems
         }
     }
 )
 
 test('AC4.1 (integrated): failed-fetch feed renders Retry-only banner',
     async t => {
-        const f1 = feed(1, {
-            last_fetched: null,
-            last_error: 'Connection timeout'
-        })
-
-        const state = makeState({
-            feeds: [f1],
-            items: [],
-            blockedByFeed: {}
-        })
-
-        const root = mount(state, ['example.com/feed-1.xml'])
+        // Stub State.loadItems to prevent flaky async state updates
+        State.loadItems = async () => {}
 
         try {
-            await nextTick()
+            const f1 = feed(1, {
+                last_fetched: null,
+                last_error: 'Connection timeout'
+            })
 
-            const banner = root.querySelector(
-                '.feed-blocked-banner'
-            )
-            const retryBtn = root.querySelector(
-                '.feed-blocked-retry'
-            )
-            const discardBtn = root.querySelector(
-                '.feed-blocked-discard'
-            )
+            const state = makeState({
+                feeds: [f1],
+                items: [],
+                blockedByFeed: {}
+            })
 
-            t.ok(banner, 'failed-fetch banner renders')
-            t.ok(retryBtn, 'retry button present')
-            t.equal(discardBtn, null,
-                'no discard button in failed-fetch case')
+            const root = mount(state, ['example.com/feed-1.xml'])
+
+            try {
+                await nextTick()
+
+                const banner = root.querySelector(
+                    '.feed-blocked-banner'
+                )
+                const retryBtn = root.querySelector(
+                    '.feed-blocked-retry'
+                )
+                const discardBtn = root.querySelector(
+                    '.feed-blocked-discard'
+                )
+
+                t.ok(banner, 'failed-fetch banner renders')
+                t.ok(retryBtn, 'retry button present')
+                t.equal(discardBtn, null,
+                    'no discard button in failed-fetch case')
+            } finally {
+                unmount(root)
+            }
         } finally {
-            unmount(root)
+            State.loadItems = originalLoadItems
         }
     }
 )
 
 test('clean feed (no blocked, resolved): no banner, normal empty state',
     async t => {
-        const f1 = feed(1, {
-            last_fetched: '2026-06-10 00:00:00',
-            last_error: null
-        })
-
-        const state = makeState({
-            feeds: [f1],
-            items: [],
-            blockedByFeed: {}
-        })
-
-        const root = mount(state, ['example.com/feed-1.xml'])
+        // Stub State.loadItems to prevent flaky async state updates
+        State.loadItems = async () => {}
 
         try {
-            await nextTick()
+            const f1 = feed(1, {
+                last_fetched: '2026-06-10 00:00:00',
+                last_error: null
+            })
 
-            const banner = root.querySelector(
-                '.feed-blocked-banner'
-            )
-            const emptyState = root.querySelector(
-                '.empty-state'
-            )
+            const state = makeState({
+                feeds: [f1],
+                items: [],
+                blockedByFeed: {}
+            })
 
-            t.equal(banner, null,
-                'no banner for clean feed')
-            t.ok(emptyState,
-                'empty state renders for clean feed')
+            const root = mount(state, ['example.com/feed-1.xml'])
+
+            try {
+                await nextTick()
+
+                const banner = root.querySelector(
+                    '.feed-blocked-banner'
+                )
+                const emptyState = root.querySelector(
+                    '.empty-state'
+                )
+
+                t.equal(banner, null,
+                    'no banner for clean feed')
+                t.ok(emptyState,
+                    'empty state renders for clean feed')
+            } finally {
+                unmount(root)
+            }
         } finally {
-            unmount(root)
+            State.loadItems = originalLoadItems
         }
     }
 )

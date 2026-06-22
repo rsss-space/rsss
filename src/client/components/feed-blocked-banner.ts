@@ -21,7 +21,7 @@ export const FeedBlockedBanner:FunctionComponent<
 
     function handleConfirmCommit (op:DeadLetterRow):void {
         if (op.op === 'add_feed') {
-            State.discardBlockedFeedAdd(state, feed.id, op.id)
+            state.discardBlockedFeedAdd(state, feed.id, op.id)
         } else {
             state.discardDeadLetter(state, op.id)
         }
@@ -106,7 +106,7 @@ export const FeedBlockedBanner:FunctionComponent<
     }
 
     // Case B: blockedOps.length === 0, failed fetch
-    if (feed.last_error !== null || feed.last_fetched === null) {
+    if (feed.last_fetched === null && feed.last_error !== null) {
         return html`
             <div class="feed-blocked-banner">
                 <span class="feed-blocked-icon" aria-hidden="true">

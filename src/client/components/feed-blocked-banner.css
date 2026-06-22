@@ -31,7 +31,7 @@
 
         & .feed-blocked-op-attempts,
         & .feed-blocked-op-error {
-            font-size:0.9375rem;
+            font-size:1rem;
             color:var(--color-muted);
             margin:0.25rem 0;
         }

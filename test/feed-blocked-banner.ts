@@ -226,27 +226,19 @@ test('AC5.3: Discard branches on op type (add_feed)',
     async t => {
         const calls:{ name:string; args:unknown[] }[] = []
 
-        // Save original State.discardBlockedFeedAdd
-        const originalDiscardBlockedFeedAdd =
-            State.discardBlockedFeedAdd;
-
-        // Stub State.discardBlockedFeedAdd
-        // eslint-disable-next-line
-        (State.discardBlockedFeedAdd as any) =
-            (...a:unknown[]):Promise<void> => {
-                calls.push({
-                    name: 'discardBlockedFeedAdd',
-                    args: a
-                })
-                return Promise.resolve()
-            }
-
         const state = {
             retryDeadLetter: (...a:unknown[]) => {
                 calls.push({ name: 'retryDeadLetter', args: a })
             },
             discardDeadLetter: (...a:unknown[]) => {
                 calls.push({ name: 'discardDeadLetter', args: a })
+            },
+            discardBlockedFeedAdd: (...a:unknown[]) => {
+                calls.push({
+                    name: 'discardBlockedFeedAdd',
+                    args: a
+                })
+                return Promise.resolve()
             }
         } as unknown as AppState
 
@@ -279,10 +271,7 @@ test('AC5.3: Discard branches on op type (add_feed)',
             t.equal(calls[0].args[1], 5, 'called with feed.id')
             t.equal(calls[0].args[2], 99, 'called with op.id')
         } finally {
-            unmount(root);
-            // eslint-disable-next-line
-            (State.discardBlockedFeedAdd as any) =
-                originalDiscardBlockedFeedAdd
+            unmount(root)
         }
     }
 )
