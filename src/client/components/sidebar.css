@@ -63,6 +63,15 @@
         animation: spin 0.8s linear infinite;
     }
 
+    & .feed-warning-dot {
+        display: inline-block;
+        width: 0.875rem;
+        height: 0.875rem;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--color-warning);
+    }
+
     &.resolving .feed-select {
         color: var(--color-text-secondary);
         font-style: italic;
