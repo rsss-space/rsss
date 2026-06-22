@@ -40,6 +40,7 @@ import {
     defaultCacheMode,
     loadLocalFirstSettings
 } from './local-first-settings.js'
+import { removeLocalFeedRow } from './db/local-adapter.js'
 import {
     getOutboxCount,
     getDeadLetterOutboxCount,
@@ -3165,7 +3166,19 @@ State.discardBlockedFeedAdd = async function (
     feedId:number,
     deadLetterId:number
 ):Promise<void> {
-    // implemented in Task 4
+    const did = state.user.value?.did
+    const db = did ? _getLocalDbImpl(did) : null
+    if (!db) return
+
+    await removeDeadLetter(db, deadLetterId)
+    await removeLocalFeedRow(db, feedId)
+
+    await State.loadFeeds(state)
+    await State.loadItems(state)
+    await State.loadCounts(state)
+    await refreshDeadLetterCounts(db)
+
+    state._setRoute('/')
 }
 
 /**

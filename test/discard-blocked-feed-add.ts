@@ -159,7 +159,7 @@ test(
 
         try {
             const feedId = seedFeed(db)
-            const itemId = seedItem(db, feedId)
+            seedItem(db, feedId)
 
             // Seed a dead-letter add_feed row with target_id = feedId
             db.exec({
@@ -234,7 +234,7 @@ test(
                 )
 
                 // AC5.1: feed gone
-                const removedFeed = queryOne<{ id:number }>(
+                const removedFeed = queryOne<{ cnt:number }>(
                     db,
                     'SELECT COUNT(*) as cnt FROM feeds WHERE id = ?',
                     [feedId]
