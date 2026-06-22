@@ -75,6 +75,7 @@ import './discard-blocked-feed-add.js'
 import './sync-status-route.js'
 import './sync-status-feeds.js'
 import './sync-status-header.js'
+import './feed-blocked-banner.js'
 
 test('all done', () => {
     if (window) {
