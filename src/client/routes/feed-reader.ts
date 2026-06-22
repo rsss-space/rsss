@@ -178,7 +178,8 @@ export const FeedReader:FunctionComponent<{
                     `}
 
                     <ul class="items-list">
-                        ${itemsLoading.value && items.value.length === 0 && html`
+                        ${itemsLoading.value &&
+                            items.value.length === 0 && html`
                             <div class="loading-text">
                                 Loading items${ELLIPSIS}
                             </div>
