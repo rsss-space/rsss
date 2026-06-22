@@ -4,7 +4,6 @@ import { render } from 'preact'
 import { batch, signal } from '@preact/signals'
 import { SyncStatusRoute } from '../src/client/routes/sync-status.js'
 import {
-    deadLetters,
     failedFeeds,
     loading,
     confirmingKey,
@@ -13,7 +12,8 @@ import {
 import {
     syncStatus,
     syncError,
-    syncDeadLetters
+    syncDeadLetters,
+    deadLetterRows
 } from '../src/client/db/sync-status.js'
 import type { AppState } from '../src/client/state.js'
 import type { DeadLetterRow } from '../src/client/db/push-sync.js'
@@ -87,7 +87,7 @@ function createTestState (
 
 function resetSignals ():void {
     batch(() => {
-        deadLetters.value = []
+        deadLetterRows.value = []
         failedFeeds.value = []
         loading.value = false
         syncStatus.value = 'idle'
@@ -99,7 +99,7 @@ function resetSignals ():void {
 }
 
 // The route's mount effect calls loadSyncStatus, which clobbers
-// deadLetters to [] when there is no local DB (always, in tests).
+// deadLetterRows to [] when there is no local DB (always, in tests).
 // Render with the rows seeded, wait out that one-time clobber, then
 // re-seed the rows the test exercises. syncDeadLetters is held
 // constant so the reactive reload never fires again and wipes them.
@@ -110,16 +110,16 @@ async function mountWithRows (
     seed?:() => void
 ):Promise<void> {
     batch(() => {
-        deadLetters.value = rows
+        deadLetterRows.value = rows
         syncDeadLetters.value = rows.length
         syncStatus.value = 'idle'
         syncError.value = null
         seed?.()
     })
     render(html`<${SyncStatusRoute} state=${state} />`, root)
-    await waitFor(() => deadLetters.value.length === 0, 50)
+    await waitFor(() => deadLetterRows.value.length === 0, 50)
     batch(() => {
-        deadLetters.value = rows
+        deadLetterRows.value = rows
         seed?.()
     })
     await waitFor(
@@ -180,7 +180,7 @@ test('sync-status-detail.AC5.1: empty state renders when no problems',
         try {
             const { state } = createTestState(true)
             batch(() => {
-                deadLetters.value = []
+                deadLetterRows.value = []
                 failedFeeds.value = []
                 syncStatus.value = 'idle'
                 syncError.value = null
@@ -224,7 +224,7 @@ test('sync-status-detail.AC5.2: empty state transitions ' +
 
         // Transition: resolve all problems
         batch(() => {
-            deadLetters.value = []
+            deadLetterRows.value = []
             syncDeadLetters.value = 0
         })
 
@@ -251,7 +251,7 @@ test('sync-status-detail.AC7.1: current-error section shows ' +
         batch(() => {
             syncStatus.value = 'error'
             syncError.value = testError
-            deadLetters.value = []
+            deadLetterRows.value = []
             failedFeeds.value = []
         })
 
@@ -279,7 +279,7 @@ test('sync-status-detail.AC7.2: current-error section omitted ' +
         batch(() => {
             syncStatus.value = 'idle'
             syncError.value = 'this-error-should-not-appear'
-            deadLetters.value = []
+            deadLetterRows.value = []
             failedFeeds.value = []
         })
 
@@ -297,7 +297,7 @@ test('sync-status-detail.AC7.2: current-error section omitted ' +
     }
 })
 
-test('sync-status-detail.AC2.1: deadLetters renders as ' +
+test('sync-status-detail.AC2.1: deadLetterRows renders as ' +
     'blocked-change rows', async t => {
     const { root, cleanup } = mountRoot()
     try {
@@ -324,7 +324,7 @@ test('sync-status-detail.AC2.1: deadLetters renders as ' +
         }
 
         batch(() => {
-            deadLetters.value = [dl1, dl2]
+            deadLetterRows.value = [dl1, dl2]
             syncStatus.value = 'idle'
             syncError.value = null
         })
@@ -365,7 +365,7 @@ test('sync-status-detail.AC2.2: blocked-change row shows ' +
         }
 
         batch(() => {
-            deadLetters.value = [dl]
+            deadLetterRows.value = [dl]
             syncStatus.value = 'idle'
             syncError.value = null
         })
@@ -399,13 +399,13 @@ test('sync-status-detail.AC2.2: blocked-change row shows ' +
 })
 
 test('sync-status-detail.AC2.3: blocked-changes section ' +
-    'omitted when deadLetters empty', async t => {
+    'omitted when deadLetterRows empty', async t => {
     const { root, cleanup } = mountRoot()
     try {
         const { state } = createTestState(true)
 
         batch(() => {
-            deadLetters.value = []
+            deadLetterRows.value = []
             syncStatus.value = 'idle'
             syncError.value = null
         })
@@ -429,7 +429,7 @@ test('sync-status-detail.AC9.1: live region present on first render',
             const { state } = createTestState(true)
 
             batch(() => {
-                deadLetters.value = []
+                deadLetterRows.value = []
                 syncStatus.value = 'idle'
                 syncError.value = null
             })
@@ -471,13 +471,13 @@ test('sync-status-detail.AC8.4: Retry calls handler immediately ' +
         state.retryDeadLetter = async (_s, id) => {
             retryCallLog.push(id)
             batch(() => {
-                deadLetters.value = []
+                deadLetterRows.value = []
                 syncDeadLetters.value = 0
             })
         }
 
         batch(() => {
-            deadLetters.value = [dl]
+            deadLetterRows.value = [dl]
             syncDeadLetters.value = 1
             syncStatus.value = 'idle'
             syncError.value = null
@@ -599,7 +599,7 @@ test('sync-status-detail.AC8.2: Cancel clears confirmingKey',
             }
 
             batch(() => {
-                deadLetters.value = [dl]
+                deadLetterRows.value = [dl]
                 syncStatus.value = 'idle'
                 syncError.value = null
                 confirmingKey.value = 'dl:' + dl.id
@@ -653,14 +653,14 @@ test('sync-status-detail.AC8.2: Commit button calls ' +
         state.discardDeadLetter = async (_s, discardId) => {
             discardCallLog.push(discardId)
             batch(() => {
-                deadLetters.value = []
+                deadLetterRows.value = []
                 syncDeadLetters.value = 0
                 confirmingKey.value = null
             })
         }
 
         batch(() => {
-            deadLetters.value = [dl]
+            deadLetterRows.value = [dl]
             syncDeadLetters.value = 1
             syncStatus.value = 'idle'
             syncError.value = null
@@ -711,13 +711,13 @@ test('sync-status-detail.AC4.2: Retry removes row from rendered list',
 
             state.retryDeadLetter = async (_s, _id) => {
                 batch(() => {
-                    deadLetters.value = []
+                    deadLetterRows.value = []
                     syncDeadLetters.value = 0
                 })
             }
 
             batch(() => {
-                deadLetters.value = [dl]
+                deadLetterRows.value = [dl]
                 syncDeadLetters.value = 1
                 syncStatus.value = 'idle'
                 syncError.value = null
@@ -771,13 +771,13 @@ test('sync-status-detail.AC9.2: single live region gets announcement',
 
             state.retryDeadLetter = async (_s, _id) => {
                 batch(() => {
-                    deadLetters.value = []
+                    deadLetterRows.value = []
                     syncDeadLetters.value = 0
                 })
             }
 
             batch(() => {
-                deadLetters.value = [dl]
+                deadLetterRows.value = [dl]
                 syncDeadLetters.value = 1
                 syncStatus.value = 'idle'
                 syncError.value = null
@@ -854,7 +854,7 @@ test('sync-status-detail.AC9.3: focus moves to the next row ' +
         // (which would clobber the list to empty with no test DB)
         // stays quiet for the duration of the assertion.
         state.discardDeadLetter = async (_s, _id) => {
-            deadLetters.value = [rowB]
+            deadLetterRows.value = [rowB]
         }
 
         await mountWithRows(root, state, [rowA, rowB], () => {
@@ -901,7 +901,7 @@ test('sync-status-detail.AC9.3: focus moves to the page heading ' +
         }
 
         state.retryDeadLetter = async (_s, _id) => {
-            deadLetters.value = []
+            deadLetterRows.value = []
         }
 
         await mountWithRows(root, state, [row])

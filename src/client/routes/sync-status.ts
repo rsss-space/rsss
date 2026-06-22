@@ -6,12 +6,12 @@ import '@substrate-system/button'
 import { type AppState } from '../state.js'
 import {
     loadSyncStatus,
-    deadLetters,
     failedFeeds,
     confirmingKey,
     announcement
 } from './sync-status-state.js'
 import {
+    deadLetterRows,
     syncStatus,
     syncError,
     syncDeadLetters
@@ -109,14 +109,14 @@ export const SyncStatusRoute:FunctionComponent<{
         if (target && target.ownerDocument.contains(target)) {
             target.focus()
         }
-    }, [deadLetters.value.length, failedFeeds.value.length])
+    }, [deadLetterRows.value.length, failedFeeds.value.length])
 
     if (!state.isAuthenticated.value) return null
 
     // Read signals at component level to ensure preact subscribes
     const currentStatus = syncStatus.value
     const currentError = syncError.value
-    const dl = deadLetters.value
+    const dl = deadLetterRows.value
     const ff = failedFeeds.value
     const announceText = announcement.value
     const confirming = confirmingKey.value

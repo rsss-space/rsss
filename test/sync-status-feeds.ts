@@ -4,7 +4,6 @@ import { render } from 'preact'
 import { batch, signal } from '@preact/signals'
 import { SyncStatusRoute } from '../src/client/routes/sync-status.js'
 import {
-    deadLetters,
     failedFeeds,
     loading,
     confirmingKey,
@@ -13,7 +12,8 @@ import {
 import {
     syncStatus,
     syncError,
-    syncDeadLetters
+    syncDeadLetters,
+    deadLetterRows
 } from '../src/client/db/sync-status.js'
 import type { AppState } from '../src/client/state.js'
 import type { Feed } from '../src/client/db/types.js'
@@ -112,7 +112,7 @@ function createTestState (
 
 function resetSignals ():void {
     batch(() => {
-        deadLetters.value = []
+        deadLetterRows.value = []
         failedFeeds.value = []
         loading.value = false
         syncStatus.value = 'idle'
@@ -1065,15 +1065,15 @@ async t => {
         }
 
         batch(() => {
-            deadLetters.value = [deadLetterRow]
+            deadLetterRows.value = [deadLetterRow]
             syncDeadLetters.value = 1
             syncStatus.value = 'offline'
             syncError.value = null
         })
         render(html`<${SyncStatusRoute} state=${state} />`, root)
-        await waitFor(() => deadLetters.value.length === 0, 50)
+        await waitFor(() => deadLetterRows.value.length === 0, 50)
         batch(() => {
-            deadLetters.value = [deadLetterRow]
+            deadLetterRows.value = [deadLetterRow]
         })
         await waitFor(
             () => document.querySelector('.blocked-change') !== null,
