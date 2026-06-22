@@ -1,4 +1,4 @@
-import { signal, batch } from '@preact/signals'
+import { signal, batch, type Signal } from '@preact/signals'
 import { getBootstrappedDb, getLocalDb } from '../db/index.js'
 import {
     listDeadLetterOutbox

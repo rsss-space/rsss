@@ -27,7 +27,9 @@ export function mapBlockedOpsByFeed (
                 feedId = row.target_id
             }
         } else if (row.op === 'update_item') {
-            feedId = itemIdToFeedId.get(row.target_id) ?? null
+            if (row.target_id !== null) {
+                feedId = itemIdToFeedId.get(row.target_id) ?? null
+            }
         }
 
         if (feedId !== null) {
