@@ -1,9 +1,9 @@
-import {test} from '@substrate-system/tapzero'
-import {mapBlockedOpsByFeed, feedRowState} from
+import { test } from '@substrate-system/tapzero'
+import { mapBlockedOpsByFeed, feedRowState } from
     '../src/client/blocked-ops.js'
-import type {DeadLetterRow} from
+import type { DeadLetterRow } from
     '../src/client/db/push-sync.js'
-import type {Feed, Item} from
+import type { Feed, Item } from
     '../src/client/db/types.js'
 
 test(
