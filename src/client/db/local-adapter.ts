@@ -101,10 +101,24 @@ export async function listFailedFeeds (db:Sqlite3Db):Promise<Feed[]> {
 }
 
 export async function removeLocalFeedRow (
-    _db:Sqlite3Db,
-    _feedId:number
+    db:Sqlite3Db,
+    feedId:number
 ):Promise<void> {
-    // implemented in Task 2
+    await execDb(db, 'BEGIN')
+    try {
+        await execDb(db, {
+            sql: 'DELETE FROM items WHERE feed_id = ?',
+            bind: [feedId]
+        })
+        await execDb(db, {
+            sql: 'DELETE FROM feeds WHERE id = ?',
+            bind: [feedId]
+        })
+        await execDb(db, 'COMMIT')
+    } catch (err) {
+        await execDb(db, 'ROLLBACK')
+        throw err
+    }
 }
 
 export function createLocalAdapter (db:Sqlite3Db):DbAdapter {
