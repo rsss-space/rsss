@@ -47,7 +47,9 @@ import {
     PushSyncBillingError,
     upsertFeedFromServer,
     requeueDeadLetter,
-    removeDeadLetter
+    removeDeadLetter,
+    refreshDeadLetterRows,
+    type DeadLetterRow
 } from './db/push-sync.js'
 import { runSync } from './db/sync.js'
 import {
@@ -56,7 +58,8 @@ import {
     setSyncOffline,
     syncStatus,
     syncPending,
-    syncDeadLetters
+    syncDeadLetters,
+    deadLetterRows
 } from './db/sync-status.js'
 import {
     findItemByRoute,
@@ -116,6 +119,7 @@ import {
     liveChannelSocketUrl,
     parseLiveMessage
 } from './live-channel.js'
+import { mapBlockedOpsByFeed } from './blocked-ops.js'
 const debug = Debug('rsss:state')
 
 /**
@@ -715,6 +719,8 @@ export type AppState = {
     showStarredOnly:Signal<boolean>,
     pageSize:Signal<number>,
     selectedFeedId:Signal<number|null>,
+    blockedOpsByFeed:ReadonlySignal<Map<number, DeadLetterRow[]>>,
+    blockedOpsForFeed:(feedId:number) => DeadLetterRow[],
     viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
     cleanup:() => void,
@@ -837,6 +843,16 @@ export function State ():AppState {
                 'syncing' :
                 state.feedSyncStatus.value
         )),
+        blockedOpsByFeed: computed(() => (
+            mapBlockedOpsByFeed(
+                deadLetterRows.value,
+                state.feeds.value,
+                state.items.value
+            )
+        )),
+        blockedOpsForFeed: (feedId:number) => (
+            state.blockedOpsByFeed.value.get(feedId) ?? []
+        ),
         items: signal<Item[]>(seededItems),
         itemsLoading: signal(false),
         itemsTotal: signal(seededItems.length),
@@ -3097,6 +3113,7 @@ async function refreshDeadLetterCounts (db:Sqlite3Db):Promise<void> {
             syncStatus.value = isBrowserOnline() ? 'idle' : 'offline'
         }
     })
+    await refreshDeadLetterRows(db)
 }
 
 /**
