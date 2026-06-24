@@ -196,7 +196,7 @@ async function resolveContactEmail (
     return readContactEmail(env, did)
 }
 
-function isProbablyEmail (s:unknown):s is string {
+function isProbablyEmail (s:unknown):s isstring {
     return typeof s === 'string'
         && s.length > 3
         && s.length < 320
@@ -658,7 +658,7 @@ app.post(
     authLoginHandleRateLimit,
     async (c) => {
         try {
-            const body = await c.req.json<{ handle: string }>()
+            const body = await c.req.json<{ handle:string }>()
 
             if (!body.handle) {
                 return c.json({ error: 'Handle is required' }, 400)
@@ -2305,7 +2305,7 @@ app.get('/api/profile/:did', async (c) => {
             if (!('code' in result)) {
                 return result.records
                     .map(r => parseSubscriptionRecord(r.uri, r.value))
-                    .filter((r):r is ProfileSubscription => r !== null)
+                    .filter((r):r isProfileSubscription => r !== null)
             }
             // Fallback: direct PDS listRecords
             const pdsUrl = extractPdsUrl(resolvedDidDoc)
@@ -2328,7 +2328,7 @@ app.get('/api/profile/:did', async (c) => {
                     .map(r => parseSubscriptionRecord(
                         r.uri ?? '', r.value
                     ))
-                    .filter((s):s is ProfileSubscription => s !== null)
+                    .filter((s):s isProfileSubscription => s !== null)
             } catch {
                 return []
             }

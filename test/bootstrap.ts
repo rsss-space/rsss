@@ -58,9 +58,9 @@ import type {
 } from '../src/client/db/sqlite-worker-protocol.js'
 
 type SqliteModule = (
-    opts:{ locateFile:() => string }
-) => Promise<{
-    oo1:{ DB:new (filename:string) => PersistentDb }
+    opts:{ locateFile:()=> string }
+)=> Promise<{
+    oo1:{ DB:new (filename:string)=> PersistentDb }
 }>
 
 type PersistentDbExecArg =
@@ -73,8 +73,8 @@ type PersistentDbExecArg =
     }
 
 interface PersistentDb {
-    exec:(arg:PersistentDbExecArg) => void
-    close:() => void
+    exec:(arg:PersistentDbExecArg)=> void
+    close:()=> void
 }
 
 let sqlitePromise:ReturnType<SqliteModule>|null = null
@@ -428,7 +428,7 @@ function persistentQueryAll<T> (
     return rows
 }
 
-async function catchError (fn:() => Promise<void>):Promise<unknown> {
+async function catchError (fn:()=> Promise<void>):Promise<unknown> {
     try {
         await fn()
         return null
@@ -1030,7 +1030,7 @@ test('AC8.1: tab lock held through OPFS delete - success path',
         // We verify that removeOpfsDb completes BEFORE releaseLocalTabLock
         // is called by observing when the lock's released state changes.
         const events:string[] = []
-        let removeOpfsDbResolve:() => void = () => {}
+        let removeOpfsDbResolve:()=> void = () => {}
         let stateDuringRemove:string|null = null
         const { getTabCoordinationState } = await import(
             '../src/client/db/tab-coordination.js'
@@ -1294,8 +1294,8 @@ test('disableLocalFirst: cancels in-flight sync without UI error',
         syncStatus.value = 'idle'
         syncError.value = null
 
-        let pullStarted:() => void = () => {}
-        let pullAborted:() => void = () => {}
+        let pullStarted:()=> void = () => {}
+        let pullAborted:()=> void = () => {}
         const started = new Promise<void>((resolve) => {
             pullStarted = resolve
         })

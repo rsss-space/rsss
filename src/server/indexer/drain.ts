@@ -24,15 +24,15 @@ export function jetstreamUrl (
 }
 
 export interface DrainSocket {
-    addEventListener(t:'message', cb:(ev:{ data:string }) => void):void
-    addEventListener(t:'close', cb:() => void):void
-    addEventListener(t:'error', cb:(err:unknown) => void):void
+    addEventListener(t:'message', cb:(ev:{ data:string })=> void):void
+    addEventListener(t:'close', cb:()=> void):void
+    addEventListener(t:'error', cb:(err:unknown)=> void):void
     close():void
 }
 
 export interface DrainDeps {
-    open:(url:string) => Promise<DrainSocket>
-    now?:() => number
+    open:(url:string)=> Promise<DrainSocket>
+    now?:()=> number
     maxWallMs?:number
     idleMs?:number
     caughtUpUs?:number
@@ -40,7 +40,7 @@ export interface DrainDeps {
 
 export async function drainOnce (
     deps:DrainDeps,
-    apply:(evt:JetstreamEvent) => void | Promise<void>,
+    apply:(evt:JetstreamEvent)=> void | Promise<void>,
     cursor:number|null
 ):Promise<number> {
     const now = deps.now ?? Date.now
@@ -57,7 +57,7 @@ export async function drainOnce (
         let chain:Promise<void> = Promise.resolve()
         let stopped = false
 
-        const finish = (fn:() => void) => {
+        const finish = (fn:()=> void) => {
             if (stopped) return
             stopped = true
             if (idle !== undefined) clearTimeout(idle)
@@ -111,7 +111,7 @@ export async function openJetstreamSocket (url:string):Promise<DrainSocket> {
 // the query string. `open` is injectable so this is unit-testable (AC3.9).
 export async function openJetstreamSocketWithFailover (
     url:string,
-    open:(u:string) => Promise<DrainSocket> = openJetstreamSocket
+    open:(u:string)=> Promise<DrainSocket> = openJetstreamSocket
 ):Promise<DrainSocket> {
     try {
         return await open(url)

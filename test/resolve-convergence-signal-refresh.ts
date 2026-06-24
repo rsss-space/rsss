@@ -47,10 +47,10 @@ test(
     async (t) => {
         const realSetTimeout = globalThis.setTimeout
         const realClearTimeout = globalThis.clearTimeout
-        const scheduled:Array<{ cb:() => void; delay:number }> = []
+        const scheduled:Array<{ cb:()=> void; delay:number }> = []
 
         // Mock setTimeout to capture scheduled timers
-        globalThis.setTimeout = ((cb:() => void, delay:number) => {
+        globalThis.setTimeout = ((cb:()=> void, delay:number) => {
             const id = scheduled.length
             scheduled.push({ cb, delay })
             return id as unknown as ReturnType<typeof setTimeout>
@@ -131,12 +131,12 @@ test(
         const realClearTimeout = globalThis.clearTimeout
         const scheduled:Array<{
             delay:number
-            cb:() => void
+            cb:()=> void
             id:number
         }> = []
         let nextTimerId = 1
 
-        globalThis.setTimeout = ((cb:() => void, delay:number) => {
+        globalThis.setTimeout = ((cb:()=> void, delay:number) => {
             const id = nextTimerId++
             scheduled.push({ delay, cb, id })
             return id as unknown as ReturnType<typeof setTimeout>
@@ -314,10 +314,10 @@ test(
         const realSetTimeout = globalThis.setTimeout
         const realClearTimeout = globalThis.clearTimeout
         const realFetch = globalThis.fetch
-        const scheduled:Array<{ delay:number; cb:() => void; id:number }> = []
+        const scheduled:Array<{ delay:number; cb:()=> void; id:number }> = []
         let nextTimerId = 1
 
-        globalThis.setTimeout = ((cb:() => void, delay:number) => {
+        globalThis.setTimeout = ((cb:()=> void, delay:number) => {
             const id = nextTimerId++
             scheduled.push({ delay, cb, id })
             return id as unknown as ReturnType<typeof setTimeout>
@@ -422,12 +422,12 @@ test(
         const realFetch = globalThis.fetch
         const scheduled:Array<{
             delay:number
-            cb:() => void
+            cb:()=> void
             id:number
         }> = []
         let nextTimerId = 1
 
-        globalThis.setTimeout = ((cb:() => void, delay:number) => {
+        globalThis.setTimeout = ((cb:()=> void, delay:number) => {
             const id = nextTimerId++
             scheduled.push({ delay, cb, id })
             return id as unknown as ReturnType<typeof setTimeout>

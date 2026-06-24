@@ -67,7 +67,7 @@ function seedItem (db:Sqlite3Db, feedId:number):number {
 }
 
 function makeTestState (
-    onSetRoute?:(r:string) => void,
+    onSetRoute?:(r:string)=> void,
     initialRoute:string = '/'
 ):AppState {
     const refreshInProgress = signal(false)
@@ -134,11 +134,11 @@ type FetchInit = Parameters<typeof fetch>[1]
 type FetchHandler = (
     input:FetchInput,
     init?:FetchInit
-) => Promise<Response>
+)=> Promise<Response>
 
 function withStubbedFetch<T> (
     handler:FetchHandler,
-    fn:() => Promise<T>
+    fn:()=> Promise<T>
 ):Promise<T> {
     const original = globalThis.fetch
     globalThis.fetch = handler as typeof fetch

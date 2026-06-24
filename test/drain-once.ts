@@ -14,22 +14,22 @@ class FakeSocket implements DrainSocket {
 
     private listeners:Map<
         'message' | 'close' | 'error',
-        Array<(ev:unknown) => void>
+        Array<(ev:unknown)=> void>
     > = new Map()
 
     addEventListener (
         t:'message',
-        cb:(ev:{ data:string }) => void
+        cb:(ev:{ data:string })=> void
     ):void
 
     addEventListener (
         t:'close',
-        cb:() => void
+        cb:()=> void
     ):void
 
     addEventListener (
         t:'error',
-        cb:(err:unknown) => void
+        cb:(err:unknown)=> void
     ):void
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,7 +59,7 @@ class FakeSocket implements DrainSocket {
         if (cbs) {
             for (const cb of cbs) {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-                (cb as (() => void))()
+                (cb as (()=> void))()
             }
         }
     }

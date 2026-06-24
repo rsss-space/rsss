@@ -8,48 +8,48 @@ import {
 export type { BlurhashJob }
 
 export interface BlurhashImage {
-    get_width:() => number
-    get_height:() => number
-    get_raw_pixels:() => Uint8Array | Uint8ClampedArray
-    free:() => void
+    get_width:()=> number
+    get_height:()=> number
+    get_raw_pixels:()=> Uint8Array | Uint8ClampedArray
+    free:()=> void
 }
 
 export interface BlurhashConsumerDeps {
-    fetchImage:(request:Request, userAgent:string) => Promise<Uint8Array|null>
-    decodeImage:(bytes:Uint8Array) => BlurhashImage
+    fetchImage:(request:Request, userAgent:string)=> Promise<Uint8Array|null>
+    decodeImage:(bytes:Uint8Array)=> BlurhashImage
     resizeImage:(
         image:BlurhashImage,
         width:number,
         height:number
-    ) => BlurhashImage
+    )=> BlurhashImage
     encodePixels:(
         pixels:Uint8ClampedArray,
         width:number,
         height:number,
         componentX:number,
         componentY:number
-    ) => string
+    )=> string
 }
 
 export interface BlurhashConsumerEnv {
     BLURHASH_KV:{
-        get:(key:string) => Promise<string|null>
+        get:(key:string)=> Promise<string|null>
         put:(
             key:string,
             value:string,
             options?:{ expirationTtl?:number }
-        ) => Promise<void>
+        )=> Promise<void>
     }
     USER_DO:{
-        idFromString:(id:string) => DurableObjectId
-        get:(id:DurableObjectId) => { fetch:(request:Request) =>
+        idFromString:(id:string)=> DurableObjectId
+        get:(id:DurableObjectId)=> { fetch:(request:Request)=>
             Promise<Response> }
     }
 }
 
 interface QueueMessageLike {
     body:unknown
-    ack:() => void
+    ack:()=> void
 }
 
 interface QueueBatchLike {
@@ -68,7 +68,7 @@ const BROWSER_USER_AGENT = [
 
 export const BLURHASH_CACHE_TTL_SECONDS = 60 * 60 * 24 * 90
 
-function isBlurhashJob (value:unknown):value is BlurhashJob {
+function isBlurhashJob (value:unknown):value isBlurhashJob {
     if (!value || typeof value !== 'object') return false
 
     const job = value as Partial<BlurhashJob>
@@ -80,7 +80,7 @@ function isBlurhashJob (value:unknown):value is BlurhashJob {
 
 function blurhashRequest (imageUrl:string):{
     request:Request
-    cancel:() => void
+    cancel:()=> void
 } {
     const controller = new AbortController()
     const timeout = setTimeout(() => {

@@ -40,7 +40,7 @@ function feedStatusState (options:{
 
 function renderFeedStatus (state:AppState):{
     root:HTMLElement
-    cleanup:() => void
+    cleanup:()=> void
 } {
     const body = document.querySelector('body') as HTMLElement
     const root = document.createElement('div')

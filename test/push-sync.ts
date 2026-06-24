@@ -26,7 +26,7 @@ setTestMode(true, wasmUrl as string)
 type FakeFetch = (
     url:string,
     init?:RequestInit
-) => Promise<{ ok:boolean; status:number; json:() => Promise<unknown> }>
+)=> Promise<{ ok:boolean; status:number; json:()=> Promise<unknown> }>
 
 function makeFetch (
     status:number,
@@ -100,7 +100,7 @@ function seedItem (db:Sqlite3Db, feedId:number):number {
 
 async function withMockedNow (
     iso:string,
-    fn:() => Promise<void>
+    fn:()=> Promise<void>
 ):Promise<void> {
     const RealDate = Date
     const fixedMs = RealDate.parse(iso)

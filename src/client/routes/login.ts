@@ -4,7 +4,7 @@ import { useState } from 'preact/hooks'
 import { useComputed } from '@preact/signals'
 import { State, type AppState } from '../state.js'
 
-export const LoginPage: FunctionComponent<{ state: AppState }> = function LoginPage ({ state }) {
+export const LoginPage:FunctionComponent<{ state:AppState }> = function LoginPage ({ state }) {
     const [handle, setHandle] = useState('')
     const authLoading = useComputed(() => state.authLoading.value)
     const authError = useComputed(() => state.authError.value)
@@ -13,13 +13,13 @@ export const LoginPage: FunctionComponent<{ state: AppState }> = function LoginP
     const urlParams = new URLSearchParams(window.location.search)
     const urlError = urlParams.get('error')
 
-    async function handleSubmit (e: Event) {
+    async function handleSubmit (e:Event) {
         e.preventDefault()
         if (!handle.trim()) return
         await State.login(state, handle.trim())
     }
 
-    async function handleDevLogin (e: Event) {
+    async function handleDevLogin (e:Event) {
         e.preventDefault()
         await State.devLogin(state)
         state._setRoute('/')
@@ -50,7 +50,7 @@ export const LoginPage: FunctionComponent<{ state: AppState }> = function LoginP
                             name="handle"
                             placeholder="yourname.bsky.social"
                             value=${handle}
-                            onInput=${(e: Event) => setHandle((e.target as HTMLInputElement).value)}
+                            onInput=${(e:Event) => setHandle((e.target as HTMLInputElement).value)}
                             disabled=${authLoading.value}
                             required
                         />

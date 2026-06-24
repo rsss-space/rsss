@@ -42,7 +42,7 @@ export async function getTextBytesTotal (db:Sqlite3Db):Promise<number> {
 export async function loadStorageUsage (
     db:Sqlite3Db,
     feedIds:number[],
-    opts?:{ shouldApply?:() => boolean }
+    opts?:{ shouldApply?:()=> boolean }
 ):Promise<void> {
     const perFeed:Record<number, number> = {}
     for (const feedId of feedIds) {

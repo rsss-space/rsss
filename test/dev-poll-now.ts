@@ -85,22 +85,22 @@ test('POST /api/dev/poll-now returns 404 in staging',
 // ---- DO-level tests (AC3.1, AC3.3) ----
 
 interface DevPollDoType {
-    sql:{ exec:(q:string, ...p:unknown[]) => FakeQueryResult }
-    fetchFeed:(feed:FeedRow) => Promise<void>
-    advanceFeedCursor:(feedId:number) => void
-    getFeedUpdateCounts:() => Record<string, number>
+    sql:{ exec:(q:string, ...p:unknown[])=> FakeQueryResult }
+    fetchFeed:(feed:FeedRow)=> Promise<void>
+    advanceFeedCursor:(feedId:number)=> void
+    getFeedUpdateCounts:()=> Record<string, number>
     runFeedPool:(
         feeds:FeedRow[],
-        worker:(feed:FeedRow) => Promise<void>
-    ) => Promise<void>
-    broadcast:(event:string, data:unknown) => void
-    createRouter:() => {
-        request:(path:string, init?:RequestInit) => Promise<Response>
+        worker:(feed:FeedRow)=> Promise<void>
+    )=> Promise<void>
+    broadcast:(event:string, data:unknown)=> void
+    createRouter:()=> {
+        request:(path:string, init?:RequestInit)=> Promise<Response>
     }
 }
 
 interface CreateDevPollHarnessOptions {
-    onFetch?:(feedId:number) => Promise<void>
+    onFetch?:(feedId:number)=> Promise<void>
     nodeEnv?:string
 }
 
@@ -167,7 +167,7 @@ test('AC3.1: dev poll-now discovers feeds, counts items, does not advance cursor
             { method: 'POST' }
         )
         const text = await res.text()
-        let body: {
+        let body:{
             polledFeeds?:number
             newItems?:number
             counts?:Record<string, number>

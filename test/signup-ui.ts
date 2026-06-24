@@ -22,7 +22,7 @@ interface MinimalState {
     user:ReturnType<typeof signal<unknown>>;
     route:ReturnType<typeof signal<string>>;
     routes:Array<unknown>;
-    _setRoute:(r:string) => void;
+    _setRoute:(r:string)=> void;
     _routeHistory:string[];
 }
 

@@ -21,13 +21,13 @@ class MockKvNamespace {
         prefix?:string
         limit?:number
         cursor?:string
-    }) => Promise<KVListResult>
+    })=> Promise<KVListResult>
 
     constructor (kvListImpl:(opts:{
         prefix?:string
         limit?:number
         cursor?:string
-    }) => Promise<KVListResult>) {
+    })=> Promise<KVListResult>) {
         this.kvListImpl = kvListImpl
     }
 
@@ -53,7 +53,7 @@ function makeEnv (
         prefix?:string
         limit?:number
         cursor?:string
-    }) => Promise<KVListResult>
+    })=> Promise<KVListResult>
 ) {
     const kv = new MockKvNamespace(kvList)
     return {

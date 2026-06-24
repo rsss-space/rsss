@@ -8,7 +8,7 @@ import {
 
 interface IdleCall {
     id:number
-    fn:() => void
+    fn:()=> void
     cancelled:boolean
 }
 
@@ -18,14 +18,14 @@ interface MaybeIdleWindow {
 }
 
 function withIdleStub (
-    body:(calls:IdleCall[]) => void|Promise<void>
+    body:(calls:IdleCall[])=> void|Promise<void>
 ):void|Promise<void> {
     const w = window as unknown as MaybeIdleWindow
     const prevReq = w.requestIdleCallback
     const prevCancel = w.cancelIdleCallback
     const calls:IdleCall[] = []
     let nextId = 1
-    w.requestIdleCallback = (fn:() => void):number => {
+    w.requestIdleCallback = (fn:()=> void):number => {
         const id = nextId++
         calls.push({ id, fn, cancelled: false })
         return id
@@ -65,8 +65,8 @@ interface DepsBag {
 // reschedule pattern are the surface tested by INV-1.
 function wireCacheStatusEffect (
     deps:DepsBag,
-    recompute:() => Promise<void>
-):() => void {
+    recompute:()=> Promise<void>
+):()=> void {
     let pendingHandle:IdleHandle|null = null
     return effect(() => {
         const _deps = [

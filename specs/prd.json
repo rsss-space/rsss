@@ -16,7 +16,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-001 / FR-1. Verification-heavy but single-file edit to nitpicker.md. Use targeted grep/read per finding; do not blanket-check."
     },
     {
@@ -34,7 +34,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-002 / FR-2,3,4. Symbols confirmed in src/server/durable-objects/index.ts: RESOLVE_WINDOW_MS (l184), POST_HYBRID_WAIT_MS (l185), awaitFetchOrTimeout (l2548), handler ~l1626-1644. Keep the alarm pull-forward; only drop the wait. Bare-row 201 is already the slow-path response today, so no client depends on fetched metadata in the body (see PRD Design Considerations)."
     },
     {
@@ -49,7 +49,7 @@
         "Typecheck passes (sanity check)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-003 / FR-5,6. README only. Verify the session model in the server auth code before editing so the new wording is accurate."
     },
     {
@@ -64,7 +64,7 @@
         "Verify in browser using dev-browser skill: set a custom DEBUG value then reload and confirm it persists; with no DEBUG value set, confirm the default is seeded in dev"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-004 / FR-7,8. Target src/client/index.ts l38-44 (dev/staging gate confirmed). Resolve the production branch per PRD Open Questions (current code does removeItem in prod) - prefer leaving DEBUG untouched when absent unless there is a reason to force-off."
     },
     {
@@ -83,7 +83,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-005 + US-006, REVISED 2026-06-23 after research + user decision. The PRD's FR-9 (add @typescript-eslint/type-annotation-spacing) is NOT viable: that rule was REMOVED in the installed typescript-eslint plugin v8 (8.53.1 ships 0 formatting rules), and ESLint Stylistic (@stylistic/eslint-plugin) is not installed. User chose a one-time cleanup with NO enforcement rule and NO new dependency - the style may regress later without a guard, which is an accepted tradeoff. House style confirmed by user: no space on EITHER side of the type-annotation colon. SCALE: if many files violate, the AST codemod must handle them - do not hand-edit hundreds of files. Finding completeness has no lint-rule checker now, so spot-check with heuristic greps after the codemod."
     }
   ]

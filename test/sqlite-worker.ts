@@ -8,8 +8,8 @@ import type {
 } from '../src/client/db/sqlite-worker-protocol.js'
 
 class MockWorker {
-    onmessage:((event:MessageEvent<SqliteWorkerResponse>) => void)|null = null
-    onerror:((event:ErrorEvent) => void)|null = null
+    onmessage:((event:MessageEvent<SqliteWorkerResponse>)=> void)|null = null
+    onerror:((event:ErrorEvent)=> void)|null = null
     sent:SqliteWorkerRequest[] = []
     terminated = false
 

@@ -16,7 +16,7 @@ interface RecordedCall {
 class FakeSqlStorage {
     calls:RecordedCall[] = []
 
-    exec (query:string, ...binds:unknown[]): {toArray():unknown[]; one():unknown} {
+    exec (query:string, ...binds:unknown[]):{toArray():unknown[]; one():unknown} {
         this.calls.push({ query, binds })
         return fakeResult([])
     }

@@ -46,9 +46,9 @@ import type {
 } from '../src/client/db/sqlite-worker-protocol.js'
 
 type SqliteModule = (
-    opts:{ locateFile:() => string }
-) => Promise<{
-    oo1:{ DB:new (filename:string) => PersistentDb }
+    opts:{ locateFile:()=> string }
+)=> Promise<{
+    oo1:{ DB:new (filename:string)=> PersistentDb }
 }>
 
 type PersistentDbExecArg =
@@ -61,8 +61,8 @@ type PersistentDbExecArg =
     }
 
 interface PersistentDb {
-    exec:(arg:PersistentDbExecArg) => void
-    close:() => void
+    exec:(arg:PersistentDbExecArg)=> void
+    close:()=> void
 }
 
 const did = 'did:test:opfs-persistence'
@@ -223,7 +223,7 @@ class PersistentSQLiteClient {
 
 interface FetchCounter {
     fetchFn:typeof fetch
-    fullSyncs:() => number
+    fullSyncs:()=> number
 }
 
 function makeFetchCounter ():FetchCounter {
@@ -291,7 +291,7 @@ async function loadLocalRows (state:AppState):Promise<void> {
 interface OpfsHarness {
     files:Map<string, PersistentDb>
     counters:{ opens:number; probes:number; removes:string[] }
-    cleanup:() => void
+    cleanup:()=> void
 }
 
 function setupOpfsHarness ():OpfsHarness {

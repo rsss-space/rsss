@@ -15,8 +15,8 @@ function createPatchRouteDo () {
         updated_at: '2026-04-26 00:00:00'
     }
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
-        createRouter:() => { request:(path:string, init:RequestInit) =>
+        sql:{ exec:(query:string, ...params:unknown[])=> QueryResult }
+        createRouter:()=> { request:(path:string, init:RequestInit)=>
             Promise<Response> }
     }
 

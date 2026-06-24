@@ -165,7 +165,7 @@ type AddFeedAcquireRecord = {
      * `waitForAddFeedRelease`. Idempotent (subsequent calls are
      * no-ops).
      */
-    settle:() => void
+    settle:()=> void
     /** Timer handle for the hard-timeout fallback. */
     timer:ReturnType<typeof setTimeout>
 }
@@ -405,7 +405,7 @@ export type RefreshOpName =
 export async function trackRefresh<T> (
     state:AppState,
     name:RefreshOpName,
-    fn:() => Promise<T>,
+    fn:()=> Promise<T>,
 ):Promise<T> {
     acquireRefresh(state)
     debug('trackRefresh acquire', name)
@@ -451,7 +451,7 @@ export function _resetRunResolveConvergenceDepsForTest ():void {
 // Test-injection seam for isLocalFirstActive selector in
 // _onlineRecoverySync. Tests can override via
 // `_setIsLocalFirstActiveForTest`.
-type IsLocalFirstActiveFn = () => ReadonlySignal<boolean>
+type IsLocalFirstActiveFn = ()=> ReadonlySignal<boolean>
 let _isLocalFirstActiveSelectorImpl:IsLocalFirstActiveFn =
     () => isLocalFirstActive
 export function _setIsLocalFirstActiveForTest (
@@ -666,7 +666,7 @@ export type ViewItemsCacheEntry = {
 export type ViewItemsCache = Map<FilterKey, ViewItemsCacheEntry>
 
 export type AppState = {
-    _setRoute:(route:string) => void,
+    _setRoute:(route:string)=> void,
     route:Signal<string>,
     routeItem:Signal<Item|null>,
     routeItemLoading:Signal<boolean>,
@@ -721,28 +721,28 @@ export type AppState = {
     pageSize:Signal<number>,
     selectedFeedId:Signal<number|null>,
     blockedOpsByFeed:ReadonlySignal<Map<number, DeadLetterRow[]>>,
-    blockedOpsForFeed:(feedId:number) => DeadLetterRow[],
+    blockedOpsForFeed:(feedId:number)=> DeadLetterRow[],
     viewItemsCache:ViewItemsCache,
     isAuthenticated:Signal<boolean>,
-    cleanup:() => void,
+    cleanup:()=> void,
     // Action methods
-    refreshFeed:(state:AppState, feedId:string) => Promise<void>,
+    refreshFeed:(state:AppState, feedId:string)=> Promise<void>,
     toggleFeedPublished:(
         state:AppState,
         feedId:number,
         publish:boolean
-    ) => Promise<void>,
+    )=> Promise<void>,
     deleteFeed:(
         state:AppState,
         feedId:number
-    ) => Promise<{ success:boolean; error?:string }>,
-    retryDeadLetter:(state:AppState, id:number) => Promise<void>,
-    discardDeadLetter:(state:AppState, id:number) => Promise<void>,
+    )=> Promise<{ success:boolean; error?:string }>,
+    retryDeadLetter:(state:AppState, id:number)=> Promise<void>,
+    discardDeadLetter:(state:AppState, id:number)=> Promise<void>,
     discardBlockedFeedAdd:(
         state:AppState,
         feedId:number,
         deadLetterId:number
-    ) => Promise<void>
+    )=> Promise<void>
 }
 
 function clearFeedUpdateCounts (
@@ -975,7 +975,7 @@ export function State ():AppState {
 
     const startLocalSync = (
         did:string,
-        isCurrent:() => boolean
+        isCurrent:()=> boolean
     ) => {
         getAdapter(did).then(() => {
             if (!isCurrent()) return
@@ -1857,7 +1857,7 @@ State.devLogin = async function (
  * Called after auth lands and after returning from checkout.
  */
 State.loadBillingStatus = async function (
-    opts?:{ shouldApply?:() => boolean }
+    opts?:{ shouldApply?:()=> boolean }
 ):Promise<BillingStatus|null> {
     try {
         const res = await api.get('billing/status', {
@@ -1886,7 +1886,7 @@ State.loadBillingStatus = async function (
 }
 
 State.loadPaymentMethods = async function (
-    opts?:{ shouldApply?:() => boolean }
+    opts?:{ shouldApply?:()=> boolean }
 ):Promise<void> {
     setPaymentMethodsLoading(true)
     try {

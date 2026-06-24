@@ -6,23 +6,23 @@ import { enqueueBodyBlurJobs } from './blurhash-body-enqueue.js'
 export type { ArticleFetchJob }
 
 export interface ArticleFetchConsumerDeps {
-    fetchArticle:(link:string) => Promise<FetchFullArticleResult>
+    fetchArticle:(link:string)=> Promise<FetchFullArticleResult>
 }
 
 export interface ArticleFetchConsumerEnv {
     USER_DO:{
-        idFromString:(id:string) => DurableObjectId
-        get:(id:DurableObjectId) => { fetch:(request:Request) =>
+        idFromString:(id:string)=> DurableObjectId
+        get:(id:DurableObjectId)=> { fetch:(request:Request)=>
             Promise<Response> }
     }
     BLURHASH_QUEUE:{
-        send:(message:unknown) => Promise<unknown>
+        send:(message:unknown)=> Promise<unknown>
     }
 }
 
 interface QueueMessageLike {
     body:unknown
-    ack:() => void
+    ack:()=> void
 }
 
 interface QueueBatchLike {

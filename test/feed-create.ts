@@ -74,18 +74,18 @@ function createStorageStub () {
 }
 
 function createRouterForPostFeeds (
-    waitUntil:(promise:Promise<unknown>) => void,
-    fetchFeed:(feed:FeedRow) => Promise<void>
+    waitUntil:(promise:Promise<unknown>)=> void,
+    fetchFeed:(feed:FeedRow)=> Promise<void>
 ) {
     const sql = createFeedSql()
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:ReturnType<typeof createFeedSql>
         ctx:{
-            waitUntil:(promise:Promise<unknown>) => void
+            waitUntil:(promise:Promise<unknown>)=> void
             storage:ReturnType<typeof createStorageStub>
         }
-        fetchFeed:(feed:FeedRow) => Promise<void>
-        createRouter:() => { request:(path:string, init:RequestInit) =>
+        fetchFeed:(feed:FeedRow)=> Promise<void>
+        createRouter:()=> { request:(path:string, init:RequestInit)=>
             Promise<Response> }
     }
 
@@ -99,7 +99,7 @@ function createRouterForPostFeeds (
     }
 }
 
-test('POST /feeds hybrid race: fast fetch returns resolved state immediately', async t => {
+test('POST /feeds non-blocking: always responds with 201 bare row without awaiting fetchFeed', async t => {
     let waitUntilCalled = false
     let fetchStarted = false
     const { app, sql } = createRouterForPostFeeds(
@@ -112,39 +112,51 @@ test('POST /feeds hybrid race: fast fetch returns resolved state immediately', a
         }
     )
 
-    let response:Response|null = null
-    const startTime = Date.now()
-    const responsePromise = app.request('/feeds', {
+    const response = await app.request('/feeds', {
         method: 'POST',
         body: JSON.stringify({
             url: 'https://example.com/feed.xml'
         })
-    }).then((res) => {
-        response = res
-        return res
     })
 
-    await responsePromise
-    const elapsedTime = Date.now() - startTime
-
-    t.ok(
-        elapsedTime < 500,
-        `fast fetch responds quickly (actual: ${elapsedTime}ms)`
-    )
-    t.equal(fetchStarted, true, 'fetch was attempted')
-    t.equal(
-        waitUntilCalled,
-        false,
-        'fast path does not use waitUntil'
-    )
+    t.equal(response.status, 201, 'feed create returns 201')
+    t.equal(fetchStarted, true, 'fetch was started')
+    t.equal(waitUntilCalled, true, 'fetch is always pushed to waitUntil')
     t.equal(sql.feeds.length, 1, 'feed row is inserted')
 
-    const settledResponse = response as Response | null
+    const body = await response.json() as { feed:FeedRow; unread?:number }
+    t.equal(body.feed.url, 'https://example.com/feed.xml')
+    t.equal(body.unread, 0, 'response includes unread count')
+    // bare row: last_fetched is null (fetch hasn't completed yet)
+    t.equal(body.feed.last_fetched, null, 'response is the bare inserted row')
+})
 
-    if (settledResponse) {
-        const body = await settledResponse.json() as { feed:FeedRow; unread?:number }
-        t.equal(settledResponse.status, 201, 'feed create returns 201')
-        t.equal(body.feed.url, 'https://example.com/feed.xml')
-        t.equal(body.unread, 0, 'response includes unread count')
-    }
+test('POST /feeds non-blocking: slow fetchFeed does not delay response', async t => {
+    let resolveSlowFetch!:()=> void
+    const slowFetch = new Promise<void>((resolve) => {
+        resolveSlowFetch = resolve
+    })
+
+    const { app } = createRouterForPostFeeds(
+        () => {},
+        () => slowFetch
+    )
+
+    const startTime = Date.now()
+    const response = await app.request('/feeds', {
+        method: 'POST',
+        body: JSON.stringify({
+            url: 'https://slow.example.com/feed.xml'
+        })
+    })
+    const elapsed = Date.now() - startTime
+
+    t.equal(response.status, 201, 'returns 201 before fetch completes')
+    t.ok(
+        elapsed < 500,
+        `response time is independent of fetch latency (actual: ${elapsed}ms)`
+    )
+
+    // Resolve the slow fetch so the promise doesn't hang the process
+    resolveSlowFetch()
 })

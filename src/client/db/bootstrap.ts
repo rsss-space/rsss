@@ -30,7 +30,7 @@ export const MIN_BOOTSTRAP_FREE_BYTES = 100 * 1024 * 1024
 
 /** The open DB after a successful bootstrap (cleared on disable). */
 let _bootstrappedDb:Sqlite3Db|null = null
-const bootstrapFailureCleanups = new Set<() => void>()
+const bootstrapFailureCleanups = new Set<()=> void>()
 
 export function getBootstrappedDb ():Sqlite3Db|null {
     return _bootstrappedDb
@@ -41,8 +41,8 @@ export function clearBootstrappedDb ():void {
 }
 
 export function addBootstrapFailureCleanup (
-    fn:() => void
-):() => void {
+    fn:()=> void
+):()=> void {
     bootstrapFailureCleanups.add(fn)
     return () => {
         bootstrapFailureCleanups.delete(fn)
@@ -56,8 +56,8 @@ function runBootstrapFailureCleanups ():void {
 }
 
 export interface BootstrapLocalDbOptions {
-    confirmTerminalReset?:(message:string) => boolean|Promise<boolean>
-    confirmLowStorage?:(message:string) => boolean|Promise<boolean>
+    confirmTerminalReset?:(message:string)=> boolean|Promise<boolean>
+    confirmLowStorage?:(message:string)=> boolean|Promise<boolean>
 }
 
 function isTransientBootstrapError (err:unknown):boolean {

@@ -213,8 +213,8 @@ test(
         const state = makeMinimalState()
         _resetRefreshRefCountForTest(state)
 
-        let resolve1: (value:void) => void = () => {}
-        let resolve2: (value:void) => void = () => {}
+        let resolve1:(value:void) => void = () => {}
+        let resolve2:(value:void) => void = () => {}
 
         const p1 = new Promise<void>((resolve) => { resolve1 = resolve })
         const p2 = new Promise<void>((resolve) => { resolve2 = resolve })
@@ -275,7 +275,7 @@ test(
 
         state.feedSyncStatus.value = 'synced'
 
-        let resolve2: (value:void) => void = () => {}
+        let resolve2:(value:void) => void = () => {}
         const p2 = new Promise<void>((resolve) => { resolve2 = resolve })
 
         // Start first with rejection, second with a deferred promise,

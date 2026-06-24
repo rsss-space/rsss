@@ -26,7 +26,7 @@ export const WarningIcon:FunctionComponent = function () {
 export const ArticleNotice:FunctionComponent<{
     notice:ReaderNotice;
     link:string|null;
-    onRetry:() => void;
+    onRetry:()=> void;
 }> = function ({ notice, link, onRetry }) {
     const label = link ? publisherLinkLabel(link) : null
     const href = link ? publisherLinkHref(link) : null

@@ -27,7 +27,7 @@ function paymentParams () {
 
 function withDateNow<T> (
     value:number,
-    fn:() => T
+    fn:()=> T
 ):T {
     const original = Date.now
     Date.now = () => value

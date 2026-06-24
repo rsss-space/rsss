@@ -23,7 +23,7 @@ export { BLURHASH_DECODE_MAX, blurhashDecodeSize }
 define()
 BlurHash.define()
 
-function isValidImageSize (value:number|null|undefined):value is number {
+function isValidImageSize (value:number|null|undefined):value isnumber {
     return typeof value === 'number' &&
         Number.isFinite(value) &&
         value > 0

@@ -43,7 +43,7 @@ const originalLoadItems = State.loadItems
 const originalMarkAllRead = State.markAllRead
 
 function waitFor (
-    condition:() => boolean,
+    condition:()=> boolean,
     desc:string,
     timeoutMs = 5000
 ):Promise<void> {

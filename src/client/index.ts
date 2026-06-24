@@ -4,6 +4,7 @@ import { html } from 'htm/preact'
 import { type FunctionComponent, render } from 'preact'
 import { useComputed } from '@preact/signals'
 import { State, type AppState, hydratePaintCache } from './state.js'
+import { seedDebugIfAbsent } from './debug-seed.js'
 import { getStoredDid } from './paint-cache.js'
 import Router from './routes/index.js'
 import { NotFound } from './not-found.js'
@@ -38,9 +39,7 @@ if (import.meta.env.DEV) {
 if (import.meta.env.DEV || import.meta.env.MODE === 'staging') {
     // @ts-expect-error DEV env
     window.state = state
-    localStorage.setItem('DEBUG', 'rsss,rsss:*')
-} else {
-    localStorage.removeItem('DEBUG')
+    seedDebugIfAbsent()
 }
 
 /**

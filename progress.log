@@ -5,3 +5,86 @@
 (none yet)
 
 ## Task Progress
+
+
+## 2026-06-23 — US-001
+- Verified each finding in nitpicker.md (#5-12, #14-20, #22-26, #28-39, #43, #46, #48-50) against the current codebase
+- Updated nitpicker.md checkboxes: 36 findings marked [x] complete, 1 left open (#46)
+- No source code was modified (doc-only change)
+- **Learnings for future iterations:**
+  - All P0s are fixed: SSRF (src/server/feed-fetch.ts), multi-tab OPFS (src/client/db/tab-coordination.ts with BroadcastChannel + Web Lock), session cookie now stores only session-id in KV
+  - runFeedPool with FEED_REFRESH_CONCURRENCY=8 replaced Promise.all(feeds.map(...)) for bounded alarm concurrency
+  - push-sync now runs before pull-sync in src/client/db/sync.ts; eliminates the pull-then-push ordering bug
+  - VerifiedSubscription typed status:'active'|'scheduled' with isVerifiedSubscriptionStatus narrowing guard in src/server/autumn-billing.ts
+  - formatSqliteTs helper normalizes timestamps client-side to match DO space-format
+  - dead_letter_outbox table added with DEAD_LETTER_ATTEMPT_LIMIT=10 in push-sync.ts
+  - fast-xml-parser replaces regex-based parseRss/parseAtom; 5MB cap + 15s timeout in feed-fetch.ts
+  - CI configured in .github/workflows/nodejs.yml
+  - #46 (routeToItemRoute/findItemByRoute) remains in state.ts — not moved to a routing.ts helper; only open finding in scope
+---
+
+## 2026-06-23 — US-002
+- Made POST /feeds strictly non-blocking: removed `awaitFetchOrTimeout` helper and hybrid-race logic
+- `fetchFeed` is now always pushed to `ctx.waitUntil` immediately; the handler returns 201 with the bare inserted row without waiting
+- Removed `POST_HYBRID_WAIT_MS` constant (was 3000) and `awaitFetchOrTimeout` private method from src/server/durable-objects/index.ts
+- Updated test/feed-create.ts: replaced the old hybrid-race test with two new tests — one verifying waitUntil is always called, one verifying slow fetchFeed does not delay response
+- Updated test/dead-code.mjs: added assertions that `awaitFetchOrTimeout` and `POST_HYBRID_WAIT_MS` are absent
+- Updated test/do-handlers.ts: fixed assertion from length 1→2 (GET /feeds reconcile + POST /feeds fetchFeed both now in waitUntil)
+- **Learnings for future iterations:**
+  - GET /feeds calls `ctx.waitUntil(reconcilePublishedFeeds())` — this is always present; test harnesses that count waitUntil calls must account for it
+  - The old hybrid-race pattern (awaitFetchOrTimeout with 3s timeout) is fully removed; all post-insert latency is now server-side background work
+  - Pre-existing typecheck errors exist in unrelated test files (test/alarm.ts, test/do-migrations.ts, etc.) — these were present before US-002 and are out of scope
+---
+
+## 2026-06-23 — US-003
+- Corrected README session wording from "encrypted cookies" to "signed session-id cookies"
+- Files changed: README.md only (doc-only change)
+- Three locations updated:
+  1. Worker overview list: "Session management with encrypted cookies" → "...with signed session-id cookies (session data lives in KV)"
+  2. SESSION_SECRET table row: "Secret used to encrypt session cookies" → "HMAC secret used to sign session-id cookies (session data lives in KV)"
+  3. Rotate SESSION_SECRET section: "can no longer be decrypted" → "no longer verify (signatures were made with the old secret)"
+- Confirmed via src/server/auth/oauth.ts: sessions are stored in KV under `session:<sid>`; the cookie carries only the HMAC-signed session id (no token material, no encryption)
+- **Learnings for future iterations:**
+  - Session model: random sid → KV store; cookie = base64(sid).hmac_signature — strictly signing, not encryption
+  - Pre-existing typecheck errors in test/ files are unrelated to doc changes and do not block doc-only tasks
+---
+
+## 2026-06-23 - US-004
+- What was implemented: Stop stomping the DEBUG localStorage key on load
+- Extracted debug seeding logic into `src/client/debug-seed.ts` (`seedDebugIfAbsent`)
+  which only calls `localStorage.setItem('DEBUG', ...)` when `getItem('DEBUG') === null`.
+- Removed unconditional `localStorage.setItem` (line 41) and `localStorage.removeItem`
+  (line 43) from `src/client/index.ts`; replaced with `seedDebugIfAbsent()` call inside
+  the dev/staging gate. The production branch that called `removeItem` was deleted entirely.
+- Added `test/debug-seed.ts` with 3 tests (absent → seeds, present → preserves, empty
+  string → preserves). Added to `test/browser-tests.ts`.
+- Files changed: src/client/debug-seed.ts (new), src/client/index.ts, test/debug-seed.ts
+  (new), test/browser-tests.ts, specs/prd.json (passes: true)
+- **Learnings for future iterations:**
+  - Module-level side effects in index.ts that touch browser globals (localStorage) should
+    be extracted into small helpers so they can be unit-tested independently.
+  - `localStorage.getItem` returns `null` (not `undefined`) when a key is absent; the
+    presence check `=== null` correctly treats an empty-string value as "present".
+---
+
+## 2026-06-23 — US-005
+- Normalized type-annotation colon spacing repo-wide (one-time cleanup)
+- Used @typescript-eslint/parser (already installed) to find TSTypeAnnotation nodes AST-aware
+- Removed spaces before and after type-annotation colons in 18 files (220 removals)
+- Files changed: src/server/auth/oauth.ts, src/server/durable-objects/index.ts,
+  src/server/index.ts, src/client/components/payment-method-modal.ts,
+  src/client/routes/login.ts, and 13 test files
+- Throwaway script run from project directory (not committed); deleted after use
+- npm run lint passes, npm test passes, no new typecheck errors (pre-existing errors unchanged)
+- **Learnings for future iterations:**
+  - @typescript-eslint/parser creates nested TSTypeAnnotation nodes inside TSTypePredicate
+    (e.g., `value is SomeType`). The inner node does NOT start with ':' — it starts at the
+    type name. Always guard with `source[node.range[0]] === ':'` before treating a
+    TSTypeAnnotation as a type-annotation colon.
+  - Run AST codemods from the project directory (not /tmp) so require() resolves
+    node_modules correctly.
+  - Most of the codebase (297 of 315 files) already used the no-space house style;
+    only 18 files needed cleanup.
+  - Pre-existing typecheck errors (1390 lines) are unrelated to colon spacing — they
+    existed before this task and are out of scope.
+---

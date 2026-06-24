@@ -50,7 +50,7 @@ export class LocalDbOpenError extends Error {
 
 let _testMode = false
 let _testWasmUrl:string|undefined
-let _workerClientFactory:(() => SQLiteWorkerClient) = createSQLiteWorkerClient
+let _workerClientFactory:(()=> SQLiteWorkerClient) = createSQLiteWorkerClient
 let _probedWorkerClient:SQLiteWorkerClient|null = null
 
 /** Set to true in tests to use an in-memory DB instead of OPFS. */
@@ -61,7 +61,7 @@ export function setTestMode (v:boolean, wasmUrl?:string):void {
 }
 
 export function setSQLiteWorkerClientFactoryForTests (
-    factory:(() => SQLiteWorkerClient)|null
+    factory:(()=> SQLiteWorkerClient)|null
 ):void {
     disposeProbedWorkerClient()
     _workerClientFactory = factory ?? createSQLiteWorkerClient
@@ -73,8 +73,8 @@ export async function initSqlite () {
         ? { locateFile: () => _testWasmUrl! }
         : {}
     const init = sqlite3Module.default as (
-        opts?:{ locateFile?:() => string }
-    ) => ReturnType<typeof sqlite3Module.default>
+        opts?:{ locateFile?:()=> string }
+    )=> ReturnType<typeof sqlite3Module.default>
     const sqlite3 = await init(opts)
     return sqlite3
 }

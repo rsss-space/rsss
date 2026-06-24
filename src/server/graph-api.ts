@@ -1,6 +1,6 @@
 export interface GraphApiDeps {
-    listFollowing:() => Promise<string[]>
-    getFollowers:(did:string) => Promise<{
+    listFollowing:()=> Promise<string[]>
+    getFollowers:(did:string)=> Promise<{
         dids:string[]
         count:number|null
         available:boolean

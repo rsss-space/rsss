@@ -14,24 +14,24 @@ function withIdleStub<T> (
     body:(
         idleCalls:Array<{
             id:number
-            fn:() => void
+            fn:()=> void
             timeout:number|undefined
             cancelled:boolean
         }>
-    ) => T
+    )=> T
 ):T {
     const w = window as unknown as MaybeIdleWindow
     const prevReq = w.requestIdleCallback
     const prevCancel = w.cancelIdleCallback
     const calls:Array<{
         id:number
-        fn:() => void
+        fn:()=> void
         timeout:number|undefined
         cancelled:boolean
     }> = []
     let nextId = 1
     w.requestIdleCallback = (
-        fn:() => void,
+        fn:()=> void,
         opts?:{ timeout?:number }
     ):number => {
         const id = nextId++
@@ -58,7 +58,7 @@ function withIdleStub<T> (
     }
 }
 
-function withoutIdle<T> (body:() => T):T {
+function withoutIdle<T> (body:()=> T):T {
     const w = window as unknown as MaybeIdleWindow
     const prevReq = w.requestIdleCallback
     const prevCancel = w.cancelIdleCallback

@@ -106,10 +106,10 @@ test('sync response preserves thumbnail_url values', async t => {
 /**
  * Simulates the client-side upsert logic
  */
-function simulateUpsert<T extends { id: number }> (
-    existing: T[],
-    incoming: T[]
-): T[] {
+function simulateUpsert<T extends { id:number }> (
+    existing:T[],
+    incoming:T[]
+):T[] {
     const result = new Map<number, T>()
 
     // Add existing items
@@ -171,19 +171,19 @@ test('client upsert - preserves unmodified records', async t => {
 // ============ Sync State Tests ============
 
 interface SyncState {
-    lastSyncedAt: string | null
-    remoteUrl: string | null
+    lastSyncedAt:string | null
+    remoteUrl:string | null
 }
 
 function createSyncStateManager () {
-    let state: SyncState = {
+    let state:SyncState = {
         lastSyncedAt: null,
         remoteUrl: null
     }
 
     return {
         getState: () => ({ ...state }),
-        updateState: (newState: Partial<SyncState>) => {
+        updateState: (newState:Partial<SyncState>) => {
             state = { ...state, ...newState }
         },
         shouldFullSync: () => state.lastSyncedAt === null

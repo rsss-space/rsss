@@ -500,7 +500,7 @@ async function upsertItemFromServer (
 type FetchLike = (
     url:string,
     init?:RequestInit
-) => Promise<{ ok:boolean; status:number; json:() => Promise<unknown> }>
+)=> Promise<{ ok:boolean; status:number; json:()=> Promise<unknown> }>
 
 export interface PushSyncOptions {
     trackStatus?:boolean

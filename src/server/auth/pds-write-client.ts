@@ -62,13 +62,13 @@ export type PdsWriteResult =
 
 export interface PdsWriteClientDeps {
     fetch?:typeof fetch
-    now?:() => number
-    persistCredentials:(credentials:OAuthCredentialRecord) => Promise<void>
+    now?:()=> number
+    persistCredentials:(credentials:OAuthCredentialRecord)=> Promise<void>
     reportError?:(
         err:unknown,
         area:string,
         context?:Record<string, unknown>
-    ) => void
+    )=> void
 }
 
 interface PdsAttemptResult {
@@ -152,7 +152,7 @@ function bodyForDeleteRecord (
     return body
 }
 
-function isRecord (value:unknown):value is Record<string, unknown> {
+function isRecord (value:unknown):value isRecord<string, unknown> {
     return typeof value === 'object' && value !== null &&
         !Array.isArray(value)
 }

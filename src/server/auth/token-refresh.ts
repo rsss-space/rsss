@@ -13,8 +13,8 @@ export type OAuthRefreshResult =
 
 export interface RefreshOAuthCredentialsDeps {
     fetch?:typeof fetch
-    now?:() => number
-    persistCredentials:(credentials:OAuthCredentialRecord) => Promise<void>
+    now?:()=> number
+    persistCredentials:(credentials:OAuthCredentialRecord)=> Promise<void>
 }
 
 interface TokenResponseBody {

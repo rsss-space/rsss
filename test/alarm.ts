@@ -14,10 +14,10 @@ interface FeedRow {
 }
 
 interface AlarmStorage {
-    get:<T>(key:string) => Promise<T | undefined>
-    put:(key:string, value:unknown) => Promise<void>
-    delete:(key:string) => Promise<void>
-    setAlarm:(time:number) => Promise<void>
+    get:<T>(key:string)=> Promise<T | undefined>
+    put:(key:string, value:unknown)=> Promise<void>
+    delete:(key:string)=> Promise<void>
+    setAlarm:(time:number)=> Promise<void>
 }
 
 function createFeed (id:number, url = `https://example.com/${id}.xml`) {
@@ -48,15 +48,15 @@ function deferred () {
 
 function createAlarmDo (
     feeds:FeedRow[],
-    fetchFeed:(feed:FeedRow) => Promise<void>,
+    fetchFeed:(feed:FeedRow)=> Promise<void>,
     setAlarm = async (_time:number) => {},
     storage:Partial<AlarmStorage> = {}
 ) {
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
+        sql:{ exec:(query:string, ...params:unknown[])=> QueryResult }
         ctx:{ storage:AlarmStorage }
-        fetchFeed:(feed:FeedRow) => Promise<void>
-        alarm:() => Promise<void>
+        fetchFeed:(feed:FeedRow)=> Promise<void>
+        alarm:()=> Promise<void>
     }
 
     userDo.sql = {
@@ -105,7 +105,7 @@ function createAlarmDo (
 
 function createResumeAlarmDo (
     feeds:FeedRow[],
-    fetchFeed:(feed:FeedRow) => Promise<void>,
+    fetchFeed:(feed:FeedRow)=> Promise<void>,
     storage:AlarmStorage,
     failOnQuery:number
 ) {
@@ -152,8 +152,8 @@ function createResumeAlarmDo (
 test('scheduleNextFeedRefresh arms the next alarm ~60 minutes out', async t => {
     const armedTimes:number[] = []
     const userDo = Object.create(RsssUserDO.prototype) as {
-        ctx:{ storage:{ setAlarm:(time:number) => Promise<void> } }
-        scheduleNextFeedRefresh:() => Promise<void>
+        ctx:{ storage:{ setAlarm:(time:number)=> Promise<void> } }
+        scheduleNextFeedRefresh:()=> Promise<void>
     }
     userDo.ctx = {
         storage: {
@@ -299,8 +299,8 @@ test('fetchFeed stores last_error and last_status on failure', async t => {
         id:unknown
     } = null
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
-        fetchFeed:(feed:FeedRow) => Promise<void>
+        sql:{ exec:(query:string, ...params:unknown[])=> QueryResult }
+        fetchFeed:(feed:FeedRow)=> Promise<void>
     }
 
     userDo.sql = {

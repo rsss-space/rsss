@@ -17,7 +17,7 @@ import type { Sqlite3Db } from '../src/client/db/sqlite-init.js'
 
 const { pullSync } = pullSyncModule
 
-type ErrorCtor = new () => Error
+type ErrorCtor = new ()=> Error
 
 setTestMode(true, wasmUrl as string)
 
@@ -107,7 +107,7 @@ function queryAll<T> (db:Sqlite3Db, sql:string, bind?:unknown[]):T[] {
 
 async function withMockedNow (
     iso:string,
-    fn:() => Promise<void>
+    fn:()=> Promise<void>
 ):Promise<void> {
     const RealDate = Date
     const fixedMs = RealDate.parse(iso)

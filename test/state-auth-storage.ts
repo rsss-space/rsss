@@ -40,22 +40,22 @@ import {
     stubWebSocket
 } from './helpers/stub-live-socket.js'
 
-type ErrorCtor = new () => Error
+type ErrorCtor = new ()=> Error
 type StateWithSyncAuth = typeof State & {
-    handleSyncAuthError?:(state:AppState, err:unknown) => boolean
+    handleSyncAuthError?:(state:AppState, err:unknown)=> boolean
 }
-type QueuedRefreshTimer = () => void
+type QueuedRefreshTimer = ()=> void
 
 interface QueuedRefreshSafetyTimerStub {
-    restore:() => void
-    runSafetyTimers:() => void
+    restore:()=> void
+    runSafetyTimers:()=> void
 }
 
 class FakeBroadcastChannel {
     static channels:FakeBroadcastChannel[] = []
 
     name:string
-    onmessage:((ev:{ data:unknown }) => void)|null = null
+    onmessage:((ev:{ data:unknown })=> void)|null = null
     closed = false
 
     constructor (name:string) {
@@ -86,7 +86,7 @@ function nextTask ():Promise<void> {
     return new Promise(resolve => setTimeout(resolve, 0))
 }
 
-function stubRefreshSafetyTimer ():() => void {
+function stubRefreshSafetyTimer ():()=> void {
     const originalSetTimeout = globalThis.setTimeout
     const originalClearTimeout = globalThis.clearTimeout
 
@@ -542,7 +542,7 @@ test('refreshFeeds marks feed sync as syncing while request is in flight',
     async t => {
         const originalFetch = globalThis.fetch
         const restoreTimeout = stubRefreshSafetyTimer()
-        let resolveRefresh:(response:Response) => void = () => {}
+        let resolveRefresh:(response:Response)=> void = () => {}
 
         try {
             globalThis.fetch = async () => new Promise<Response>(resolve => {
@@ -752,7 +752,7 @@ test('refreshFeeds retries from error state and recovers via SSE',
         const restoreTimeout = stubRefreshSafetyTimer()
         const restoreSocket = stubWebSocket()
         const originalReconcileAfterRefresh = State.reconcileAfterRefresh
-        let resolveRefresh:(response:Response) => void = () => {}
+        let resolveRefresh:(response:Response)=> void = () => {}
 
         try {
             globalThis.fetch = async () => new Promise<Response>(resolve => {
@@ -832,7 +832,7 @@ test('refreshFeeds retries from error and replaces a second failure',
     async t => {
         const originalFetch = globalThis.fetch
         const restoreTimeout = stubRefreshSafetyTimer()
-        let rejectRefresh:(err:Error) => void = () => {}
+        let rejectRefresh:(err:Error)=> void = () => {}
 
         try {
             globalThis.fetch = async () => new Promise<Response>(
@@ -1127,7 +1127,7 @@ test('online event coalesces while sync is already in flight',
         }
         const did = 'did:plc:online-coalesce'
         let syncCalls = 0
-        let resolveSync:(response:Response) => void = () => {}
+        let resolveSync:(response:Response)=> void = () => {}
 
         setupLocalFirstForStateTest()
         await getAdapter(did)
@@ -1401,7 +1401,7 @@ function captureStateListeners ():CapturedListeners {
 // un-stubbed they schedule a paint-cache write that fires (against
 // torn-down state) after the test, crashing the shared bundle. Returns a
 // restore fn for the finally block.
-function stubStateDataLoads ():() => void {
+function stubStateDataLoads ():()=> void {
     const orig = {
         loadBillingStatus: State.loadBillingStatus,
         loadFeeds: State.loadFeeds,
@@ -1521,7 +1521,7 @@ async t => {
         'visibilityState'
     )
     let loadFeedStatusCalls = 0
-    let resolvePending:(() => void)|null = null
+    let resolvePending:(()=> void)|null = null
     const pendingPromise = new Promise<void>((resolve) => {
         resolvePending = resolve
     })

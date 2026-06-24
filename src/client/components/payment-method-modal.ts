@@ -24,19 +24,19 @@ import { billingStatus } from '../billing-status.js'
 import './payment-method-modal.css'
 
 type ModalWindowAttrs = preact.JSX.HTMLAttributes<HTMLElement> & {
-    active?: string;
-    closable?: string;
-    'no-icon'?: string | boolean;
-    animated?: string;
-    noclick?: string | boolean;
-    close?: string;
+    active?:string;
+    closable?:string;
+    'no-icon'?:string | boolean;
+    animated?:string;
+    noclick?:string | boolean;
+    close?:string;
 };
 
 declare module 'preact' {
     // eslint-disable-next-line @typescript-eslint/no-namespace
     export namespace JSX {
         interface IntrinsicElements {
-            'modal-window': ModalWindowAttrs;
+            'modal-window':ModalWindowAttrs;
         }
     }
 }
@@ -45,7 +45,7 @@ type Mode = 'list' | 'adding' | 'confirming-remove'
 
 export interface PaymentMethodModalProps {
     open:boolean;
-    onClose:() => void;
+    onClose:()=> void;
 }
 
 const TITLE_ID = 'payment-method-modal-title'
@@ -419,8 +419,8 @@ const Row:FunctionComponent<{
     method:PaymentMethodSummary;
     isDefault:boolean;
     pending:boolean;
-    onRemove:(id:string) => void;
-    onSetDefault:(id:string) => void;
+    onRemove:(id:string)=> void;
+    onSetDefault:(id:string)=> void;
 }> = function ({
     method, isDefault, pending, onRemove, onSetDefault
 }) {

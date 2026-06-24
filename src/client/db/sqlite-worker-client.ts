@@ -8,15 +8,15 @@ import type {
 } from './sqlite-worker-protocol.js'
 
 export interface SQLiteWorkerLike {
-    onmessage:((event:MessageEvent<SqliteWorkerResponse>) => void)|null
-    onerror:((event:ErrorEvent) => void)|null
-    postMessage:(message:SqliteWorkerRequest) => void
-    terminate?:() => void
+    onmessage:((event:MessageEvent<SqliteWorkerResponse>)=> void)|null
+    onerror:((event:ErrorEvent)=> void)|null
+    postMessage:(message:SqliteWorkerRequest)=> void
+    terminate?:()=> void
 }
 
 interface PendingRequest<T = unknown> {
-    resolve:(value:T) => void
-    reject:(err:Error) => void
+    resolve:(value:T)=> void
+    reject:(err:Error)=> void
 }
 
 export class SQLiteWorkerClient {

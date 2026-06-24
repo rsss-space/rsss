@@ -79,7 +79,7 @@ test('AC5.1: returns items with parsed record, ordered DESC',
         t.equal(res.status, 200, 'returns 200')
 
         const body = await res.json() as {
-            items?: Array<{ record?: unknown }>
+            items?:Array<{ record?:unknown }>
         }
         t.ok(body.items, 'response has items array')
         t.equal(body.items?.length, 2, 'returns 2 items')

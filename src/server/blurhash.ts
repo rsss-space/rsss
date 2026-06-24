@@ -24,7 +24,7 @@ export async function blurhashCacheKey (imageUrl:string):Promise<string> {
 
 export function isBlurhashCacheEntry (
     value:unknown
-):value is BlurhashCacheEntry {
+):value isBlurhashCacheEntry {
     if (!value || typeof value !== 'object') return false
 
     const entry = value as Partial<BlurhashCacheEntry>

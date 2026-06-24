@@ -84,8 +84,8 @@ function makeEnv (
 
 // Mock the public Bluesky getFollows endpoint. `responder` decides each call.
 function withMockedFetch (
-    responder:(url:string) => Response,
-    run:() => Promise<void>
+    responder:(url:string)=> Response,
+    run:()=> Promise<void>
 ):Promise<void> {
     const original = globalThis.fetch
     globalThis.fetch = (async (input:RequestInfo|URL) => {

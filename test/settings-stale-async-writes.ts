@@ -37,8 +37,8 @@ interface MaybeFetchHost {
 }
 
 function withFetchStub (
-    handler:(url:string) => Response|Promise<Response>,
-    body:() => void|Promise<void>
+    handler:(url:string)=> Response|Promise<Response>,
+    body:()=> void|Promise<void>
 ):Promise<void> {
     const host = globalThis as unknown as MaybeFetchHost
     const original = host.fetch

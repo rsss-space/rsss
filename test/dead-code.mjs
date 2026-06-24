@@ -21,6 +21,18 @@ assert.doesNotMatch(
 )
 
 assert.doesNotMatch(
+    durableObject,
+    /\bawaitFetchOrTimeout\b/,
+    'POST /feeds does not retain awaitFetchOrTimeout helper (US-002)'
+)
+
+assert.doesNotMatch(
+    durableObject,
+    /\bPOST_HYBRID_WAIT_MS\b/,
+    'POST /feeds does not retain POST_HYBRID_WAIT_MS constant (US-002)'
+)
+
+assert.doesNotMatch(
     oauth,
     /\bgenerateSessionToken\b/,
     'OAuth module does not export unused generateSessionToken'

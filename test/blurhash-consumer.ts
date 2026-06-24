@@ -11,8 +11,8 @@ import {
 interface FakeMessage {
     body:BlurhashJob
     acked:boolean
-    ack:() => void
-    retry:() => void
+    ack:()=> void
+    retry:()=> void
 }
 
 interface FakeImage {
@@ -20,10 +20,10 @@ interface FakeImage {
     height:number
     pixels:Uint8ClampedArray
     freed:boolean
-    get_width:() => number
-    get_height:() => number
-    get_raw_pixels:() => Uint8Array | Uint8ClampedArray
-    free:() => void
+    get_width:()=> number
+    get_height:()=> number
+    get_raw_pixels:()=> Uint8Array | Uint8ClampedArray
+    free:()=> void
 }
 
 function fakeImage (
@@ -278,7 +278,7 @@ test('blurhash consumer acks permanent decode failures', async t => {
 test('blurhash consumer retries transient failures', async t => {
     const cases:Array<{
         name:string
-        configure:(env:BlurhashConsumerEnv) => BlurhashConsumerDeps
+        configure:(env:BlurhashConsumerEnv)=> BlurhashConsumerDeps
     }> = [
         {
             name: '5xx fetch',

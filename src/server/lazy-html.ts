@@ -224,7 +224,7 @@ function itemRoute (
 
 function isValidImageSize (
     value:number|null|undefined
-):value is number {
+):value isnumber {
     return typeof value === 'number' &&
         Number.isFinite(value) &&
         value > 0

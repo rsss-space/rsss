@@ -23,7 +23,7 @@ function nextTask ():Promise<void> {
 }
 
 function waitFor (
-    predicate:() => unknown,
+    predicate:()=> unknown,
     maxTurns:number = 200
 ):Promise<void> {
     let turns = 0
@@ -109,7 +109,7 @@ async function mountWithRows (
     root:HTMLElement,
     state:AppState,
     rows:DeadLetterRow[],
-    seed?:() => void
+    seed?:()=> void
 ):Promise<void> {
     batch(() => {
         deadLetterRows.value = rows

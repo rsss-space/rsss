@@ -163,7 +163,7 @@ function collectHeaders (
 
 export function withFetch<T> (
     handler:FetchHandler,
-    fn:(calls:RecordedCall[]) => Promise<T>
+    fn:(calls:RecordedCall[])=> Promise<T>
 ):Promise<T> {
     const original = globalThis.fetch
     const calls:RecordedCall[] = []

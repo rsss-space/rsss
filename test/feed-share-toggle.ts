@@ -164,7 +164,7 @@ test('Settings shows no share toggles when there are no feeds (AC2.3)',
 test('Settings share flow shows progress and stores feed row (AC3.2)',
     async t => {
         const origFetch = globalThis.fetch
-        let release:() => void = () => {}
+        let release:()=> void = () => {}
         const fetchStarted = new Promise<void>(resolve => {
             globalThis.fetch = (async (input, init) => {
                 resolve()
