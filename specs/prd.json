@@ -16,7 +16,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-001 / FR-1. Verification-heavy but single-file edit to nitpicker.md. Use targeted grep/read per finding; do not blanket-check."
     },
     {

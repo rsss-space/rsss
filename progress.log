@@ -5,3 +5,20 @@
 (none yet)
 
 ## Task Progress
+
+
+## 2026-06-23 — US-001
+- Verified each finding in nitpicker.md (#5-12, #14-20, #22-26, #28-39, #43, #46, #48-50) against the current codebase
+- Updated nitpicker.md checkboxes: 36 findings marked [x] complete, 1 left open (#46)
+- No source code was modified (doc-only change)
+- **Learnings for future iterations:**
+  - All P0s are fixed: SSRF (src/server/feed-fetch.ts), multi-tab OPFS (src/client/db/tab-coordination.ts with BroadcastChannel + Web Lock), session cookie now stores only session-id in KV
+  - runFeedPool with FEED_REFRESH_CONCURRENCY=8 replaced Promise.all(feeds.map(...)) for bounded alarm concurrency
+  - push-sync now runs before pull-sync in src/client/db/sync.ts; eliminates the pull-then-push ordering bug
+  - VerifiedSubscription typed status:'active'|'scheduled' with isVerifiedSubscriptionStatus narrowing guard in src/server/autumn-billing.ts
+  - formatSqliteTs helper normalizes timestamps client-side to match DO space-format
+  - dead_letter_outbox table added with DEAD_LETTER_ATTEMPT_LIMIT=10 in push-sync.ts
+  - fast-xml-parser replaces regex-based parseRss/parseAtom; 5MB cap + 15s timeout in feed-fetch.ts
+  - CI configured in .github/workflows/nodejs.yml
+  - #46 (routeToItemRoute/findItemByRoute) remains in state.ts — not moved to a routing.ts helper; only open finding in scope
+---

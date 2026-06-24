@@ -39,7 +39,7 @@ Used to feed `dangerouslySetInnerHTML` with arbitrary RSS/Atom item content. The
 - `<iframe>`, `<object>`, `<embed>`, `<form action="javascript:...">`, `<style>` injecting `expression()` (older browsers), `<svg>` with `<script>` parsed via `xlink:href`, MathML script gadgets — none stripped.
 - `<a href="java&#x09;script:foo">` — entity-encoded characters in the protocol slip past the literal `javascript:` regex; browsers still resolve it.
 - `<meta http-equiv="refresh" content="0;url=javascript:...">`.
-- The `<script>` regex pattern uses `\b[^<]*(?:(?!<\/script>)<[^<]*)*` which fails on `<script >` or `<scriptsrc=` (no break char).
+- The `<script>` regex pattern uses `\b[^<]*(?:(?!<\/script>)<[^<]*)*` which fails on `<script >` or `<scriptsrc=` (no break char).
 
 **Why it matters**: A malicious RSS feed = stored XSS = session-cookie theft (httpOnly, but the cookie payload is the OAuth access/refresh token in plaintext, base64 in the cookie body — see issue #3 — and an attacker doesn't need the cookie if they can `fetch('/api/...')` from the origin). DOM-based XSS will also let them push outbox writes, mark all items read, or pivot to whatever you build next.
 
@@ -88,7 +88,7 @@ Right now you're paying the complexity tax of DPoP for nothing.
 
 **Fix**: Validate `new URL(url).protocol` is in `{http:, https:}`, reject obvious local hosts (`localhost`, `127.*`, `0.0.0.0`, `::1`, `[::]`, anything in `.local`), set a `signal: AbortSignal.timeout(15_000)`, and cap the body size with a streamed reader.
 
-* [ ] complete
+* [x] complete
 
 ### 6. Multi-tab OPFS: the SAH pool VFS is exclusive; second tab silently breaks
 **File**: `src/client/db/sqlite-init.ts:85–101`
@@ -99,7 +99,7 @@ There is no detection, no `BroadcastChannel` coordination, no leader election, n
 
 **Fix**: Either (a) coordinate tabs via `BroadcastChannel` + a Web Lock, with one tab as primary and others reading via postMessage, or (b) detect the lock failure explicitly, surface "open in another tab" as an error state, and fall back to remote-adapter for the second tab. Pick one and document it.
 
-* [ ] complete
+* [x] complete
 
 ---
 
@@ -110,7 +110,7 @@ There is no detection, no `BroadcastChannel` coordination, no leader election, n
 
 Hono routes are matched in order. The earlier specific routes (`/api/auth/login`, `/api/billing/checkout`, etc.) match first, so they bypass `requireEntitlement`. That's actually intended. But the catch-all `app.all('/api/*', requireAuth, requireEntitlement, ...)` also runs `requireAuth` — meaning it requires a session but auth routes don't have `requireAuth` configured. Fine for now, but the layering is fragile: any future `app.get('/api/foo', handler)` inserted *after* the catch-all will be unreachable, and one inserted *before* won't get auth/entitlement checks. Add an explicit comment, or — better — refactor entitlement-gated routes onto a sub-router (`app.route('/api/data', dataRouter)`).
 
-* [ ] complete
+* [x] complete
 
 ### 8. Push-then-pull ordering loses optimistic local writes on conflict
 **File**: `src/client/state.ts:262–286`
@@ -121,7 +121,7 @@ The flow is: `pullSync` → then `pushSync`. If a user marked an item read local
 
 **Fix**: pushSync should run *before* pullSync, OR pullSync should skip rows that are referenced by pending outbox entries, OR conflict resolution on 409 should re-apply outbox semantics on top of the server row.
 
-* [ ] complete
+* [x] complete
 
 ### 9. Optimistic local feed insert never reconciles its primary key with the server's
 **File**: `src/client/db/local-adapter.ts:91–114`, `src/client/db/push-sync.ts:235–266`
@@ -130,7 +130,7 @@ The flow is: `pullSync` → then `pushSync`. If a user marked an item read local
 
 **Fix**: On 2xx for `add_feed`, parse the server's response `{ feed }`, delete the optimistic local row, and upsert the canonical server row. Same problem applies to any future "insert" outbox operation.
 
-* [ ] complete
+* [x] complete
 
 ### 10. SQLite foreign keys are off by default; ON DELETE CASCADE is a lie
 **File**: `src/shared/schema.ts:37`
@@ -139,7 +139,7 @@ The flow is: `pullSync` → then `pushSync`. If a user marked an item read local
 
 **Fix**: `PRAGMA foreign_keys = ON;` after opening the DB. Or remove the FK clause and own the cascade explicitly.
 
-* [ ] complete
+* [x] complete
 
 ### 11. Outbox has no attempt cap; a poison row is permanent
 **File**: `src/client/db/push-sync.ts:58–69, 269–273`
@@ -148,7 +148,7 @@ The flow is: `pullSync` → then `pushSync`. If a user marked an item read local
 
 **Fix**: cap attempts at e.g. 10, then move the row to a `dead_letter_outbox` table or surface it in the UI for manual resolution.
 
-* [ ] complete
+* [x] complete
 
 ### 12. Feed parser regex backtracks on adversarial input; no size limit on response body
 **File**: `src/server/durable-objects/index.ts:621–690`, `parseRss`/`parseAtom` lines 718–813
@@ -160,7 +160,7 @@ The flow is: `pullSync` → then `pushSync`. If a user marked an item read local
 
 **Fix**: Use a streaming parser (`htmlparser2`/`fast-xml-parser`/etc.) bundled or accept the surface area and add: 5MB body cap, a 15s overall timeout, and a per-feed CPU budget.
 
-* [ ] complete
+* [x] complete
 
 ### 13. `await this.fetchFeed(feed)` in `POST /feeds` blocks the response
 **File**: `src/server/durable-objects/index.ts:196`
@@ -178,7 +178,7 @@ The admin route iterates serially, which is fine. But `alarm()` does `Promise.al
 
 **Fix**: Bounded concurrency (e.g. p-limit with concurrency 8), record per-feed last_error / last_status into the feeds table.
 
-* [ ] complete
+* [x] complete
 
 ### 15. `alarm()` does not await the rescheduling call
 **File**: `src/server/durable-objects/index.ts:853`
@@ -191,7 +191,7 @@ Returns a promise; not awaited. If the DO is evicted between the last `await` an
 
 **Fix**: `await this.ctx.storage.setAlarm(...)`.
 
-* [ ] complete
+* [x] complete
 
 ### 16. `cors()` open to all origins on `/api/*` while authentication is cookie-based
 **File**: `src/server/index.ts:194`
@@ -203,7 +203,7 @@ Returns a promise; not awaited. If the DO is evicted between the last `await` an
 
 **Fix**: Either drop CORS entirely (you only call from same-origin) or restrict to your origin and add CSRF protection on POST/PATCH/DELETE.
 
-* [ ] complete
+* [x] complete
 
 ### 17. `withIsolationHeaders` blocks third-party iframes already embedded in the app
 **File**: `src/server/isolation-headers.ts`, used in `src/server/index.ts:188–191`. Iframes in `src/client/components/header.ts:85–91, 132–139` and `src/client/index.ts:60–63`.
@@ -216,7 +216,7 @@ Two ways out:
 
 This is also a P0-adjacent footgun: the local-first feature *requires* `crossOriginIsolated`, so the headers can't simply be removed. Solve the iframe problem properly.
 
-* [ ] complete
+* [x] complete
 
 ### 18. `verifySubscription` typing leaks and confidence-by-cast
 **File**: `src/server/index.ts:170–177, 680–684`
@@ -229,7 +229,7 @@ status: verified ? (verified.status as 'active'|'scheduled') : 'none'
 
 **Fix**: Make `VerifiedSubscription` typed `status: 'active'|'scheduled'`. Have `verifySubscription` do the narrowing.
 
-* [ ] complete
+* [x] complete
 
 ### 19. `lastPullAt` timestamp format mismatch is a known footgun the code documents but does not solve
 **File**: `src/server/durable-objects/index.ts:556–572`, `src/client/db/local-adapter.ts:249–250, 277, 284`
@@ -240,7 +240,7 @@ But: pull-sync **upserts feed/item rows from the server with whatever format the
 
 **Fix**: Pick one format and use it everywhere. The path of least resistance is `datetime('now')` server-side and a `formatSqliteTs` helper client-side that produces matching strings. Don't mix.
 
-* [ ] complete
+* [x] complete
 
 ### 20. No retry / no dead-letter on email sends; dedupe keyed on `(did, planId, event)` will block legitimate re-sends after recovery
 **File**: `src/server/email.ts:48–123`
@@ -251,7 +251,7 @@ Also, on Resend transient failure, `sendOnce` throws — the caller catches and 
 
 **Fix**: Include a coarse epoch in the dedupe key (`subscription_started:${planId}:${weekIndex}`) and queue retries on transient Resend errors.
 
-* [ ] complete
+* [x] complete
 
 ### 21. `is_locally_cached` column is half-finished
 **File**: `src/shared/schema.ts:18`, `src/server/durable-objects/index.ts:101–109, 248–267`
@@ -267,7 +267,7 @@ If two feeds publish `/post/2026/intro` (different feed_titles, different conten
 
 **Fix**: Match on exact `link`, not `LIKE %candidate%`. The client already URL-decodes the route; just compare `items.link = ?` and try a few normalized forms (with/without trailing slash, with/without `https://`) explicitly.
 
-* [ ] complete
+* [x] complete
 
 ---
 
@@ -282,28 +282,28 @@ If two feeds publish `/post/2026/intro` (different feed_titles, different conten
 - Doesn't mention the `compatibility_flags: nodejs_compat` requirement is consequential for `autumn-js`/`resend` (these likely pull node built-ins).
 - Doesn't say where to set the KV preview_id for `wrangler dev`.
 
-* [ ] complete
+* [x] complete
 
 ### 24. Constructor runs migrations on every DO wakeup
 **File**: `src/server/durable-objects/index.ts:54–67`
 
 `PRAGMA table_info(feeds)` + conditional ALTER on every constructor. Fine for correctness, but the DO wakes thousands of times per day. Cache the "schema is current" flag in storage (`migration_v: 2`) and skip the introspection.
 
-* [ ] complete
+* [x] complete
 
 ### 25. State.user duplicates with localStorage; localStorage is read but is not the source of truth
 **File**: `src/client/state.ts:436–447`
 
 `USER_STORAGE_KEY` is written on auth check but the only read of it is implicit (it's never read in code). It's purely a debug/diagnostic dump. If you don't use it, delete it; if you do, document that it's not authoritative.
 
-* [ ] complete
+* [x] complete
 
 ### 26. Frontend `Feed`/`Item` interfaces are duplicated and drift
 **File**: `src/client/state.ts:70–94` vs `src/client/db/types.ts:5–31`
 
 `state.ts` defines `Feed` without `updated_at`; `db/types.ts` has it. Picking the wrong one bites at compile time only if you import from the right place. Consolidate to one source of truth and re-export.
 
-* [ ] complete
+* [x] complete
 
 ### 27. `DEBUG` localStorage key is stomped on every page load
 **File**: `src/client/index.ts:18–24`
@@ -317,42 +317,42 @@ DEV/staging always writes `'rsss,rsss:*'`, prod always removes it. Users debuggi
 
 Pull finishes, badge says "Synced 0 pending"; then push starts and immediately overwrites with whatever the post-push count is. For a user whose outbox cleared, no flicker; for everyone else, you get a visible blip. Use a single sync orchestrator.
 
-* [ ] complete
+* [x] complete
 
 ### 29. `effect()` in `State()` will run on every signal change, including `state.user.value` toggles caused by `checkAuth`
 **File**: `src/client/state.ts:252–287`
 
 This effect runs the bootstrap-or-load logic. It re-runs whenever `isAuthenticated` flips. The body calls `getAdapter(did)` which is cached, then unconditionally fires `pullSync`/`pushSync`/`loadFeeds`/`loadItems`/`loadCounts`. There's no guard against firing twice on a single auth change (e.g. `checkAuth` → `setUser(null)` → `setUser(value)` would trigger this twice). Add a generation counter or `useRef`-style flag.
 
-* [ ] complete
+* [x] complete
 
 ### 30. `findItemByRoute` falls back to `item.link?.includes(itemRoute)` which is the same fragile substring match as the server-side LIKE
 **File**: `src/client/state.ts:1071–1089`
 
 Same correctness issue as #22 but client-side. If `routeToItemRoute` returned `'foo.com/a'` and any item link contains that anywhere, it matches.
 
-* [ ] complete
+* [x] complete
 
 ### 31. `addFeed` form reads `els['new-feed-url']` without a type cast; the linter doesn't object because `HTMLFormControlsCollection` indexer returns `Element | RadioNodeList`
 **File**: `src/client/components/sidebar.ts:53–56`
 
 Works at runtime; type-unsafe. `(els.namedItem('new-feed-url') as HTMLInputElement).value`.
 
-* [ ] complete
+* [x] complete
 
 ### 32. No 401-on-pull handling
 **File**: `src/client/db/pull-sync.ts:139–161`
 
 push-sync handles 401 by throwing `PushSyncAuthError`. pull-sync just throws a generic error on non-2xx, including 401 (which means session expired). The user sees "Sync error" forever instead of a "please log in again" banner.
 
-* [ ] complete
+* [x] complete
 
 ### 33. `getOrCreateCustomer` swallows the customer record return value
 **File**: `src/server/index.ts:602–607`
 
 `getOrCreateCustomer` returns nothing useful; `customer.email` is dropped. If you want to authoritatively read the email back, do so here instead of in `resolveContactEmail` later.
 
-* [ ] complete
+* [x] complete
 
 ### 34. `verifySessionCookie` decodes signature using `atob` after replacing `-_` with `+/` — but `payloadB64` is decoded with raw `atob`
 **File**: `src/server/auth/oauth.ts:632, 645–648`
@@ -361,7 +361,7 @@ push-sync handles 401 by throwing `PushSyncAuthError`. pull-sync just throws a g
 
 **Fix**: Use URL-safe base64 for both.
 
-* [ ] complete
+* [x] complete
 
 ### 35. No tests for OAuth, billing, email dedupe, or DO request handling
 **File**: `test/`
@@ -377,28 +377,26 @@ What is **not** tested:
 - The HTML sanitizer (which currently passes nothing because no test calls it — see #2; an XSS test suite would have caught the regression).
 - The route-to-item match logic (#22, #30).
 
-* [ ] complete
+* [x] complete
 
 ### 36. No CI configuration in repo (no `.github/workflows/`)
 The `npm test` script exists but nothing runs it on PR. The discipline of "tests must pass before merge" is purely vibes.
 
-* [ ] complete
+* [x] complete
 
 ### 37. `addEventListener('online')` and `addEventListener('offline')` are added in `State()` and never removed
 **File**: `src/client/state.ts:289–317`
 
-* [ ] complete
-
 State() is called once at module load (`src/client/index.ts:12`), so the leak is bounded. But if anyone introduces hot reload or test-time module re-imports, listeners stack up. A `cleanup` function paired with `State()` would be safer.
 
-* [ ] complete
+* [x] complete
 
 ### 38. `Header` component's iframes have no `loading="lazy"`, no `sandbox`, no `referrerpolicy`
 **File**: `src/client/components/header.ts:85–91, 132–139`
 
 Even ignoring the COEP block (#17), embedding GitHub's iframe without `sandbox="allow-scripts"` (or stricter) gives it full access to the parent referer string and similar.
 
-* [ ] complete
+* [x] complete
 
 ### 39. `disableLocalFirst` and `resetLocalFirst` swallow `pushSync` errors as `// best-effort`
 **File**: `src/client/db/index.ts:128–168`
@@ -407,7 +405,7 @@ Comment literally says "best-effort — ignore errors". Translation: the user ju
 
 **Fix**: Either honor the promise (await pushSync without swallow, abort the reset on error and surface it) or change the UI text to "we'll try to sync first, but unsynced changes may be lost."
 
-* [ ] complete
+* [x] complete
 
 ### 40. `Items` rendering has no virtualization; 1000-item lists will jank
 **File**: `src/client/routes/feed-reader.ts:131–143`
@@ -433,7 +431,7 @@ Both `src/server/durable-objects/index.ts` and `src/server/auth/oauth.ts` use sp
 - `fetchWithDPoP` and `generateSessionToken` are exported and unused.
 - `_state` parameters in `loadBillingStatus`, `signalCheckoutFailed`, `openCustomerPortal` (`state.ts`).
 
-* [ ] complete
+* [x] complete
 
 ### 44. `cors()` on the Hono router inside the DO is pointless
 **File**: `src/server/durable-objects/index.ts:114`. The DO is only invoked via `stub.fetch` — there's no browser making a CORS preflight against `http://do/`. Remove.
@@ -449,6 +447,7 @@ Both `src/server/durable-objects/index.ts` and `src/server/auth/oauth.ts` use sp
 The mix of state functions and pure helpers in one 1000-line file is a maintainability tax. Splitting it would also make the duplicated `Feed`/`Item` types easier to reconcile (#26).
 
 * [ ] complete
+<!-- Not yet extracted: routeToItemRoute and findItemByRoute remain exported from state.ts; no routing.ts helper module exists. -->
 
 ### 47. `parseInt` calls without radix
 **File**: `src/server/durable-objects/index.ts:237, 249, 271, 296, 321, 322, 330, 354`. Almost every one is `parseInt(c.req.param('id'))` — radix defaulted, fine for decimal-only inputs but an ESLint rule disagrees and so do I.
@@ -458,17 +457,17 @@ The mix of state functions and pure helpers in one 1000-line file is a maintaina
 ### 48. README's "Deploy" claims `wrangler kv:namespace create SESSIONS` — the modern command is `wrangler kv namespace create SESSIONS` (no colon)
 The colon form is deprecated. Rote-following the README will print a deprecation warning at minimum.
 
-* [ ] complete
+* [x] complete
 
 ### 49. `text:` field in emails contains `'/settings'` as a relative URL
 **File**: `src/server/email.ts:148, 161` (`<a href="/settings">`). In an email client, that resolves to the user's mail provider, not your app. Use absolute URLs from `baseUrl`.
 
-* [ ] complete
+* [x] complete
 
 ### 50. `state._setRoute('/')` is called from inside an `effect` body in `State.handleOAuthCallback` which is called from inside a route handler in `routes/index.ts:59`
 The control flow — render the route handler → side-effect a network call → conditionally re-route — is opaque. A reader has to trace through three modules. A short comment in `routes/index.ts:47–61` would help; you have one, but it doesn't mention that `handleOAuthCallback` is async and may bounce the route after rendering `LoginPage` once.
 
-* [ ] complete
+* [x] complete
 
 ---
 
