@@ -35,3 +35,16 @@
   - The old hybrid-race pattern (awaitFetchOrTimeout with 3s timeout) is fully removed; all post-insert latency is now server-side background work
   - Pre-existing typecheck errors exist in unrelated test files (test/alarm.ts, test/do-migrations.ts, etc.) — these were present before US-002 and are out of scope
 ---
+
+## 2026-06-23 — US-003
+- Corrected README session wording from "encrypted cookies" to "signed session-id cookies"
+- Files changed: README.md only (doc-only change)
+- Three locations updated:
+  1. Worker overview list: "Session management with encrypted cookies" → "...with signed session-id cookies (session data lives in KV)"
+  2. SESSION_SECRET table row: "Secret used to encrypt session cookies" → "HMAC secret used to sign session-id cookies (session data lives in KV)"
+  3. Rotate SESSION_SECRET section: "can no longer be decrypted" → "no longer verify (signatures were made with the old secret)"
+- Confirmed via src/server/auth/oauth.ts: sessions are stored in KV under `session:<sid>`; the cookie carries only the HMAC-signed session id (no token material, no encryption)
+- **Learnings for future iterations:**
+  - Session model: random sid → KV store; cookie = base64(sid).hmac_signature — strictly signing, not encryption
+  - Pre-existing typecheck errors in test/ files are unrelated to doc changes and do not block doc-only tasks
+---

@@ -102,7 +102,7 @@ cross-origin-isolated worker.
 ### Worker (Hono) - Main entry point
 
 * Bluesky OAuth authentication (AT Protocol)
-* Session management with encrypted cookies
+* Session management with signed session-id cookies (session data lives in KV)
 * Route requests to user-specific Durable Objects
 * Static asset serving for the Preact frontend
 
@@ -257,7 +257,7 @@ wrangler kv namespace create SESSIONS
 | --- | --- |
 | `APP_ORIGIN` | Canonical app origin (e.g. `https://rsss.space`). Required; CORS/CSRF allowlist fails closed when unset. |
 | `ADMIN_TOKEN` | Bearer token for admin-only routes. |
-| `SESSION_SECRET` | Secret used to encrypt session cookies. |
+| `SESSION_SECRET` | HMAC secret used to sign session-id cookies (session data lives in KV). |
 | `OAUTH_CLIENT_ID` | Bluesky OAuth client id. |
 | `AUTUMN_SECRET_KEY` | Autumn billing API key. |
 | `RESEND_API_KEY` | Resend API key for transactional email. |
@@ -337,7 +337,8 @@ npm run deploy:production
 ```
 
 Rotating `SESSION_SECRET` invalidates active sessions because existing
-session cookies can no longer be decrypted. Users need to sign in again.
+signed cookie values no longer verify (signatures were made with the old
+secret). Users need to sign in again.
 
 ---
 

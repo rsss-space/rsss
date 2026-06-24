@@ -49,7 +49,7 @@
         "Typecheck passes (sanity check)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-003 / FR-5,6. README only. Verify the session model in the server auth code before editing so the new wording is accurate."
     },
     {
