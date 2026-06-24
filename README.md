@@ -19,7 +19,8 @@ See [rsss.space](https://rsss.space/).
 
 >
 > [!WARNING]  
-> The Wired articles will be blocked by [privacy badger](https://privacybadger.org/#faq).
+> The Wired articles will be blocked by
+> [privacy badger](https://privacybadger.org/#faq).
 >
 
 <details><summary><h2>Contents</h2></summary>
