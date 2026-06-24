@@ -483,11 +483,11 @@ function parseNonNegativeInt (raw:string):number|null {
 }
 
 export class RsssUserDO extends DurableObject<Env> {
-    private app: Hono
-    private sql: SqlStorage
+    private app:Hono
+    private sql:SqlStorage
     private manualRefreshClaims?:Map<number, number>
 
-    constructor (ctx: DurableObjectState, env: Env) {
+    constructor (ctx:DurableObjectState, env:Env) {
         super(ctx, env)
         this.sql = ctx.storage.sql
         this.app = this.createRouter()
@@ -565,8 +565,8 @@ export class RsssUserDO extends DurableObject<Env> {
     private migrateAddUpdatedAt () {
         // Check if feeds has updated_at
         const feedsCols = this.sql.exec('PRAGMA table_info(feeds)').toArray()
-        const feedsHasUpdatedAt = feedsCols.some((col: unknown) =>
-            (col as { name: string }).name === 'updated_at'
+        const feedsHasUpdatedAt = feedsCols.some((col:unknown) =>
+            (col as { name:string }).name === 'updated_at'
         )
         if (!feedsHasUpdatedAt) {
             // SQLite doesn't allow non-constant defaults in ALTER TABLE
@@ -577,8 +577,8 @@ export class RsssUserDO extends DurableObject<Env> {
 
         // Check if items has updated_at
         const itemsCols = this.sql.exec('PRAGMA table_info(items)').toArray()
-        const itemsHasUpdatedAt = itemsCols.some((col: unknown) =>
-            (col as { name: string }).name === 'updated_at'
+        const itemsHasUpdatedAt = itemsCols.some((col:unknown) =>
+            (col as { name:string }).name === 'updated_at'
         )
         if (!itemsHasUpdatedAt) {
             // SQLite doesn't allow non-constant defaults in ALTER TABLE
@@ -590,10 +590,10 @@ export class RsssUserDO extends DurableObject<Env> {
 
     private migrateAddFeedFailureColumns () {
         const columns = this.sql.exec('PRAGMA table_info(feeds)').toArray()
-        const hasLastError = columns.some((col: unknown) =>
+        const hasLastError = columns.some((col:unknown) =>
             (col as { name:string }).name === 'last_error'
         )
-        const hasLastStatus = columns.some((col: unknown) =>
+        const hasLastStatus = columns.some((col:unknown) =>
             (col as { name:string }).name === 'last_status'
         )
 
@@ -607,7 +607,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
     private migrateAddItemThumbnail () {
         const columns = this.sql.exec('PRAGMA table_info(items)').toArray()
-        const hasThumbnailUrl = columns.some((col: unknown) =>
+        const hasThumbnailUrl = columns.some((col:unknown) =>
             (col as { name:string }).name === 'thumbnail_url'
         )
 
@@ -675,7 +675,7 @@ export class RsssUserDO extends DurableObject<Env> {
         const columns = this.sql.exec(
             'PRAGMA table_info(feeds)'
         ).toArray()
-        const hasLastPulledAt = columns.some((col: unknown) =>
+        const hasLastPulledAt = columns.some((col:unknown) =>
             (col as { name:string }).name === 'last_pulled_at'
         )
 
@@ -850,7 +850,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
     private subscriptionFromRecord (
         record:ListedSubscriptionRecord
-    ): { feedUrl:string; subscription:RemoteSubscription } | null {
+    ):{ feedUrl:string; subscription:RemoteSubscription } | null {
         if (typeof record.value !== 'object' || record.value === null) {
             return null
         }
@@ -1274,7 +1274,7 @@ export class RsssUserDO extends DurableObject<Env> {
         return { ok: true }
     }
 
-    private createRouter (): Hono {
+    private createRouter ():Hono {
         const app = new Hono()
 
         // Health check
@@ -1918,7 +1918,7 @@ export class RsssUserDO extends DurableObject<Env> {
             let query = `SELECT ${ITEM_SYNC_COLUMNS} ` +
                 'FROM items JOIN feeds ON items.feed_id = feeds.id WHERE 1=1' +
                 cursorPredicate
-            const params: (string | number)[] = []
+            const params:(string | number)[] = []
 
             if (feedId) {
                 const parsedFeedId = parseIdParam(feedId)
@@ -1950,7 +1950,7 @@ export class RsssUserDO extends DurableObject<Env> {
             let countQuery = 'SELECT COUNT(*) as count FROM items' +
                 ' JOIN feeds ON items.feed_id = feeds.id WHERE 1=1' +
                 cursorPredicate
-            const countParams: (string | number)[] = []
+            const countParams:(string | number)[] = []
 
             if (feedId) {
                 // feedId already validated above; reuse result if present
@@ -1971,7 +1971,7 @@ export class RsssUserDO extends DurableObject<Env> {
                 countParams.push(isStarred === 'true' ? 1 : 0)
             }
 
-            const countResult = this.sql.exec(countQuery, ...countParams).one() as { count: number } // guaranteed single row: COUNT(*)
+            const countResult = this.sql.exec(countQuery, ...countParams).one() as { count:number } // guaranteed single row: COUNT(*)
 
             return c.json({
                 items,
@@ -2022,9 +2022,9 @@ export class RsssUserDO extends DurableObject<Env> {
         })
 
         app.get('/items/count', (c) => {
-            const unread = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_read = 0').one() as { count: number } // guaranteed single row: COUNT(*)
-            const starred = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_starred = 1').one() as { count: number } // guaranteed single row: COUNT(*)
-            const total = this.sql.exec('SELECT COUNT(*) as count FROM items').one() as { count: number } // guaranteed single row: COUNT(*)
+            const unread = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_read = 0').one() as { count:number } // guaranteed single row: COUNT(*)
+            const starred = this.sql.exec('SELECT COUNT(*) as count FROM items WHERE is_starred = 1').one() as { count:number } // guaranteed single row: COUNT(*)
+            const total = this.sql.exec('SELECT COUNT(*) as count FROM items').one() as { count:number } // guaranteed single row: COUNT(*)
             const perFeedRows = this.sql.exec(
                 'SELECT feed_id, COUNT(*) as unread FROM items' +
                 ' WHERE is_read = 0 GROUP BY feed_id'
@@ -2201,10 +2201,10 @@ export class RsssUserDO extends DurableObject<Env> {
             // Get the latest updated_at timestamp for the client to store
             const latestFeed = this.sql.exec(
                 'SELECT MAX(updated_at) as latest FROM feeds'
-            ).one() as { latest: string | null } // guaranteed single row: MAX()
+            ).one() as { latest:string | null } // guaranteed single row: MAX()
             const latestItem = this.sql.exec(
                 'SELECT MAX(updated_at) as latest FROM items'
-            ).one() as { latest: string | null } // guaranteed single row: MAX()
+            ).one() as { latest:string | null } // guaranteed single row: MAX()
 
             // Use SQLite-compatible format so string
             // comparisons work for incremental sync.
@@ -2543,7 +2543,7 @@ export class RsssUserDO extends DurableObject<Env> {
     /**
      * Fetch and parse an RSS/Atom feed
      */
-    private async fetchFeed (feed: Feed): Promise<void> {
+    private async fetchFeed (feed:Feed):Promise<void> {
         console.log(
             '[DO] fetchFeed:',
             feed.url
@@ -3031,7 +3031,7 @@ export class RsssUserDO extends DurableObject<Env> {
     /**
      * Parse RSS or Atom feed XML
      */
-    private parseFeed (xml: string): ParsedFeed {
+    private parseFeed (xml:string):ParsedFeed {
         const doc = FEED_XML_PARSER.parse(xml) as XmlObject
         const rss = this.asObject(this.getChild(doc, ['rss', 'rdf:RDF']))
         const channel = rss ?
@@ -3051,7 +3051,7 @@ export class RsssUserDO extends DurableObject<Env> {
         }
     }
 
-    private parseRss (channel: XmlObject) {
+    private parseRss (channel:XmlObject) {
         let isTooLarge = false
         const markTooLarge = () => {
             isTooLarge = true
@@ -3067,7 +3067,7 @@ export class RsssUserDO extends DurableObject<Env> {
             markTooLarge
         )
         const link = this.getText(channel, ['link'])
-        const items: ParsedFeedItem[] = []
+        const items:ParsedFeedItem[] = []
         const itemNodes = this.asArray(this.getChild(channel, ['item']))
         const cappedItemNodes = itemNodes.slice(0, MAX_PARSED_FEED_ITEMS)
 
@@ -3120,7 +3120,7 @@ export class RsssUserDO extends DurableObject<Env> {
         return { title, description, link, isTooLarge, items }
     }
 
-    private parseAtom (feed: XmlObject) {
+    private parseAtom (feed:XmlObject) {
         let isTooLarge = false
         const markTooLarge = () => {
             isTooLarge = true
@@ -3136,7 +3136,7 @@ export class RsssUserDO extends DurableObject<Env> {
             markTooLarge
         )
         const link = this.getLinkHref(this.getChild(feed, ['link']))
-        const items: ParsedFeedItem[] = []
+        const items:ParsedFeedItem[] = []
         const entries = this.asArray(this.getChild(feed, ['entry']))
         const cappedEntries = entries.slice(0, MAX_PARSED_FEED_ITEMS)
 
@@ -3385,7 +3385,7 @@ export class RsssUserDO extends DurableObject<Env> {
         return Array.isArray(value) ? value : [value]
     }
 
-    private parseDate (dateStr: string | null): string | null {
+    private parseDate (dateStr:string | null):string | null {
         if (!dateStr) return null
 
         try {
@@ -3400,7 +3400,7 @@ export class RsssUserDO extends DurableObject<Env> {
     /**
      * Handle incoming requests - routes to internal Hono app
      */
-    async fetch (request: Request): Promise<Response> {
+    async fetch (request:Request):Promise<Response> {
         return this.app.fetch(request)
     }
 
@@ -3568,7 +3568,7 @@ export class RsssUserDO extends DurableObject<Env> {
     /**
      * Alarm handler for periodic feed refresh
      */
-    async alarm (): Promise<void> {
+    async alarm ():Promise<void> {
         const pending = await this.ctx.storage.get<PendingDeletion>(
             PENDING_DELETION_KEY
         )

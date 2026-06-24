@@ -11,9 +11,9 @@ export const AT_PROTOCOL_OAUTH_SCOPE =
 // is persisted with the resulting tokens so later PDS calls can prove
 // possession without ever exposing credentials to the browser.
 export interface DPoPKeyPair {
-    privateKey: CryptoKey
-    publicKey: CryptoKey
-    publicJwk: JsonWebKey
+    privateKey:CryptoKey
+    publicKey:CryptoKey
+    publicJwk:JsonWebKey
 }
 
 /**
@@ -25,9 +25,9 @@ export interface DPoPKeyPair {
  * keeping OAuth credentials off every client response.
  */
 export interface OAuthSession {
-    did: string
-    handle: string
-    avatar?: string
+    did:string
+    handle:string
+    avatar?:string
 }
 
 export interface OAuthCredentialRecord {
@@ -57,13 +57,13 @@ export interface OAuthState {
 }
 
 // PKCE helpers
-function generateRandomString (length: number): string {
+function generateRandomString (length:number):string {
     const array = new Uint8Array(length)
     crypto.getRandomValues(array)
     return base64UrlEncode(array)
 }
 
-function base64UrlEncode (buffer: Uint8Array): string {
+function base64UrlEncode (buffer:Uint8Array):string {
     const base64 = btoa(String.fromCharCode(...buffer))
     return base64
         .replace(/\+/g, '-')
@@ -71,7 +71,7 @@ function base64UrlEncode (buffer: Uint8Array): string {
         .replace(/=+$/, '')
 }
 
-function base64UrlDecode (value: string): Uint8Array<ArrayBuffer> {
+function base64UrlDecode (value:string):Uint8Array<ArrayBuffer> {
     const padded = value + '='.repeat((4 - value.length % 4) % 4)
     const base64 = padded.replace(/-/g, '+').replace(/_/g, '/')
     const binary = atob(base64)
@@ -82,24 +82,24 @@ function base64UrlDecode (value: string): Uint8Array<ArrayBuffer> {
     return bytes
 }
 
-function encodeSessionPayload (sid: string): string {
+function encodeSessionPayload (sid:string):string {
     const payload = JSON.stringify({ sid })
     return base64UrlEncode(new TextEncoder().encode(payload))
 }
 
-function decodeSessionPayload (payloadB64: string): string | null {
+function decodeSessionPayload (payloadB64:string):string | null {
     const decoded = new TextDecoder().decode(base64UrlDecode(payloadB64))
     const payload = JSON.parse(decoded) as { sid?:unknown }
     return typeof payload.sid === 'string' ? payload.sid : null
 }
 
-async function sha256 (plain: string): Promise<ArrayBuffer> {
+async function sha256 (plain:string):Promise<ArrayBuffer> {
     const encoder = new TextEncoder()
     const data = encoder.encode(plain)
     return crypto.subtle.digest('SHA-256', data)
 }
 
-async function generateCodeChallenge (verifier: string): Promise<string> {
+async function generateCodeChallenge (verifier:string):Promise<string> {
     const hashed = await sha256(verifier)
     return base64UrlEncode(new Uint8Array(hashed))
 }
@@ -112,7 +112,7 @@ async function generateCodeChallenge (verifier: string): Promise<string> {
  * Generate an ephemeral ES256 key pair for DPoP
  * Bluesky requires ES256 (P-256 curve) for DPoP proofs
  */
-export async function generateDPoPKeyPair (): Promise<DPoPKeyPair> {
+export async function generateDPoPKeyPair ():Promise<DPoPKeyPair> {
     const keyPair = await crypto.subtle.generateKey(
         {
             name: 'ECDSA',
@@ -135,7 +135,7 @@ export async function generateDPoPKeyPair (): Promise<DPoPKeyPair> {
 /**
  * Generate a UUID v4 for the DPoP jti claim
  */
-function generateJti (): string {
+function generateJti ():string {
     const bytes = new Uint8Array(16)
     crypto.getRandomValues(bytes)
     // Set version (4) and variant (RFC 4122)
@@ -156,12 +156,12 @@ function generateJti (): string {
  * @param nonce - Optional server-provided nonce for replay protection
  */
 export async function createDPoPProof (
-    keyPair: DPoPKeyPair,
-    httpMethod: string,
-    httpUri: string,
-    accessToken?: string,
-    nonce?: string
-): Promise<string> {
+    keyPair:DPoPKeyPair,
+    httpMethod:string,
+    httpUri:string,
+    accessToken?:string,
+    nonce?:string
+):Promise<string> {
     // DPoP proof header - MUST include the public key
     const header = {
         typ: 'dpop+jwt',
@@ -176,7 +176,7 @@ export async function createDPoPProof (
     }
 
     // DPoP proof payload
-    const payload: Record<string, string | number> = {
+    const payload:Record<string, string | number> = {
         jti: generateJti(), // Unique identifier to prevent replay
         htm: httpMethod.toUpperCase(), // HTTP method
         htu: httpUri, // HTTP URI (without query and fragment)
@@ -218,21 +218,21 @@ export async function createDPoPProof (
 /**
  * Resolve a Bluesky handle to authorization server metadata
  */
-async function resolveHandle (handle: string): Promise<{
-    did: string
-    pds: string
-    authServer: string
+async function resolveHandle (handle:string):Promise<{
+    did:string
+    pds:string
+    authServer:string
 }> {
     // Normalize handle
     handle = handle.replace('@', '').toLowerCase()
 
     // Resolve DID via handle resolution
-    let did: string
+    let did:string
 
     // Try DNS resolution first
     try {
         const dnsResponse = await fetch(`https://dns.google/resolve?name=_atproto.${handle}&type=TXT`)
-        const dnsData = await dnsResponse.json() as { Answer?: Array<{ data: string }> }
+        const dnsData = await dnsResponse.json() as { Answer?:Array<{ data:string }> }
 
         if (dnsData.Answer && dnsData.Answer.length > 0) {
             const record = dnsData.Answer[0].data.replace(/"/g, '')
@@ -260,7 +260,7 @@ async function resolveHandle (handle: string): Promise<{
     if (!pdsMetaResponse.ok) {
         throw new Error('Could not get PDS OAuth metadata')
     }
-    const pdsMeta = await pdsMetaResponse.json() as { authorization_servers?: string[] }
+    const pdsMeta = await pdsMetaResponse.json() as { authorization_servers?:string[] }
 
     if (!pdsMeta.authorization_servers || pdsMeta.authorization_servers.length === 0) {
         throw new Error('No authorization server found')
@@ -276,11 +276,11 @@ async function resolveHandle (handle: string): Promise<{
 /**
  * Get OAuth server metadata
  */
-async function getAuthServerMetadata (authServer: string): Promise<{
-    issuer: string
-    authorization_endpoint: string
-    token_endpoint: string
-    pushed_authorization_request_endpoint?: string
+async function getAuthServerMetadata (authServer:string):Promise<{
+    issuer:string
+    authorization_endpoint:string
+    token_endpoint:string
+    pushed_authorization_request_endpoint?:string
 }> {
     const response = await fetch(`${authServer}/.well-known/oauth-authorization-server`)
     if (!response.ok) {
@@ -296,7 +296,7 @@ async function resolvePdsEndpoint (did:string):Promise<string> {
             throw new Error(`Could not resolve DID: ${did}`)
         }
         const plcData = await plcResponse.json() as {
-            service?: Array<{ id: string; serviceEndpoint: string }>
+            service?:Array<{ id:string; serviceEndpoint:string }>
         }
         const pdsService = plcData.service?.find(s => {
             return s.id === '#atproto_pds'
@@ -316,7 +316,7 @@ async function resolvePdsEndpoint (did:string):Promise<string> {
             throw new Error(`Could not resolve did:web: ${did}`)
         }
         const didDoc = await didDocResponse.json() as {
-            service?: Array<{ id: string; serviceEndpoint: string }>
+            service?:Array<{ id:string; serviceEndpoint:string }>
         }
         const pdsService = didDoc.service?.find(s => {
             return s.id === '#atproto_pds'
@@ -336,13 +336,13 @@ async function resolvePdsEndpoint (did:string):Promise<string> {
  * Generates a DPoP key pair that must be stored and reused for token exchange.
  */
 export async function startOAuthFlow (
-    handle: string,
-    clientId: string,
-    redirectUri: string,
-    returnTo: string = '/'
-): Promise<{
-    authUrl: string
-    state: OAuthState
+    handle:string,
+    clientId:string,
+    redirectUri:string,
+    returnTo:string = '/'
+):Promise<{
+    authUrl:string
+    state:OAuthState
 }> {
     const { did, authServer } = await resolveHandle(handle)
     const metadata = await getAuthServerMetadata(authServer)
@@ -357,7 +357,7 @@ export async function startOAuthFlow (
     // Export private key to JWK for storage in state
     const dpopPrivateKeyJwk = await crypto.subtle.exportKey('jwk', dpopKeyPair.privateKey)
 
-    const state: OAuthState = {
+    const state:OAuthState = {
         nonce,
         verifier,
         returnTo,
@@ -421,7 +421,7 @@ export async function startOAuthFlow (
         }
 
         if (parResponse.ok) {
-            const parData = await parResponse.json() as { request_uri: string }
+            const parData = await parResponse.json() as { request_uri:string }
             const authUrl = `${metadata.authorization_endpoint}?client_id=${encodeURIComponent(clientId)}&request_uri=${encodeURIComponent(parData.request_uri)}`
             return { authUrl, state }
         }
@@ -447,9 +447,9 @@ export async function startOAuthFlow (
  * Restore a DPoP key pair from exported JWKs
  */
 async function restoreDPoPKeyPair (
-    privateKeyJwk: JsonWebKey,
-    publicKeyJwk: JsonWebKey
-): Promise<DPoPKeyPair> {
+    privateKeyJwk:JsonWebKey,
+    publicKeyJwk:JsonWebKey
+):Promise<DPoPKeyPair> {
     const privateKey = await crypto.subtle.importKey(
         'jwk',
         privateKeyJwk,
@@ -486,12 +486,12 @@ async function restoreDPoPKeyPair (
  * @param authServer - Authorization server URL
  */
 export async function exchangeCode (
-    code: string,
-    state: OAuthState,
-    clientId: string,
-    redirectUri: string,
-    authServer: string
-): Promise<OAuthExchangeResult> {
+    code:string,
+    state:OAuthState,
+    clientId:string,
+    redirectUri:string,
+    authServer:string
+):Promise<OAuthExchangeResult> {
     const metadata = await getAuthServerMetadata(authServer)
 
     // Restore the DPoP key pair from the stored JWKs
@@ -559,11 +559,11 @@ export async function exchangeCode (
     }
 
     const tokens = await response.json() as {
-        sub?: unknown
-        access_token?: unknown
-        refresh_token?: unknown
-        token_type?: unknown
-        expires_in?: unknown
+        sub?:unknown
+        access_token?:unknown
+        refresh_token?:unknown
+        token_type?:unknown
+        expires_in?:unknown
     }
 
     if (
@@ -576,13 +576,13 @@ export async function exchangeCode (
 
     // Get handle (and avatar, if any) from DID
     let handle = tokens.sub
-    let avatar: string | undefined
+    let avatar:string | undefined
     try {
         const profileResponse = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${tokens.sub}`)
         if (profileResponse.ok) {
             const profile = await profileResponse.json() as {
-                handle: string
-                avatar?: string
+                handle:string
+                avatar?:string
             }
             handle = profile.handle
             if (profile.avatar) avatar = profile.avatar
@@ -627,9 +627,9 @@ export async function exchangeCode (
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 
 interface StoredSession {
-    session: OAuthSession;
-    sessionExpiresAt: number;
-    createdAt: number;
+    session:OAuthSession;
+    sessionExpiresAt:number;
+    createdAt:number;
 }
 
 function isObjectRecord (value:unknown):value is Record<string, unknown> {
@@ -660,9 +660,9 @@ function isStoredSession (value:unknown):value is StoredSession {
 }
 
 async function signCookiePayload (
-    payloadB64: string,
-    secret: string
-): Promise<string> {
+    payloadB64:string,
+    secret:string
+):Promise<string> {
     const encoder = new TextEncoder()
     const key = await crypto.subtle.importKey(
         'raw',
@@ -680,10 +680,10 @@ async function signCookiePayload (
 }
 
 async function verifyCookieSignature (
-    payloadB64: string,
-    signatureB64Url: string,
-    secret: string
-): Promise<boolean> {
+    payloadB64:string,
+    signatureB64Url:string,
+    secret:string
+):Promise<boolean> {
     const encoder = new TextEncoder()
     const key = await crypto.subtle.importKey(
         'raw',
@@ -707,13 +707,13 @@ async function verifyCookieSignature (
  * id (no token material).
  */
 export async function createSessionCookie (
-    session: OAuthSession,
-    secret: string,
-    kv: KVNamespace
-): Promise<string> {
+    session:OAuthSession,
+    secret:string,
+    kv:KVNamespace
+):Promise<string> {
     const sid = generateRandomString(32)
     const now = Date.now()
-    const record: StoredSession = {
+    const record:StoredSession = {
         session,
         sessionExpiresAt: now + SESSION_TTL_SECONDS * 1000,
         createdAt: now
@@ -734,10 +734,10 @@ export async function createSessionCookie (
  * Returns null on signature mismatch, missing record, or expiry.
  */
 export async function verifySessionCookie (
-    cookie: string,
-    secret: string,
-    kv: KVNamespace
-): Promise<OAuthSession | null> {
+    cookie:string,
+    secret:string,
+    kv:KVNamespace
+):Promise<OAuthSession | null> {
     try {
         const [payloadB64, signatureB64] = cookie.split('.')
         if (!payloadB64 || !signatureB64) return null
@@ -778,10 +778,10 @@ export async function verifySessionCookie (
  * the signature is valid.
  */
 export async function destroySessionCookie (
-    cookie: string,
-    secret: string,
-    kv: KVNamespace
-): Promise<void> {
+    cookie:string,
+    secret:string,
+    kv:KVNamespace
+):Promise<void> {
     try {
         const [payloadB64, signatureB64] = cookie.split('.')
         if (!payloadB64 || !signatureB64) return

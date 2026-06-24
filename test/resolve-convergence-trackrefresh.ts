@@ -160,10 +160,10 @@ test('failure path -> red', async t => {
         getLocalDb: () => ({} as any),
     })
 
-    const observedStates: Array<
+    const observedStates:Array<
         'inactive'|'updates'|'syncing'|'error'|'synced'
     > = []
-    let lastSeen: 'inactive'|'updates'|'syncing'|'error'|'synced'|null =
+    let lastSeen:'inactive'|'updates'|'syncing'|'error'|'synced'|null =
         null
 
     const unsubscribe = effect(() => {

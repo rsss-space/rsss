@@ -30,12 +30,12 @@ export function instrumentDurableObjectWithSentry<T> (
 }
 
 export function getWorkerSentryOptionsCallback ()
-    :SentryOptionsCallback|undefined {
+   :SentryOptionsCallback|undefined {
     return workerSentryOptionsCallback
 }
 
 export function getDOSentryOptionsCallback ()
-    :SentryOptionsCallback|undefined {
+   :SentryOptionsCallback|undefined {
     return doSentryOptionsCallback
 }
 

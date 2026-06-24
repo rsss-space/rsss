@@ -66,3 +66,25 @@
   - `localStorage.getItem` returns `null` (not `undefined`) when a key is absent; the
     presence check `=== null` correctly treats an empty-string value as "present".
 ---
+
+## 2026-06-23 — US-005
+- Normalized type-annotation colon spacing repo-wide (one-time cleanup)
+- Used @typescript-eslint/parser (already installed) to find TSTypeAnnotation nodes AST-aware
+- Removed spaces before and after type-annotation colons in 18 files (220 removals)
+- Files changed: src/server/auth/oauth.ts, src/server/durable-objects/index.ts,
+  src/server/index.ts, src/client/components/payment-method-modal.ts,
+  src/client/routes/login.ts, and 13 test files
+- Throwaway script run from project directory (not committed); deleted after use
+- npm run lint passes, npm test passes, no new typecheck errors (pre-existing errors unchanged)
+- **Learnings for future iterations:**
+  - @typescript-eslint/parser creates nested TSTypeAnnotation nodes inside TSTypePredicate
+    (e.g., `value is SomeType`). The inner node does NOT start with ':' — it starts at the
+    type name. Always guard with `source[node.range[0]] === ':'` before treating a
+    TSTypeAnnotation as a type-annotation colon.
+  - Run AST codemods from the project directory (not /tmp) so require() resolves
+    node_modules correctly.
+  - Most of the codebase (297 of 315 files) already used the no-space house style;
+    only 18 files needed cleanup.
+  - Pre-existing typecheck errors (1390 lines) are unrelated to colon spacing — they
+    existed before this task and are out of scope.
+---

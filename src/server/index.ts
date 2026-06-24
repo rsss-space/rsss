@@ -658,7 +658,7 @@ app.post(
     authLoginHandleRateLimit,
     async (c) => {
         try {
-            const body = await c.req.json<{ handle: string }>()
+            const body = await c.req.json<{ handle:string }>()
 
             if (!body.handle) {
                 return c.json({ error: 'Handle is required' }, 400)

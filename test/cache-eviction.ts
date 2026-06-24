@@ -314,7 +314,7 @@ test(
             t.equal(result.feedsTrimmed, 0, 'no feeds trimmed')
             t.equal(result.bytesFreed, 0, 'no bytes freed')
 
-            const rows: Array<{ content: string | null }> = []
+            const rows:Array<{ content:string | null }> = []
             db.exec({
                 sql: 'SELECT content FROM items',
                 rowMode: 'object',
@@ -359,7 +359,7 @@ test(
 
             t.equal(result.feedsTrimmed, 1, 'only feed 1 trimmed')
 
-            const rows: Array<{ feed_id: number; content: string | null }> = []
+            const rows:Array<{ feed_id:number; content:string | null }> = []
             db.exec({
                 sql: 'SELECT feed_id, content FROM items ORDER BY feed_id',
                 rowMode: 'object',
@@ -399,7 +399,7 @@ test(
             t.equal(result.feedsTrimmed, 1, 'feed trimmed using site default')
             t.ok(result.bytesFreed > 0, 'bytes freed')
 
-            const rows: Array<{ content: string | null }> = []
+            const rows:Array<{ content:string | null }> = []
             db.exec({
                 sql: 'SELECT content FROM items',
                 rowMode: 'object',
@@ -446,7 +446,7 @@ test(
 
             t.equal(result.feedsTrimmed, 1, 'feed trimmed')
 
-            const rows: Array<{ guid: string; content: string | null }> = []
+            const rows:Array<{ guid:string; content:string | null }> = []
             db.exec({
                 sql: 'SELECT guid, content FROM items ORDER BY guid ASC',
                 rowMode: 'object',
@@ -488,7 +488,7 @@ test(
                 max_age_seconds: null
             })
 
-            const idRows: Array<{ id: number; guid: string }> = []
+            const idRows:Array<{ id:number; guid:string }> = []
             db.exec({
                 sql: 'SELECT id, guid FROM items ORDER BY updated_at ASC',
                 rowMode: 'object',
@@ -502,7 +502,7 @@ test(
 
             t.equal(result.feedsTrimmed, 1, 'feed trimmed')
 
-            const rows: Array<{ guid: string; content: string | null }> = []
+            const rows:Array<{ guid:string; content:string | null }> = []
             db.exec({
                 sql: 'SELECT guid, content FROM items ORDER BY updated_at ASC',
                 rowMode: 'object',
@@ -543,7 +543,7 @@ test(
                      '${OLD_DATE}', '${OLD_DATE}')
             `)
 
-            const idRows: Array<{ id:number; guid:string }> = []
+            const idRows:Array<{ id:number; guid:string }> = []
             db.exec({
                 sql: 'SELECT id, guid FROM items ORDER BY guid ASC',
                 rowMode: 'object',
@@ -603,7 +603,7 @@ test(
             t.equal(result.feedsTrimmed, 0, 'no eviction needed')
             t.equal(result.bytesFreed, 0, 'no bytes freed')
 
-            const rows: Array<{ guid:string; content:string|null }> = []
+            const rows:Array<{ guid:string; content:string|null }> = []
             db.exec({
                 sql: 'SELECT guid, content FROM items' +
                     ' ORDER BY guid ASC',
@@ -659,7 +659,7 @@ test(
 
             t.equal(result.bytesFreed, 0, 'no bytes freed')
 
-            const rows: Array<{ content: string | null }> = []
+            const rows:Array<{ content:string | null }> = []
             db.exec({
                 sql: 'SELECT content FROM items',
                 rowMode: 'object',
@@ -704,7 +704,7 @@ test(
 
             t.ok(result.bytesFreed > 0, 'bytes freed')
 
-            const rows: Array<{ guid: string; content: string | null }> = []
+            const rows:Array<{ guid:string; content:string | null }> = []
             db.exec({
                 sql: 'SELECT guid, content FROM items ORDER BY guid ASC',
                 rowMode: 'object',
@@ -744,7 +744,7 @@ test(
                     (1, 'gB', 'B', 'http://a2', 'world', NULL,
                      '${OLD_DATE}', '${OLD_DATE}')
             `)
-            const idRows: Array<{ id: number; guid: string }> = []
+            const idRows:Array<{ id:number; guid:string }> = []
             db.exec({
                 sql: 'SELECT id, guid FROM items ORDER BY updated_at ASC',
                 rowMode: 'object',
@@ -758,7 +758,7 @@ test(
 
             t.ok(result.bytesFreed > 0, 'some bytes freed')
 
-            const rows: Array<{ guid: string; content: string | null }> = []
+            const rows:Array<{ guid:string; content:string | null }> = []
             db.exec({
                 sql: 'SELECT guid, content FROM items ORDER BY guid ASC',
                 rowMode: 'object',
@@ -817,7 +817,7 @@ test(
 
             t.ok(result.bytesFreed > 0, 'bytes freed')
 
-            const rows: Array<{ guid: string; content: string | null }> = []
+            const rows:Array<{ guid:string; content:string | null }> = []
             db.exec({
                 sql: 'SELECT guid, content FROM items ORDER BY guid ASC',
                 rowMode: 'object',

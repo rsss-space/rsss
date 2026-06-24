@@ -24,19 +24,19 @@ import { billingStatus } from '../billing-status.js'
 import './payment-method-modal.css'
 
 type ModalWindowAttrs = preact.JSX.HTMLAttributes<HTMLElement> & {
-    active?: string;
-    closable?: string;
-    'no-icon'?: string | boolean;
-    animated?: string;
-    noclick?: string | boolean;
-    close?: string;
+    active?:string;
+    closable?:string;
+    'no-icon'?:string | boolean;
+    animated?:string;
+    noclick?:string | boolean;
+    close?:string;
 };
 
 declare module 'preact' {
     // eslint-disable-next-line @typescript-eslint/no-namespace
     export namespace JSX {
         interface IntrinsicElements {
-            'modal-window': ModalWindowAttrs;
+            'modal-window':ModalWindowAttrs;
         }
     }
 }

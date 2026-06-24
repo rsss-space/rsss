@@ -427,10 +427,10 @@ test('AC5.2: end-state transition (no intermediate)', async t => {
 
     state.feedSyncStatus.value = 'inactive'
 
-    const observedStates: Array<
+    const observedStates:Array<
         'inactive'|'updates'|'syncing'|'error'|'synced'
     > = []
-    let lastSeen: 'inactive'|'updates'|'syncing'|'error'|'synced'|null =
+    let lastSeen:'inactive'|'updates'|'syncing'|'error'|'synced'|null =
         null
 
     const unsubscribe = effect(() => {

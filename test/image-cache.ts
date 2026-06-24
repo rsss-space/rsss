@@ -66,7 +66,7 @@ async function silencingConsoleError<T> (
 
 function makeMockFetch (
     sizeBytes = 100
-): { fn:typeof fetch; calls:string[] } {
+):{ fn:typeof fetch; calls:string[] } {
     const calls:string[] = []
     return {
         calls,

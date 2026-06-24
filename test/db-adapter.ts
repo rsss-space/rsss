@@ -56,7 +56,7 @@ function createMockAdapter ():DbAdapter & {
             return feed
         },
 
-        async deleteFeed (id: number): Promise<void> {
+        async deleteFeed (id:number):Promise<void> {
             const index = feeds.findIndex(f => f.id === id)
             if (index !== -1) {
                 feeds.splice(index, 1)
@@ -69,7 +69,7 @@ function createMockAdapter ():DbAdapter & {
             }
         },
 
-        async getItems (options = {}): Promise<ItemsResponse> {
+        async getItems (options = {}):Promise<ItemsResponse> {
             const { feedId, isRead, isStarred, limit = 50, offset = 0 } = options
 
             let filtered = [...items]
@@ -97,14 +97,14 @@ function createMockAdapter ():DbAdapter & {
             return { items: paginated, total, limit, offset }
         },
 
-        async getItemByRoute (itemRoute:string): Promise<Item|null> {
+        async getItemByRoute (itemRoute:string):Promise<Item|null> {
             const item = items.find((entry) =>
                 linkMatchesItemRoute(entry.link, itemRoute)
             )
             return item || null
         },
 
-        async getCounts (): Promise<CountsResponse> {
+        async getCounts ():Promise<CountsResponse> {
             const perFeed:Record<string, number> = {}
             for (const item of items) {
                 if (item.is_read === 0) {
@@ -121,9 +121,9 @@ function createMockAdapter ():DbAdapter & {
         },
 
         async updateItem (
-            id: number,
-            updates: { is_read?: boolean; is_starred?: boolean }
-        ): Promise<void> {
+            id:number,
+            updates:{ is_read?:boolean; is_starred?:boolean }
+        ):Promise<void> {
             const item = items.find(i => i.id === id)
             if (item) {
                 if (updates.is_read !== undefined) {
@@ -136,7 +136,7 @@ function createMockAdapter ():DbAdapter & {
             }
         },
 
-        async markAllRead (feedId?: number): Promise<void> {
+        async markAllRead (feedId?:number):Promise<void> {
             const now = new Date().toISOString()
             for (const item of items) {
                 if (feedId === undefined || item.feed_id === feedId) {
@@ -150,12 +150,12 @@ function createMockAdapter ():DbAdapter & {
 
 // Helper to add items to the mock adapter
 function addMockItem (
-    adapter: ReturnType<typeof createMockAdapter>,
-    feedId: number,
-    overrides: Partial<Item> = {}
-): Item {
+    adapter:ReturnType<typeof createMockAdapter>,
+    feedId:number,
+    overrides:Partial<Item> = {}
+):Item {
     const now = new Date().toISOString()
-    const item: Item = {
+    const item:Item = {
         id: adapter._items.length + 1,
         feed_id: feedId,
         guid: `guid-${adapter._items.length + 1}`,

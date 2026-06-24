@@ -287,7 +287,7 @@ test(
         )
 
         // Mock fetch to track whether exchangeCode is called
-        const fetchCalls: Array<{url:string}> = []
+        const fetchCalls:Array<{url:string}> = []
         const originalFetch = globalThis.fetch
         globalThis.fetch = (async (
             input:RequestInfo | URL,

@@ -62,7 +62,7 @@ test('AC5.5a: GET /api/index/feed forwards query to DO /internal/index/feed',
         t.equal(recordedSearch, '?collection=space.rsss.graph.follow',
             'forwards query string')
 
-        const body = await res.json() as { items?: unknown[] }
+        const body = await res.json() as { items?:unknown[] }
         t.ok(body.items, 'returns DO response body')
         t.ok(body.items?.length === 1, 'response includes items')
     }

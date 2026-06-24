@@ -167,7 +167,7 @@ test('AC3.1: dev poll-now discovers feeds, counts items, does not advance cursor
             { method: 'POST' }
         )
         const text = await res.text()
-        let body: {
+        let body:{
             polledFeeds?:number
             newItems?:number
             counts?:Record<string, number>
