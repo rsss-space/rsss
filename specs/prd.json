@@ -34,7 +34,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-002 / FR-2,3,4. Symbols confirmed in src/server/durable-objects/index.ts: RESOLVE_WINDOW_MS (l184), POST_HYBRID_WAIT_MS (l185), awaitFetchOrTimeout (l2548), handler ~l1626-1644. Keep the alarm pull-forward; only drop the wait. Bare-row 201 is already the slow-path response today, so no client depends on fetched metadata in the body (see PRD Design Considerations)."
     },
     {

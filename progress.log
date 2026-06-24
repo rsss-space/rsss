@@ -22,3 +22,16 @@
   - CI configured in .github/workflows/nodejs.yml
   - #46 (routeToItemRoute/findItemByRoute) remains in state.ts — not moved to a routing.ts helper; only open finding in scope
 ---
+
+## 2026-06-23 — US-002
+- Made POST /feeds strictly non-blocking: removed `awaitFetchOrTimeout` helper and hybrid-race logic
+- `fetchFeed` is now always pushed to `ctx.waitUntil` immediately; the handler returns 201 with the bare inserted row without waiting
+- Removed `POST_HYBRID_WAIT_MS` constant (was 3000) and `awaitFetchOrTimeout` private method from src/server/durable-objects/index.ts
+- Updated test/feed-create.ts: replaced the old hybrid-race test with two new tests — one verifying waitUntil is always called, one verifying slow fetchFeed does not delay response
+- Updated test/dead-code.mjs: added assertions that `awaitFetchOrTimeout` and `POST_HYBRID_WAIT_MS` are absent
+- Updated test/do-handlers.ts: fixed assertion from length 1→2 (GET /feeds reconcile + POST /feeds fetchFeed both now in waitUntil)
+- **Learnings for future iterations:**
+  - GET /feeds calls `ctx.waitUntil(reconcilePublishedFeeds())` — this is always present; test harnesses that count waitUntil calls must account for it
+  - The old hybrid-race pattern (awaitFetchOrTimeout with 3s timeout) is fully removed; all post-insert latency is now server-side background work
+  - Pre-existing typecheck errors exist in unrelated test files (test/alarm.ts, test/do-migrations.ts, etc.) — these were present before US-002 and are out of scope
+---

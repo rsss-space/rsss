@@ -462,8 +462,8 @@ test('RsssUserDO feed handlers list create and refresh feeds', async t => {
     t.equal(sql.feeds.length, 3, 'feed row is inserted')
     t.equal(
         waitUntilPromises.length,
-        1,
-        'feed list schedules publish-state reconcile'
+        2,
+        'GET /feeds schedules publish-state reconcile and POST /feeds schedules fetchFeed in background'
     )
 
     await Promise.all(waitUntilPromises)
