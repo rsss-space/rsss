@@ -366,19 +366,19 @@ function createDoHarness (options:{
         sql:ReturnType<typeof createSql>
         ctx:{
             storage:{
-                get:<T>(key:string) => Promise<T|undefined>
-                put:(key:string, value:unknown) => Promise<void>
-                delete:(key:string) => Promise<void>
-                getAlarm:() => Promise<number|null>
-                setAlarm:(at:number) => Promise<void>
-                deleteAlarm:() => Promise<void>
+                get:<T>(key:string)=> Promise<T|undefined>
+                put:(key:string, value:unknown)=> Promise<void>
+                delete:(key:string)=> Promise<void>
+                getAlarm:()=> Promise<number|null>
+                setAlarm:(at:number)=> Promise<void>
+                deleteAlarm:()=> Promise<void>
             }
-            waitUntil:(promise:Promise<unknown>) => void
-            getWebSockets:() => Array<{ send:(msg:string) => void }>
+            waitUntil:(promise:Promise<unknown>)=> void
+            getWebSockets:()=> Array<{ send:(msg:string)=> void }>
         }
-        fetchFeed:(feed:FeedRow) => Promise<void>
-        refreshFeedBatches:() => Promise<void>
-        createRouter:() => { request:(path:string, init?:RequestInit) =>
+        fetchFeed:(feed:FeedRow)=> Promise<void>
+        refreshFeedBatches:()=> Promise<void>
+        createRouter:()=> { request:(path:string, init?:RequestInit)=>
             Promise<Response> }
     }
 
@@ -1384,8 +1384,8 @@ test('RsssUserDO broadcast sends JSON envelope to every live socket', async t =>
     const sockets = [makeSocket(1), makeSocket(2)]
 
     const userDo = Object.create(RsssUserDO.prototype) as {
-        ctx:{ getWebSockets:() => unknown[] }
-        broadcast:(event:string, data:unknown) => void
+        ctx:{ getWebSockets:()=> unknown[] }
+        broadcast:(event:string, data:unknown)=> void
     }
     userDo.ctx = { getWebSockets: () => sockets }
 
@@ -1411,8 +1411,8 @@ test('RsssUserDO broadcast drops a failing socket and keeps going', async t => {
         { send: () => delivered.push(2) }
     ]
     const userDo = Object.create(RsssUserDO.prototype) as {
-        ctx:{ getWebSockets:() => unknown[] }
-        broadcast:(event:string, data:unknown) => void
+        ctx:{ getWebSockets:()=> unknown[] }
+        broadcast:(event:string, data:unknown)=> void
     }
     userDo.ctx = { getWebSockets: () => sockets }
 

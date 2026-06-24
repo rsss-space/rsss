@@ -11,16 +11,16 @@ import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import { fakeResult } from './helpers/sql-fake.js'
 
 interface FakeStorage {
-    get:<T>(key:string) => Promise<T | undefined>
-    put:(key:string, value:unknown) => Promise<void>
-    delete:(key:string) => Promise<void>
-    setAlarm:(time:number) => Promise<void>
-    deleteAll:() => Promise<void>
+    get:<T>(key:string)=> Promise<T | undefined>
+    put:(key:string, value:unknown)=> Promise<void>
+    delete:(key:string)=> Promise<void>
+    setAlarm:(time:number)=> Promise<void>
+    deleteAll:()=> Promise<void>
 }
 
 interface FakeKv {
-    get:(key:string) => Promise<string|null>
-    delete:(key:string) => Promise<void>
+    get:(key:string)=> Promise<string|null>
+    delete:(key:string)=> Promise<void>
 }
 
 function createDeletionDo (initial:{
@@ -40,14 +40,14 @@ function createDeletionDo (initial:{
     let refreshError:unknown = null
 
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => ReturnType<typeof fakeResult> }
+        sql:{ exec:(query:string, ...params:unknown[])=> ReturnType<typeof fakeResult> }
         ctx:{ storage:FakeStorage }
         env:{ SESSIONS:FakeKv } & Record<string, unknown>
-        alarm:() => Promise<void>
-        sweepStuckResolvingFeeds:() => void
-        readAccountActivity:() => Promise<{ lastActiveAt:number }|undefined>
-        refreshFeedBatches:() => Promise<void>
-        executeAccountDeletion:(did:string) => Promise<void>
+        alarm:()=> Promise<void>
+        sweepStuckResolvingFeeds:()=> void
+        readAccountActivity:()=> Promise<{ lastActiveAt:number }|undefined>
+        refreshFeedBatches:()=> Promise<void>
+        executeAccountDeletion:(did:string)=> Promise<void>
     }
 
     userDo.sql = {

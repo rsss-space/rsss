@@ -51,7 +51,7 @@ function makeState (overrides:Partial<{
 function mount (
     state:AppState,
     testFeed:Feed,
-    onToggleSpy:(feedId:number, checked:boolean) => void
+    onToggleSpy:(feedId:number, checked:boolean)=> void
 ):HTMLElement {
     const root = document.createElement('div')
     document.body.appendChild(root)

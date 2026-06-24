@@ -8,7 +8,7 @@
 // invoke the *real* getSentryOptions / getDOSentryOptions across envs. The
 // wrappers still pass the handler / class straight through, so every other
 // consumer is unaffected by the capture.
-export type SentryOptionsCallback = (env:unknown) => unknown
+export type SentryOptionsCallback = (env:unknown)=> unknown
 
 let workerSentryOptionsCallback:SentryOptionsCallback|undefined
 let doSentryOptionsCallback:SentryOptionsCallback|undefined
@@ -86,6 +86,6 @@ export function setUser (_user:unknown):void {}
 export function setTag (_key:string, _value:unknown):void {}
 export function setContext (_name:string, _ctx:unknown):void {}
 export function addBreadcrumb (_crumb:unknown):void {}
-export function startSpan<T> (_opts:unknown, fn:() => T):T {
+export function startSpan<T> (_opts:unknown, fn:()=> T):T {
     return fn()
 }

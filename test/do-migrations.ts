@@ -52,7 +52,7 @@ function createConstructorContext (storedVersion:number | null) {
             setAlarm: async () => {}
         },
         setWebSocketAutoResponse: () => {},
-        blockConcurrencyWhile: (fn:() => Promise<void>) => {
+        blockConcurrencyWhile: (fn:()=> Promise<void>) => {
             barrier = fn()
         }
     } as unknown as DurableObjectState
@@ -245,10 +245,10 @@ test('RsssUserDO reads and bumps feed version through user_state', t => {
     const statements:{ query:string, params:unknown[] }[] = []
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => QueryResult
+            exec:(query:string, ...params:unknown[])=> QueryResult
         }
-        getFeedVersion:() => number
-        bumpFeedVersion:() => number
+        getFeedVersion:()=> number
+        bumpFeedVersion:()=> number
     }
 
     userDo.sql = {

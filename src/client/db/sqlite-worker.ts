@@ -28,30 +28,30 @@ type WorkerDbExecArg =
     }
 
 interface WorkerDb {
-    exec:(arg:WorkerDbExecArg) => void
-    close:() => void
+    exec:(arg:WorkerDbExecArg)=> void
+    close:()=> void
 }
 
-type WorkerDbConstructor = new (filename:string) => WorkerDb
+type WorkerDbConstructor = new (filename:string)=> WorkerDb
 
 interface SqliteWorkerNamespace {
     oo1:{
         DB:WorkerDbConstructor
     }
-    installOpfsSAHPoolVfs:(opts:{ directory:string }) => Promise<{
+    installOpfsSAHPoolVfs:(opts:{ directory:string })=> Promise<{
         OpfsSAHPoolDb:WorkerDbConstructor
-        unlink:(name:string) => boolean
+        unlink:(name:string)=> boolean
     }>
 }
 
 interface WorkerScope {
-    onmessage:((event:MessageEvent<SqliteWorkerRequest>) => void)|null
-    postMessage:(message:SqliteWorkerResponse) => void
+    onmessage:((event:MessageEvent<SqliteWorkerRequest>)=> void)|null
+    postMessage:(message:SqliteWorkerResponse)=> void
 }
 
 type SqliteWorkerFactory = (options:{
-    locateFile:(filename:string) => string
-}) => Promise<SqliteWorkerNamespace>
+    locateFile:(filename:string)=> string
+})=> Promise<SqliteWorkerNamespace>
 
 interface SqliteWorkerModule {
     default:SqliteWorkerFactory
@@ -62,7 +62,7 @@ let sqlitePromise:Promise<SqliteWorkerNamespace>|null = null
 let db:WorkerDb|null = null
 let opfsPoolDirectory:string|null = null
 let opfsPoolDb:WorkerDbConstructor|null = null
-let opfsPoolUnlink:((name:string) => boolean)|null = null
+let opfsPoolUnlink:((name:string)=> boolean)|null = null
 
 workerScope.onmessage = (event) => {
     dispatch(event.data).catch((err) => {
@@ -126,7 +126,7 @@ async function probeOpfs (directory = 'rsss-db'):Promise<void> {
     const workerNavigator = (globalThis as unknown as {
         navigator?:{
             storage?:{
-                getDirectory?:() => Promise<unknown>
+                getDirectory?:()=> Promise<unknown>
             }
         }
     }).navigator

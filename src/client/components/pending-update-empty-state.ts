@@ -11,7 +11,7 @@ export function pendingUpdateLabel (count:number):string {
 
 export const PendingUpdateEmptyState:FunctionComponent<{
     count:number;
-    onRefresh:() => Promise<void>;
+    onRefresh:()=> Promise<void>;
 }> = function PendingUpdateEmptyState ({ count, onRefresh }) {
     const busy = useSignal<boolean>(false)
 

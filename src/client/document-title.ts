@@ -26,7 +26,7 @@ type FeedSyncStatus =
 export function initDocumentTitle (
     displayedStatus:ReadonlySignal<FeedSyncStatus>,
     feedUpdateCounts:ReadonlySignal<Record<string, number>>
-):() => void {
+):()=> void {
     const baseTitle = document.title
 
     return effect(() => {

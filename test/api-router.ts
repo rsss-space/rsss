@@ -76,7 +76,7 @@ function authenticatedDataRouter () {
 function makeDataEnv (
     kv:MemoryKv,
     proxied:string[],
-    statusForRoute:(routeKey:string) => number
+    statusForRoute:(routeKey:string)=> number
 ) {
     return {
         USER_DO: {

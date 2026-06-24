@@ -60,7 +60,7 @@ export class WorkerBackedLocalDb {
 
 export function isWorkerBackedLocalDb (
     db:Sqlite3Db
-):db is Sqlite3Db & WorkerBackedLocalDb {
+):db isSqlite3Db & WorkerBackedLocalDb {
     return Boolean(
         (db as unknown as { isWorkerBackedLocalDb?:boolean })
             .isWorkerBackedLocalDb
@@ -72,7 +72,7 @@ export async function execDb (
     arg:LocalDbExecArg
 ):Promise<void> {
     await (db as unknown as {
-        exec:(arg:LocalDbExecArg) => void|Promise<void>
+        exec:(arg:LocalDbExecArg)=> void|Promise<void>
     }).exec(arg)
 }
 
@@ -143,7 +143,7 @@ export async function ensureFeedTerminalStateColumns (
 export async function closeDb (db:Sqlite3Db|null|undefined):Promise<void> {
     if (!db) return
 
-    const close = (db as unknown as { close?:() => void|Promise<void> })
+    const close = (db as unknown as { close?:()=> void|Promise<void> })
         .close
     if (typeof close !== 'function') return
 

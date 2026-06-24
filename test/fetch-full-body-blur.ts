@@ -93,7 +93,7 @@ function createSql (items:ItemRow[]) {
 interface FakeQueue {
     calls:number
     sent:unknown[]
-    send:(message:unknown) => Promise<unknown>
+    send:(message:unknown)=> Promise<unknown>
 }
 
 function captureQueue ():FakeQueue {
@@ -132,17 +132,17 @@ function createHarness (
         sql:ReturnType<typeof createSql>
         env:{ BLURHASH_QUEUE:FakeQueue }
         ctx:{
-            id:{ toString:() => string }
+            id:{ toString:()=> string }
             storage:{
-                get:<T>(key:string) => Promise<T|undefined>
-                put:(key:string, value:unknown) => Promise<void>
-                delete:(key:string) => Promise<void>
+                get:<T>(key:string)=> Promise<T|undefined>
+                put:(key:string, value:unknown)=> Promise<void>
+                delete:(key:string)=> Promise<void>
             }
-            waitUntil:(promise:Promise<unknown>) => void
+            waitUntil:(promise:Promise<unknown>)=> void
         }
-        doFetchFullArticle:(link:string) => Promise<FetchFullArticleResult>
-        createRouter:() => {
-            request:(path:string, init?:RequestInit) => Promise<Response>
+        doFetchFullArticle:(link:string)=> Promise<FetchFullArticleResult>
+        createRouter:()=> {
+            request:(path:string, init?:RequestInit)=> Promise<Response>
         }
     }
 

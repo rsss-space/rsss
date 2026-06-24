@@ -13,9 +13,9 @@ export interface RateLimitOptions<
     key:(c:Context<{
         Bindings:Bindings;
         Variables:Variables;
-    }>) => string|null|Promise<string|null>;
+    }>)=> string|null|Promise<string|null>;
     prefix?:string;
-    now?:() => number;
+    now?:()=> number;
 }
 
 interface RateLimitState {

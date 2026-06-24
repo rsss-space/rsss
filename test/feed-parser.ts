@@ -7,9 +7,9 @@ const pollerStorage = new Map<string, unknown>()
 ;(RsssUserDO.prototype as unknown as {
     ctx:{
         storage:{
-            get:<T>(key:string) => Promise<T|undefined>
-            put:(key:string, value:unknown) => Promise<void>
-            delete:(key:string) => Promise<void>
+            get:<T>(key:string)=> Promise<T|undefined>
+            put:(key:string, value:unknown)=> Promise<void>
+            delete:(key:string)=> Promise<void>
         }
     }
 }).ctx = {
@@ -45,7 +45,7 @@ interface ParsedFeed {
 
 function parseFeed (xml:string):ParsedFeed {
     const parser = Object.create(RsssUserDO.prototype) as {
-        parseFeed:(value:string) => ParsedFeed
+        parseFeed:(value:string)=> ParsedFeed
     }
 
     return parser.parseFeed(xml)
@@ -296,8 +296,8 @@ test('fetchFeed records feed too large when parsed rows are truncated',
     async t => {
         const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
-                exec:(query:string, ...params:unknown[]) => {
-                    toArray:() => []
+                exec:(query:string, ...params:unknown[])=> {
+                    toArray:()=> []
                 }
             }
             fetchFeed:(feed:{
@@ -311,7 +311,7 @@ test('fetchFeed records feed too large when parsed rows are truncated',
                 last_status:number|null
                 created_at:string
                 updated_at:string
-            }) => Promise<void>
+            })=> Promise<void>
         }
         const originalFetch = globalThis.fetch
         let inserted = 0
@@ -406,9 +406,9 @@ test('fetchFeed records feed too large when parsed rows are truncated',
 test('fetchFeed stores og image for newly inserted items', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => unknown[]
-                one?:() => unknown
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> unknown[]
+                one?:()=> unknown
                 rowsWritten?:number
             }
         }
@@ -423,7 +423,7 @@ test('fetchFeed stores og image for newly inserted items', async t => {
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     const originalFetch = globalThis.fetch
     let itemImageUpdate:null | {
@@ -538,9 +538,9 @@ test('fetchFeed stores og image for newly inserted items', async t => {
 test('fetchFeed stores article og:image in og_image_url', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => unknown[]
-                one?:() => unknown
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> unknown[]
+                one?:()=> unknown
                 rowsWritten?:number
             }
         }
@@ -555,7 +555,7 @@ test('fetchFeed stores article og:image in og_image_url', async t => {
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     const originalFetch = globalThis.fetch
     let itemImageUpdate:null | {
@@ -669,16 +669,16 @@ test('fetchFeed writes cached blurhash metadata without queueing',
         const userDo = Object.create(RsssUserDO.prototype) as {
             env:{
                 BLURHASH_KV:{
-                    get:(key:string) => Promise<string|null>
+                    get:(key:string)=> Promise<string|null>
                 }
                 BLURHASH_QUEUE:{
-                    send:(message:unknown) => Promise<void>
+                    send:(message:unknown)=> Promise<void>
                 }
             }
             sql:{
-                exec:(query:string, ...params:unknown[]) => {
-                    toArray:() => unknown[]
-                    one?:() => unknown
+                exec:(query:string, ...params:unknown[])=> {
+                    toArray:()=> unknown[]
+                    one?:()=> unknown
                     rowsWritten?:number
                 }
             }
@@ -693,7 +693,7 @@ test('fetchFeed writes cached blurhash metadata without queueing',
                 last_status:number|null
                 created_at:string
                 updated_at:string
-            }) => Promise<void>
+            })=> Promise<void>
         }
         const originalFetch = globalThis.fetch
         let kvReads = 0
@@ -859,26 +859,26 @@ test('fetchFeed enqueues blurhash job on cache miss', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         env:{
             BLURHASH_KV:{
-                get:(key:string) => Promise<string|null>
+                get:(key:string)=> Promise<string|null>
             }
             BLURHASH_QUEUE:{
-                send:(message:unknown) => Promise<void>
+                send:(message:unknown)=> Promise<void>
             }
         }
         ctx:{
             id:{
-                toString:() => string
+                toString:()=> string
             }
             storage:{
-                get:<T>(key:string) => Promise<T|undefined>
-                put:(key:string, value:unknown) => Promise<void>
-                delete:(key:string) => Promise<void>
+                get:<T>(key:string)=> Promise<T|undefined>
+                put:(key:string, value:unknown)=> Promise<void>
+                delete:(key:string)=> Promise<void>
             }
         }
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => unknown[]
-                one?:() => unknown
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> unknown[]
+                one?:()=> unknown
                 rowsWritten?:number
             }
         }
@@ -893,7 +893,7 @@ test('fetchFeed enqueues blurhash job on cache miss', async t => {
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     const originalFetch = globalThis.fetch
     let kvReads = 0
@@ -1037,9 +1037,9 @@ test('fetchFeed enqueues blurhash job on cache miss', async t => {
 test('fetchFeed caps concurrent og image requests at four', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => unknown[]
-                one?:() => unknown
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> unknown[]
+                one?:()=> unknown
                 rowsWritten?:number
             }
         }
@@ -1054,7 +1054,7 @@ test('fetchFeed caps concurrent og image requests at four', async t => {
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     const originalFetch = globalThis.fetch
     let nextItemId = 100
@@ -1167,9 +1167,9 @@ test('fetchFeed caps concurrent og image requests at four', async t => {
 test('fetchFeed silently handles og failures, uses parser image', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => unknown[]
-                one?:() => unknown
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> unknown[]
+                one?:()=> unknown
                 rowsWritten?:number
             }
         }
@@ -1184,7 +1184,7 @@ test('fetchFeed silently handles og failures, uses parser image', async t => {
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     const originalFetch = globalThis.fetch
     const originalError = console.error
@@ -1320,8 +1320,8 @@ test('fetchFeed silently handles og failures, uses parser image', async t => {
 test('fetchFeed records non-duplicate item insert failures', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => []
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> []
             }
         }
         fetchFeed:(feed:{
@@ -1335,7 +1335,7 @@ test('fetchFeed records non-duplicate item insert failures', async t => {
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     const originalFetch = globalThis.fetch
     const originalError = console.error
@@ -1440,9 +1440,9 @@ test('fetchFeed stays quiet when article URL exceeds redirect budget',
     async t => {
         const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
-                exec:(query:string, ...params:unknown[]) => {
-                    toArray:() => unknown[]
-                    one?:() => unknown
+                exec:(query:string, ...params:unknown[])=> {
+                    toArray:()=> unknown[]
+                    one?:()=> unknown
                     rowsWritten?:number
                 }
             }
@@ -1457,7 +1457,7 @@ test('fetchFeed stays quiet when article URL exceeds redirect budget',
                 last_status:number|null
                 created_at:string
                 updated_at:string
-            }) => Promise<void>
+            })=> Promise<void>
         }
         const originalFetch = globalThis.fetch
         const originalError = console.error
@@ -1567,9 +1567,9 @@ test('fetchFeed resolves og image after multi-hop article redirects',
     async t => {
         const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
-                exec:(query:string, ...params:unknown[]) => {
-                    toArray:() => unknown[]
-                    one?:() => unknown
+                exec:(query:string, ...params:unknown[])=> {
+                    toArray:()=> unknown[]
+                    one?:()=> unknown
                     rowsWritten?:number
                 }
             }
@@ -1584,7 +1584,7 @@ test('fetchFeed resolves og image after multi-hop article redirects',
                 last_status:number|null
                 created_at:string
                 updated_at:string
-            }) => Promise<void>
+            })=> Promise<void>
         }
         const originalFetch = globalThis.fetch
         let articleHops = 0
@@ -1711,9 +1711,9 @@ test('fetchFeed falls back to feed image when article redirects loop',
     async t => {
         const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
-                exec:(query:string, ...params:unknown[]) => {
-                    toArray:() => unknown[]
-                    one?:() => unknown
+                exec:(query:string, ...params:unknown[])=> {
+                    toArray:()=> unknown[]
+                    one?:()=> unknown
                     rowsWritten?:number
                 }
             }
@@ -1728,7 +1728,7 @@ test('fetchFeed falls back to feed image when article redirects loop',
                 last_status:number|null
                 created_at:string
                 updated_at:string
-            }) => Promise<void>
+            })=> Promise<void>
         }
         const originalFetch = globalThis.fetch
         let thumbnailUpdate:null | {
@@ -1845,9 +1845,9 @@ test('fetchFeed leaves thumbnail null when article loops and feed has none',
     async t => {
         const userDo = Object.create(RsssUserDO.prototype) as {
             sql:{
-                exec:(query:string, ...params:unknown[]) => {
-                    toArray:() => unknown[]
-                    one?:() => unknown
+                exec:(query:string, ...params:unknown[])=> {
+                    toArray:()=> unknown[]
+                    one?:()=> unknown
                     rowsWritten?:number
                 }
             }
@@ -1862,7 +1862,7 @@ test('fetchFeed leaves thumbnail null when article loops and feed has none',
                 last_status:number|null
                 created_at:string
                 updated_at:string
-            }) => Promise<void>
+            })=> Promise<void>
         }
         const originalFetch = globalThis.fetch
         let inserted = false
@@ -1965,8 +1965,8 @@ test('fetchFeed leaves thumbnail null when article loops and feed has none',
 test('fetchFeed loudly reports feed-XML redirect overflow', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => unknown[]
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> unknown[]
             }
         }
         fetchFeed:(feed:{
@@ -1980,7 +1980,7 @@ test('fetchFeed loudly reports feed-XML redirect overflow', async t => {
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     const originalFetch = globalThis.fetch
     const originalError = console.error
@@ -2106,7 +2106,7 @@ function createUrlPersistHarness (opts:{
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
     state:{
         urlUpdate:UrlUpdateProbe|null
@@ -2123,9 +2123,9 @@ function createUrlPersistHarness (opts:{
 
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[]) => {
-                toArray:() => unknown[]
-                one?:() => unknown
+            exec:(query:string, ...params:unknown[])=> {
+                toArray:()=> unknown[]
+                one?:()=> unknown
                 rowsWritten?:number
             }
         }
@@ -2140,7 +2140,7 @@ function createUrlPersistHarness (opts:{
             last_status:number|null
             created_at:string
             updated_at:string
-        }) => Promise<void>
+        })=> Promise<void>
     }
 
     userDo.sql = {

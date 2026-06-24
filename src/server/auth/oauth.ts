@@ -632,11 +632,11 @@ interface StoredSession {
     createdAt:number;
 }
 
-function isObjectRecord (value:unknown):value is Record<string, unknown> {
+function isObjectRecord (value:unknown):value isRecord<string, unknown> {
     return typeof value === 'object' && value !== null
 }
 
-function isOAuthSession (value:unknown):value is OAuthSession {
+function isOAuthSession (value:unknown):value isOAuthSession {
     if (!isObjectRecord(value)) return false
     if (typeof value.did !== 'string') return false
     if (typeof value.handle !== 'string') return false
@@ -650,7 +650,7 @@ function isOAuthSession (value:unknown):value is OAuthSession {
     return true
 }
 
-function isStoredSession (value:unknown):value is StoredSession {
+function isStoredSession (value:unknown):value isStoredSession {
     if (!isObjectRecord(value)) return false
     if (!isOAuthSession(value.session)) return false
     if (typeof value.sessionExpiresAt !== 'number') return false

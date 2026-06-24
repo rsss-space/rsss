@@ -33,12 +33,12 @@ export const MIN_VISIBLE_MS = 500
 
 type ClockHooks = {
     setTimeout:(
-        cb:() => void,
+        cb:()=> void,
         ms:number,
-    ) => ReturnType<typeof setTimeout>
+    )=> ReturnType<typeof setTimeout>
     clearTimeout:(
         handle:ReturnType<typeof setTimeout>,
-    ) => void
+    )=> void
 }
 
 let _clock:ClockHooks = {
@@ -132,7 +132,7 @@ function handleRawChange (raw:boolean):void {
     }
 }
 
-let _disposeEffect:(() => void)|null = null
+let _disposeEffect:(()=> void)|null = null
 let _currentRawSignal:ReadonlySignal<boolean>|null = null
 
 export function init (rawSignal:ReadonlySignal<boolean>):void {

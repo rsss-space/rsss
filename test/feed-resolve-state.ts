@@ -23,8 +23,8 @@ import { fakeResult } from './helpers/sql-fake.js'
 setTestMode(true, wasmUrl as string)
 
 interface QueryResult {
-    toArray:() => unknown[]
-    one:() => unknown | null
+    toArray:()=> unknown[]
+    one:()=> unknown | null
     rowsWritten?:number
 }
 
@@ -34,19 +34,19 @@ interface SqlExecCall {
 }
 
 interface FetchFeedDoType {
-    sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
+    sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
     broadcasts:Array<{ event:string; data:unknown }>
     ctx:{
         storage:{
-            get:<T>(key:string) => Promise<T|undefined>
-            put:(key:string, value:unknown) => Promise<void>
-            delete:(key:string) => Promise<void>
+            get:<T>(key:string)=> Promise<T|undefined>
+            put:(key:string, value:unknown)=> Promise<void>
+            delete:(key:string)=> Promise<void>
         }
     }
-    getFeedsWithUpdates:() => string[]
-    getFeedUpdateCounts:() => Record<string, number>
-    broadcast:(event:string, data:unknown) => void
-    parseFeed:(text:string) => {
+    getFeedsWithUpdates:()=> string[]
+    getFeedUpdateCounts:()=> Record<string, number>
+    broadcast:(event:string, data:unknown)=> void
+    parseFeed:(text:string)=> {
         title:string|null
         description:string|null
         link:string|null
@@ -56,16 +56,16 @@ interface FetchFeedDoType {
     doFetchFeedText:(
         url:string,
         validators?:{ etag?:string; lastModified?:string }
-    ) => Promise<{
+    )=> Promise<{
         text:string
         url:string
         notModified:boolean
         etag?:string
         lastModified?:string
     }>
-    updateNewItemThumbnails:(items:unknown[]) => Promise<void>
-    rowsWritten:(result:unknown) => number
-    fetchFeed:(feed:{ id:number; url:string }) => Promise<void>
+    updateNewItemThumbnails:(items:unknown[])=> Promise<void>
+    rowsWritten:(result:unknown)=> number
+    fetchFeed:(feed:{ id:number; url:string })=> Promise<void>
 }
 
 function createFetchHarness (opts:{
@@ -224,9 +224,9 @@ test(
         const broadcasts:Array<{ event:string; data:unknown }> = []
 
         const userDo = Object.create(RsssUserDO.prototype) as {
-            sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
-            broadcast:(event:string, data:unknown) => void
-            sweepStuckResolvingFeeds:() => void
+            sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
+            broadcast:(event:string, data:unknown)=> void
+            sweepStuckResolvingFeeds:()=> void
         }
 
         userDo.sql = {
@@ -304,22 +304,22 @@ test(
         }
 
         const userDo = Object.create(RsssUserDO.prototype) as {
-            sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
+            sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
             ctx:{
                 storage:{
-                    get:<T>(key:string) => Promise<T|undefined>
-                    put:(key:string, value:unknown) => Promise<void>
-                    delete:(key:string) => Promise<void>
+                    get:<T>(key:string)=> Promise<T|undefined>
+                    put:(key:string, value:unknown)=> Promise<void>
+                    delete:(key:string)=> Promise<void>
                 }
-                waitUntil:(p:Promise<unknown>) => void
+                waitUntil:(p:Promise<unknown>)=> void
             }
-            fetchFeed:(feed:unknown) => Promise<void>
-            advanceFeedCursor:(id:number) => void
+            fetchFeed:(feed:unknown)=> Promise<void>
+            advanceFeedCursor:(id:number)=> void
             claimManualFeedRefresh:(
                 id:number
-            ) => Promise<null | { retryAfterSeconds:number }>
-            createRouter:() => {
-                request:(path:string, init?:RequestInit) => Promise<Response>
+            )=> Promise<null | { retryAfterSeconds:number }>
+            createRouter:()=> {
+                request:(path:string, init?:RequestInit)=> Promise<Response>
             }
         }
 
@@ -419,7 +419,7 @@ test(
                 'last_status round-trips through upsertFeedFromServer'
             )
         } finally {
-            (db as unknown as { close:() => void }).close()
+            (db as unknown as { close:()=> void }).close()
         }
     }
 )
@@ -449,12 +449,12 @@ test(
         const realClearTimeout = globalThis.clearTimeout
         const scheduled:Array<{
             delay:number
-            cb:() => void
+            cb:()=> void
             id:number
         }> = []
         let nextTimerId = 1
 
-        globalThis.setTimeout = ((cb:() => void, delay:number) => {
+        globalThis.setTimeout = ((cb:()=> void, delay:number) => {
             const id = nextTimerId++
             scheduled.push({ delay, cb, id })
             return id as unknown as ReturnType<typeof setTimeout>
@@ -594,7 +594,7 @@ test(
                 'last_status cleared when server reports null'
             )
         } finally {
-            (db as unknown as { close:() => void }).close()
+            (db as unknown as { close:()=> void }).close()
         }
     }
 )

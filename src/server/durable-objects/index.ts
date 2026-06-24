@@ -222,13 +222,13 @@ function isDuplicateInsertError (err:unknown):boolean {
         message.includes('unique constraint failed')
 }
 
-function isObjectRecord (value:unknown):value is Record<string, unknown> {
+function isObjectRecord (value:unknown):value isRecord<string, unknown> {
     return typeof value === 'object' && value !== null
 }
 
 function isOAuthCredentialRecord (
     value:unknown
-):value is OAuthCredentialRecord {
+):value isOAuthCredentialRecord {
     if (!isObjectRecord(value)) return false
     if (typeof value.did !== 'string') return false
     if (typeof value.accessToken !== 'string') return false
@@ -840,7 +840,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
     private isListedSubscriptionRecord (
         value:unknown
-    ):value is ListedSubscriptionRecord {
+    ):value isListedSubscriptionRecord {
         if (typeof value !== 'object' || value === null) return false
         if (Array.isArray(value)) return false
 
@@ -3304,7 +3304,7 @@ export class RsssUserDO extends DurableObject<Env> {
     private capText (
         value:string | null,
         maxLength:number,
-        markTooLarge:() => void
+        markTooLarge:()=> void
     ):string | null {
         if (value === null) return null
         if (value.length <= maxLength) return value
@@ -3764,7 +3764,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
     private async runFeedPool (
         feeds:Feed[],
-        worker:(feed:Feed) => Promise<void>
+        worker:(feed:Feed)=> Promise<void>
     ):Promise<void> {
         let next = 0
         const count = Math.min(FEED_REFRESH_CONCURRENCY, feeds.length)

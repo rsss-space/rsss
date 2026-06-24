@@ -31,8 +31,8 @@ function feedRow (
 test('getFeedsWithUpdates returns string IDs of feeds with newer items',
     t => {
         const userDo = Object.create(RsssUserDO.prototype) as {
-            sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
-            getFeedsWithUpdates:() => string[]
+            sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
+            getFeedsWithUpdates:()=> string[]
         }
 
         userDo.sql = {
@@ -49,8 +49,8 @@ test('getFeedsWithUpdates returns string IDs of feeds with newer items',
 test('getFeedsWithUpdates query uses last_pulled_at', t => {
     let capturedQuery = ''
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
-        getFeedsWithUpdates:() => string[]
+        sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
+        getFeedsWithUpdates:()=> string[]
     }
 
     userDo.sql = {
@@ -73,8 +73,8 @@ test('getFeedsWithUpdates query uses last_pulled_at', t => {
 
 test('getFeedsWithUpdates returns empty when all feeds caught up', t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
-        getFeedsWithUpdates:() => string[]
+        sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
+        getFeedsWithUpdates:()=> string[]
     }
 
     userDo.sql = {
@@ -87,26 +87,26 @@ test('getFeedsWithUpdates returns empty when all feeds caught up', t => {
 // ---- Route-level cursor advancement tests ----
 
 interface CursorDoType {
-    sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
+    sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
     ctx:{
         storage:{
-            get:<T>(key:string) => Promise<T|undefined>
-            put:(key:string, value:unknown) => Promise<void>
-            delete:(key:string) => Promise<void>
+            get:<T>(key:string)=> Promise<T|undefined>
+            put:(key:string, value:unknown)=> Promise<void>
+            delete:(key:string)=> Promise<void>
         }
-        waitUntil:(p:Promise<unknown>) => void
+        waitUntil:(p:Promise<unknown>)=> void
     }
-    fetchFeed:(feed:FeedRow) => Promise<void>
-    broadcast:(event:string, data:unknown) => void
-    getFeedsWithUpdates:() => string[]
-    createRouter:() => {
-        request:(path:string, init?:RequestInit) => Promise<Response>
+    fetchFeed:(feed:FeedRow)=> Promise<void>
+    broadcast:(event:string, data:unknown)=> void
+    getFeedsWithUpdates:()=> string[]
+    createRouter:()=> {
+        request:(path:string, init?:RequestInit)=> Promise<Response>
     }
 }
 
 function createCursorHarness (
     pendingFeedIds:string[] = [],
-    getUpdatesOverride?:() => string[]
+    getUpdatesOverride?:()=> string[]
 ) {
     const feeds:FeedRow[] = [feedRow(1, 'https://a.example/feed', null)]
     const cursorUpdates:number[] = []
@@ -249,19 +249,19 @@ interface BroadcastCall {
 }
 
 interface FetchFeedDoType {
-    sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
+    sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
     broadcasts:BroadcastCall[]
     ctx:{
         storage:{
-            get:<T>(key:string) => Promise<T|undefined>
-            put:(key:string, value:unknown) => Promise<void>
-            delete:(key:string) => Promise<void>
+            get:<T>(key:string)=> Promise<T|undefined>
+            put:(key:string, value:unknown)=> Promise<void>
+            delete:(key:string)=> Promise<void>
         }
     }
-    getFeedsWithUpdates:() => string[]
-    getFeedUpdateCounts:() => Record<string, number>
-    broadcast:(event:string, data:unknown) => void
-    parseFeed:(text:string) => {
+    getFeedsWithUpdates:()=> string[]
+    getFeedUpdateCounts:()=> Record<string, number>
+    broadcast:(event:string, data:unknown)=> void
+    parseFeed:(text:string)=> {
         title:string|null
         description:string|null
         link:string|null
@@ -280,16 +280,16 @@ interface FetchFeedDoType {
     doFetchFeedText:(
         url:string,
         validators?:{ etag?:string; lastModified?:string }
-    ) => Promise<{
+    )=> Promise<{
         text:string
         url:string
         notModified:boolean
         etag?:string
         lastModified?:string
     }>
-    updateNewItemThumbnails:(items:unknown[]) => Promise<void>
-    rowsWritten:(result:unknown) => number
-    fetchFeed:(feed:FeedRow) => Promise<void>
+    updateNewItemThumbnails:(items:unknown[])=> Promise<void>
+    rowsWritten:(result:unknown)=> number
+    fetchFeed:(feed:FeedRow)=> Promise<void>
 }
 
 function createFetchFeedHarness (opts:{
@@ -932,7 +932,7 @@ test('GET /feeds/:id/pending honors limit of 50', async t => {
 
 interface ItemsHarness {
     app:{
-        request:(path:string, init?:RequestInit) => Promise<Response>
+        request:(path:string, init?:RequestInit)=> Promise<Response>
     }
     capturedListQuery:{ value:string }
     capturedCountQuery:{ value:string }
@@ -1100,10 +1100,10 @@ test('advanceFeedCursor SQL sets last_pulled_at = MAX(pub_date)',
     async t => {
         let cursorSql = ''
         const userDo = Object.create(RsssUserDO.prototype) as {
-            sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
-            getFeedsWithUpdates:() => string[]
-            broadcast:() => void
-            advanceFeedCursor:(feedId:number) => void
+            sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
+            getFeedsWithUpdates:()=> string[]
+            broadcast:()=> void
+            advanceFeedCursor:(feedId:number)=> void
         }
         userDo.sql = {
             exec (query:string, ..._params:unknown[]) {
@@ -1227,8 +1227,8 @@ test('getFeedUpdateCounts pins pending-count predicate and mapping',
     t => {
         let capturedQuery = ''
         const userDo = Object.create(RsssUserDO.prototype) as {
-            sql:{ exec:(q:string, ...p:unknown[]) => QueryResult }
-            getFeedUpdateCounts:() => Record<string, number>
+            sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
+            getFeedUpdateCounts:()=> Record<string, number>
         }
 
         userDo.sql = {

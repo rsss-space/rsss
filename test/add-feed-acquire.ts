@@ -24,11 +24,11 @@ type FetchInit = Parameters<typeof fetch>[1]
 type FetchHandler = (
     input:FetchInput,
     init?:FetchInit
-) => Promise<Response>
+)=> Promise<Response>
 
 function withStubbedFetch<T> (
     handler:FetchHandler,
-    fn:() => Promise<T>,
+    fn:()=> Promise<T>,
 ):Promise<T> {
     const original = globalThis.fetch
     globalThis.fetch = handler as typeof fetch
@@ -55,8 +55,8 @@ async function settle (count = 4):Promise<void> {
 }
 
 function makeStubAdapter (options:{
-    addFeed?:(url:string) => Promise<void>,
-}):(did?:string) => Promise<DbAdapter> {
+    addFeed?:(url:string)=> Promise<void>,
+}):(did?:string)=> Promise<DbAdapter> {
     const addFeed = options.addFeed ?? (async () => {})
     return async () => ({ addFeed } as unknown as DbAdapter)
 }

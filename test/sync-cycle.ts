@@ -23,8 +23,8 @@ import {
 setTestMode(true, wasmUrl as string)
 
 interface SyncErrorWatch {
-    count:() => number
-    stop:() => void
+    count:()=> number
+    stop:()=> void
 }
 
 function resetTrackedSyncStatus ():void {
@@ -216,8 +216,8 @@ test('runSync coalesces concurrent callers before transactional push',
         const db = await openLocalDb('did:test:sync-cycle-concurrent')
         let pushCalls = 0
         let pullCalls = 0
-        let releaseFirstPush:() => void = () => {}
-        let firstPushStarted:() => void = () => {}
+        let releaseFirstPush:()=> void = () => {}
+        let firstPushStarted:()=> void = () => {}
         const firstPush = new Promise<void>((resolve) => {
             firstPushStarted = resolve
         })

@@ -25,22 +25,22 @@ function createPollDo () {
     const userDo = Object.create(RsssUserDO.prototype) as {
         ctx:{
             storage:{
-                get:<T>(key:string) => Promise<T|undefined>
-                put:<T>(key:string, value:T) => Promise<void>
-                delete:(key:string) => Promise<void>
-                getAlarm:() => Promise<number|null>
-                setAlarm:(time:number) => Promise<void>
+                get:<T>(key:string)=> Promise<T|undefined>
+                put:<T>(key:string, value:T)=> Promise<void>
+                delete:(key:string)=> Promise<void>
+                getAlarm:()=> Promise<number|null>
+                setAlarm:(time:number)=> Promise<void>
             }
         }
-        readPollerFeedState:(feedId:number) => Promise<PollerFeedState|undefined>
-        writePollerFeedState:(feedId:number, state:PollerFeedState) => Promise<void>
-        deletePollerFeedState:(feedId:number) => Promise<void>
-        readAccountActivity:() => Promise<AccountActivityMarker|undefined>
-        writeAccountActivity:(now:number) => Promise<void>
-        readLastAnySuccess:() => Promise<number|undefined>
-        writeLastAnySuccess:(now:number) => Promise<void>
-        ensureFeedRefreshArmed:() => Promise<void>
-        maybeKickCatchUp:(now:number) => Promise<void>
+        readPollerFeedState:(feedId:number)=> Promise<PollerFeedState|undefined>
+        writePollerFeedState:(feedId:number, state:PollerFeedState)=> Promise<void>
+        deletePollerFeedState:(feedId:number)=> Promise<void>
+        readAccountActivity:()=> Promise<AccountActivityMarker|undefined>
+        writeAccountActivity:(now:number)=> Promise<void>
+        readLastAnySuccess:()=> Promise<number|undefined>
+        writeLastAnySuccess:(now:number)=> Promise<void>
+        ensureFeedRefreshArmed:()=> Promise<void>
+        maybeKickCatchUp:(now:number)=> Promise<void>
     }
 
     userDo.ctx = {

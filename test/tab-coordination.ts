@@ -15,7 +15,7 @@ class FakeBroadcastChannel {
     static channels:FakeBroadcastChannel[] = []
 
     name:string
-    onmessage:((ev:{ data:unknown }) => void)|null = null
+    onmessage:((ev:{ data:unknown })=> void)|null = null
     closed = false
 
     constructor (name:string) {
@@ -40,7 +40,7 @@ class FakeBroadcastChannel {
     }
 }
 
-type LockCallback = (lock:{ name:string }) => unknown
+type LockCallback = (lock:{ name:string })=> unknown
 
 class FakeLocks {
     held = new Set<string>()

@@ -11,10 +11,10 @@ const DEFAULT_TIMEOUT_MS = 200
 
 interface IdleWindow {
     requestIdleCallback?:(
-        cb:() => void,
+        cb:()=> void,
         opts?:{ timeout?:number }
-    ) => number
-    cancelIdleCallback?:(id:number) => void
+    )=> number
+    cancelIdleCallback?:(id:number)=> void
 }
 
 function getWin ():IdleWindow|null {
@@ -23,7 +23,7 @@ function getWin ():IdleWindow|null {
 }
 
 export function scheduleIdle (
-    fn:() => void,
+    fn:()=> void,
     opts?:ScheduleIdleOptions
 ):IdleHandle {
     const timeout = opts?.timeout ?? DEFAULT_TIMEOUT_MS

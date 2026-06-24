@@ -134,7 +134,7 @@ export async function upsertFeedCachePolicy (
 export async function loadFeedPolicies (
     db:Sqlite3Db,
     feedIds:number[],
-    opts?:{ shouldApply?:() => boolean }
+    opts?:{ shouldApply?:()=> boolean }
 ):Promise<void> {
     const map:Record<number, FeedCachePolicyRow|null> = {}
     for (const feedId of feedIds) {

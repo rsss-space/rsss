@@ -22,22 +22,22 @@ class FakeSocket implements DrainSocket {
 
     private listeners:Map<
         'message' | 'close' | 'error',
-        Array<(ev:unknown) => void>
+        Array<(ev:unknown)=> void>
     > = new Map()
 
     addEventListener (
         t:'message',
-        cb:(ev:{ data:string }) => void
+        cb:(ev:{ data:string })=> void
     ):void
 
     addEventListener (
         t:'close',
-        cb:() => void
+        cb:()=> void
     ):void
 
     addEventListener (
         t:'error',
-        cb:(err:unknown) => void
+        cb:(err:unknown)=> void
     ):void
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,7 +67,7 @@ class FakeSocket implements DrainSocket {
         if (cbs) {
             for (const cb of cbs) {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-                (cb as (() => void))()
+                (cb as (()=> void))()
             }
         }
     }
@@ -105,25 +105,25 @@ function createIndexerDo (initial:{
     }
 
     const indexerDo = Object.create(TestableIndexerDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => ReturnType<typeof fakeResult> }
+        sql:{ exec:(query:string, ...params:unknown[])=> ReturnType<typeof fakeResult> }
         ctx:{ storage:{
-            get:<T>(key:string) => Promise<T | undefined>
-            put:(key:string, value:unknown) => Promise<void>
-            setAlarm:(time:number) => Promise<void>
-            getAlarm:() => Promise<number|null>
+            get:<T>(key:string)=> Promise<T | undefined>
+            put:(key:string, value:unknown)=> Promise<void>
+            setAlarm:(time:number)=> Promise<void>
+            getAlarm:()=> Promise<number|null>
         } }
         env:{ NODE_ENV?:string } & Record<string, unknown>
-        alarm:() => Promise<void>
-        runDrain:() => Promise<void>
-        drainDeps:() => DrainDeps
-        getCursor:() => Promise<number|null>
-        setCursor:(v:number) => Promise<void>
-        scheduleNextDrain:() => Promise<void>
-        ensureDrainArmed:() => Promise<void>
-        fetch:(req:Request) => Promise<Response>
-        getSetAlarms:() => number[]
-        setExistingAlarm:(t:number|null) => void
-        setDrainDeps:(deps:DrainDeps) => void
+        alarm:()=> Promise<void>
+        runDrain:()=> Promise<void>
+        drainDeps:()=> DrainDeps
+        getCursor:()=> Promise<number|null>
+        setCursor:(v:number)=> Promise<void>
+        scheduleNextDrain:()=> Promise<void>
+        ensureDrainArmed:()=> Promise<void>
+        fetch:(req:Request)=> Promise<Response>
+        getSetAlarms:()=> number[]
+        setExistingAlarm:(t:number|null)=> void
+        setDrainDeps:(deps:DrainDeps)=> void
     }
 
     indexerDo.sql = {
@@ -168,15 +168,15 @@ function createIndexerDo (initial:{
     indexerDo.alarm = RsssIndexerDO.prototype.alarm.bind(indexerDo)
     indexerDo.scheduleNextDrain = (
         RsssIndexerDO.prototype as unknown as Record<string, unknown>
-    ).scheduleNextDrain as () => Promise<void>
+    ).scheduleNextDrain as ()=> Promise<void>
     indexerDo.scheduleNextDrain = indexerDo.scheduleNextDrain.bind(indexerDo)
     indexerDo.ensureDrainArmed = (
         RsssIndexerDO.prototype as unknown as Record<string, unknown>
-    ).ensureDrainArmed as () => Promise<void>
+    ).ensureDrainArmed as ()=> Promise<void>
     indexerDo.ensureDrainArmed = indexerDo.ensureDrainArmed.bind(indexerDo)
     indexerDo.runDrain = (
         RsssIndexerDO.prototype as unknown as Record<string, unknown>
-    ).runDrain as () => Promise<void>
+    ).runDrain as ()=> Promise<void>
     indexerDo.runDrain = indexerDo.runDrain.bind(indexerDo)
 
     // Bind the test helper methods
@@ -216,9 +216,9 @@ function createIndexerDo (initial:{
     const createRouterMethod = (
         RsssIndexerDO.prototype as unknown as Record<string, unknown>
         // eslint-disable-next-line dot-notation
-    )['createRouter'] as (this:unknown) => { fetch:(r:Request) => Promise<Response> }
+    )['createRouter'] as (this:unknown)=> { fetch:(r:Request)=> Promise<Response> }
 
-    let app:{ fetch:(r:Request) => Promise<Response> }
+    let app:{ fetch:(r:Request)=> Promise<Response> }
     if (createRouterMethod) {
         app = createRouterMethod.call(indexerDo)
     } else {

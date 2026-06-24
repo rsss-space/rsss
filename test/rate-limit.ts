@@ -77,7 +77,7 @@ function makeAuthEnv (kv:MemoryKv) {
     }
 }
 
-async function withOAuthFetch<T> (fn:() => Promise<T>):Promise<T> {
+async function withOAuthFetch<T> (fn:()=> Promise<T>):Promise<T> {
     const original = globalThis.fetch
     globalThis.fetch = (async (input:RequestInfo|URL) => {
         const url = typeof input === 'string' ?

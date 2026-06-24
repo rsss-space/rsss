@@ -19,11 +19,11 @@ type FetchInit = Parameters<typeof fetch>[1]
 type FetchHandler = (
     input:FetchInput,
     init?:FetchInit
-) => Promise<Response>
+)=> Promise<Response>
 
 function withStubbedFetch<T> (
     handler:FetchHandler,
-    fn:() => Promise<T>
+    fn:()=> Promise<T>
 ):Promise<T> {
     const original = globalThis.fetch
     globalThis.fetch = handler as typeof fetch
@@ -113,15 +113,15 @@ async function settle (count = 4):Promise<void> {
 }
 
 interface SafetyTimerStub {
-    restore:() => void
-    fire:() => void
-    armedCount:() => number
+    restore:()=> void
+    fire:()=> void
+    armedCount:()=> number
 }
 
 function stubSafetyTimer ():SafetyTimerStub {
     const originalSetTimeout = globalThis.setTimeout
     const originalClearTimeout = globalThis.clearTimeout
-    const armed:Map<number, () => void> = new Map()
+    const armed:Map<number, ()=> void> = new Map()
     let nextId = 1
 
     Object.defineProperty(globalThis, 'setTimeout', {

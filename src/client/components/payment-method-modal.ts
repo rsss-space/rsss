@@ -45,7 +45,7 @@ type Mode = 'list' | 'adding' | 'confirming-remove'
 
 export interface PaymentMethodModalProps {
     open:boolean;
-    onClose:() => void;
+    onClose:()=> void;
 }
 
 const TITLE_ID = 'payment-method-modal-title'
@@ -419,8 +419,8 @@ const Row:FunctionComponent<{
     method:PaymentMethodSummary;
     isDefault:boolean;
     pending:boolean;
-    onRemove:(id:string) => void;
-    onSetDefault:(id:string) => void;
+    onRemove:(id:string)=> void;
+    onSetDefault:(id:string)=> void;
 }> = function ({
     method, isDefault, pending, onRemove, onSetDefault
 }) {

@@ -1,6 +1,6 @@
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
-type WebSocketPairCtor = new (request:string, response:string) => {
+type WebSocketPairCtor = new (request:string, response:string)=> {
     request:string
     response:string
 }
@@ -30,21 +30,21 @@ if (typeof workerGlobal.WebSocketRequestResponsePair !== 'function') {
 
 interface DoCtx {
     storage?:unknown
-    getWebSockets?:() => WebSocket[]
+    getWebSockets?:()=> WebSocket[]
 }
-type ReadHelper<T> = (this:{ ctx:DoCtx }, ...args:unknown[]) =>
+type ReadHelper<T> = (this:{ ctx:DoCtx }, ...args:unknown[])=>
     Promise<T|undefined>
-type WriteHelper = (this:{ ctx:DoCtx }, ...args:unknown[]) =>
+type WriteHelper = (this:{ ctx:DoCtx }, ...args:unknown[])=>
     Promise<void>
 // Relax broadcast for harnesses whose ctx lacks getWebSockets: no-op
 // in that case, otherwise delegate to the REAL implementation so tests
 // that attach a ctx.getWebSockets stub (e.g. do-handlers) still
 // exercise the real code path. Mirrors the read/write wrappers below.
 const origBroadcast = (RsssUserDO.prototype as unknown as {
-    broadcast:(event:string, data:unknown) => void
+    broadcast:(event:string, data:unknown)=> void
 }).broadcast
 ;(RsssUserDO.prototype as unknown as {
-    broadcast:(event:string, data:unknown) => void
+    broadcast:(event:string, data:unknown)=> void
 }).broadcast = function (
     this:{ ctx:DoCtx },
     event:string,
@@ -59,7 +59,7 @@ const origBroadcast = (RsssUserDO.prototype as unknown as {
 
 const proto = RsssUserDO.prototype as unknown as Record<
     string,
-    (...args:unknown[]) => Promise<unknown>
+    (...args:unknown[])=> Promise<unknown>
 >
 const writeKeys = [
     'writeLastAnySuccess',
@@ -76,7 +76,7 @@ for (const key of writeKeys) {
     ) {
         if (!this.ctx || !this.ctx.storage) return
         return orig.call(this, ...args)
-    } as unknown as (...args:unknown[]) => Promise<unknown>
+    } as unknown as (...args:unknown[])=> Promise<unknown>
 }
 const readKeys = [
     'readLastAnySuccess',
@@ -92,5 +92,5 @@ for (const key of readKeys) {
     ) {
         if (!this.ctx || !this.ctx.storage) return undefined
         return orig.call(this, ...args)
-    } as unknown as (...args:unknown[]) => Promise<unknown>
+    } as unknown as (...args:unknown[])=> Promise<unknown>
 }

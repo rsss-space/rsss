@@ -25,8 +25,8 @@ function createItemRouteDo () {
         'http://example.com/posts/item'
     ]
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
-        createRouter:() => { request:(path:string) => Promise<Response> }
+        sql:{ exec:(query:string, ...params:unknown[])=> QueryResult }
+        createRouter:()=> { request:(path:string)=> Promise<Response> }
     }
 
     userDo.sql = {

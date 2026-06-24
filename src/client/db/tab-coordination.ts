@@ -11,7 +11,7 @@ type TabMessage = {
 type TabState = 'idle'|'waiting'|'primary'|'blocked'
 
 export type TabCoordinator = {
-    close:() => void
+    close:()=> void
 }
 
 export const localTabLockError:Signal<string|null> = signal(null)
@@ -20,7 +20,7 @@ export const localTabLockRevision:Signal<number> = signal(0)
 let channel:BroadcastChannel|null = null
 let tabState:TabState = 'idle'
 let releaseRegistered = false
-let releaseLock:(() => void)|null = null
+let releaseLock:(()=> void)|null = null
 let releaseDone:Promise<void>|null = null
 let activeLockRequest:Promise<unknown>|null = null
 let waitingLockPromise:Promise<boolean>|null = null
@@ -31,7 +31,7 @@ function setTabState (next:TabState):void {
     localTabLockRevision.value++
 }
 
-function isTabMessage (data:unknown):data is TabMessage {
+function isTabMessage (data:unknown):data isTabMessage {
     if (data == null || typeof data !== 'object') return false
     const type = (data as { type?:unknown }).type
     return type === 'hello' || type === 'primary' || type === 'released'

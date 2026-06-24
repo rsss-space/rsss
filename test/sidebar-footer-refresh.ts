@@ -21,11 +21,11 @@ type FetchInit = Parameters<typeof fetch>[1]
 type FetchHandler = (
     input:FetchInput,
     init?:FetchInit
-) => Promise<Response>
+)=> Promise<Response>
 
 function withStubbedFetch<T> (
     handler:FetchHandler,
-    fn:() => Promise<T>
+    fn:()=> Promise<T>
 ):Promise<T> {
     const original = globalThis.fetch
     globalThis.fetch = handler as typeof fetch
@@ -177,7 +177,7 @@ async t => {
     State.reconcileAfterRefresh = async () => {}
 
     let postCalls = 0
-    let resolvePost:((r:Response) => void)|null = null
+    let resolvePost:((r:Response)=> void)|null = null
     const postGate = new Promise<Response>(resolve => {
         resolvePost = resolve
     })

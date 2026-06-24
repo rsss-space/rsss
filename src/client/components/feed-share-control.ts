@@ -10,7 +10,7 @@ import './feed-share-control.css'
 export const FeedShareControl:FunctionComponent<{
     state:AppState;
     feed:Feed;
-    onToggle:(feedId:number, checked:boolean) => void;
+    onToggle:(feedId:number, checked:boolean)=> void;
 }> = function FeedShareControl ({ state, feed, onToggle }) {
     const publishKey = String(feed.id)
     const publishPending = Boolean(

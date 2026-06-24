@@ -28,21 +28,21 @@ function createFeed (id:number, url = `https://example.com/${id}.xml`):Feed {
 
 function createRefreshDo (
     feeds:Feed[],
-    fetchFeedFn:(feed:Feed) => Promise<void>,
-    advanceCursorFn:(feedId:number) => void
+    fetchFeedFn:(feed:Feed)=> Promise<void>,
+    advanceCursorFn:(feedId:number)=> void
 ) {
     const broadcasts:Array<{event:string; data:unknown}> = []
 
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:(query:string, ...params:unknown[]) => QueryResult }
-        ctx:{ waitUntil:(promise:Promise<void>) => void }
-        fetchFeed:(feed:Feed) => Promise<void>
-        advanceFeedCursor:(feedId:number) => void
-        broadcast:(event:string, data:unknown) => void
+        sql:{ exec:(query:string, ...params:unknown[])=> QueryResult }
+        ctx:{ waitUntil:(promise:Promise<void>)=> void }
+        fetchFeed:(feed:Feed)=> Promise<void>
+        advanceFeedCursor:(feedId:number)=> void
+        broadcast:(event:string, data:unknown)=> void
         runFeedPool:(
             items:Feed[],
-            worker:(feed:Feed) => Promise<void>
-        ) => Promise<void>
+            worker:(feed:Feed)=> Promise<void>
+        )=> Promise<void>
     }
 
     userDo.sql = {
@@ -71,8 +71,8 @@ function createRefreshDo (
         RsssUserDO.prototype as unknown as {
             runFeedPool:(
                 items:Feed[],
-                worker:(feed:Feed) => Promise<void>
-            ) => Promise<void>
+                worker:(feed:Feed)=> Promise<void>
+            )=> Promise<void>
         }
     ).runFeedPool
 

@@ -1,4 +1,4 @@
-type EventListenerFn = (ev:MessageEvent|Event) => void
+type EventListenerFn = (ev:MessageEvent|Event)=> void
 
 /**
  * Test double for the browser WebSocket the live channel now uses.
@@ -60,14 +60,14 @@ export class StubWebSocket {
 
 /** Install the stub for the duration of `fn`, then restore. */
 export function withStubbedWebSocket<T> (
-    fn:() => Promise<T>
+    fn:()=> Promise<T>
 ):Promise<T> {
     const restore = stubWebSocket()
     return fn().finally(restore)
 }
 
 /** Install the stub and return a restore function. */
-export function stubWebSocket ():() => void {
+export function stubWebSocket ():()=> void {
     const g = globalThis as { WebSocket?:typeof WebSocket }
     const original = g.WebSocket
     StubWebSocket.instances = []

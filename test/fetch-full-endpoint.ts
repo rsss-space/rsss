@@ -89,7 +89,7 @@ function createSql (items:ItemRow[]) {
 }
 
 interface Harness {
-    app:{ request:(path:string, init?:RequestInit) => Promise<Response> }
+    app:{ request:(path:string, init?:RequestInit)=> Promise<Response> }
     items:ItemRow[]
     fetcher:{
         calls:number
@@ -109,15 +109,15 @@ function createHarness (
         sql:ReturnType<typeof createSql>
         ctx:{
             storage:{
-                get:<T>(key:string) => Promise<T|undefined>
-                put:(key:string, value:unknown) => Promise<void>
-                delete:(key:string) => Promise<void>
+                get:<T>(key:string)=> Promise<T|undefined>
+                put:(key:string, value:unknown)=> Promise<void>
+                delete:(key:string)=> Promise<void>
             }
-            waitUntil:(promise:Promise<unknown>) => void
+            waitUntil:(promise:Promise<unknown>)=> void
         }
-        doFetchFullArticle:(link:string) => Promise<FetchFullArticleResult>
-        createRouter:() => {
-            request:(path:string, init?:RequestInit) => Promise<Response>
+        doFetchFullArticle:(link:string)=> Promise<FetchFullArticleResult>
+        createRouter:()=> {
+            request:(path:string, init?:RequestInit)=> Promise<Response>
         }
     }
 

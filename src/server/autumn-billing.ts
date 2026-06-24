@@ -18,7 +18,7 @@ export interface BillingEnv {
 export const BILLING_PLAN_IDS = ['local-first'] as const
 export type BillingPlanId = typeof BILLING_PLAN_IDS[number]
 
-export function isValidPlanId (id:string):id is BillingPlanId {
+export function isValidPlanId (id:string):id isBillingPlanId {
     return (BILLING_PLAN_IDS as readonly string[]).includes(id)
 }
 
@@ -106,7 +106,7 @@ export interface VerifiedSubscription {
 
 function isVerifiedSubscriptionStatus (
     status:unknown
-):status is VerifiedSubscription['status'] {
+):status isVerifiedSubscription['status'] {
     return status === 'active' || status === 'scheduled'
 }
 
@@ -223,10 +223,10 @@ export async function cancelCustomer (
     const customerId = didToCustomerId(did)
     const c = client(env) as unknown as {
         customers:{
-            delete?:(args:{ customerId:string }) => Promise<unknown>;
+            delete?:(args:{ customerId:string })=> Promise<unknown>;
         };
         billing?:{
-            cancel?:(args:{ customerId:string }) => Promise<unknown>;
+            cancel?:(args:{ customerId:string })=> Promise<unknown>;
         };
     }
     try {
@@ -299,7 +299,7 @@ export async function getPaymentSetupUrl (
             setupPayment:(args:{
                 customerId:string;
                 returnUrl?:string;
-            }) => Promise<{ url:string }>;
+            })=> Promise<{ url:string }>;
         };
     }
     const res = await c.billing.setupPayment({

@@ -30,7 +30,7 @@ interface MinimalState {
     isAuthenticated:ReturnType<typeof signal<boolean>>;
     user:ReturnType<typeof signal<null>>;
     feeds:ReturnType<typeof signal<Feed[]>>;
-    _setRoute:(r:string) => void;
+    _setRoute:(r:string)=> void;
     _routeHistory:string[];
 }
 
@@ -86,7 +86,7 @@ function nextTick ():Promise<void> {
 }
 
 function waitFor (
-    condition:() => boolean,
+    condition:()=> boolean,
     desc:string,
     timeoutMs = 2000
 ):Promise<void> {

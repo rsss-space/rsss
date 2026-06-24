@@ -39,8 +39,8 @@ const ActionButton:FunctionComponent<{
     disabled?:boolean;
     autoFocus?:boolean;
     describedBy?:string;
-    onClick:() => void;
-    btnRef?:(el:HTMLButtonElement|null) => void;
+    onClick:()=> void;
+    btnRef?:(el:HTMLButtonElement|null)=> void;
 }> = function ({
     text,
     label,

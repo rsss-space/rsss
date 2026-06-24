@@ -9,8 +9,8 @@ import type { ArticleFetchJob } from '../src/server/article-fetch-job.js'
 interface FakeMessage {
     body:unknown
     acked:boolean
-    ack:() => void
-    retry:() => void
+    ack:()=> void
+    retry:()=> void
 }
 
 function fakeMessage (body:unknown):FakeMessage {

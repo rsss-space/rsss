@@ -419,7 +419,7 @@ function getItemUpdatedAt (db:Sqlite3Db, id:number):string {
 
 async function withMockedNow (
     iso:string,
-    fn:() => Promise<void>
+    fn:()=> Promise<void>
 ):Promise<void> {
     const RealDate = Date
     const fixedMs = RealDate.parse(iso)

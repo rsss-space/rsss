@@ -74,18 +74,18 @@ function createStorageStub () {
 }
 
 function createRouterForPostFeeds (
-    waitUntil:(promise:Promise<unknown>) => void,
-    fetchFeed:(feed:FeedRow) => Promise<void>
+    waitUntil:(promise:Promise<unknown>)=> void,
+    fetchFeed:(feed:FeedRow)=> Promise<void>
 ) {
     const sql = createFeedSql()
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:ReturnType<typeof createFeedSql>
         ctx:{
-            waitUntil:(promise:Promise<unknown>) => void
+            waitUntil:(promise:Promise<unknown>)=> void
             storage:ReturnType<typeof createStorageStub>
         }
-        fetchFeed:(feed:FeedRow) => Promise<void>
-        createRouter:() => { request:(path:string, init:RequestInit) =>
+        fetchFeed:(feed:FeedRow)=> Promise<void>
+        createRouter:()=> { request:(path:string, init:RequestInit)=>
             Promise<Response> }
     }
 
@@ -132,7 +132,7 @@ test('POST /feeds non-blocking: always responds with 201 bare row without awaiti
 })
 
 test('POST /feeds non-blocking: slow fetchFeed does not delay response', async t => {
-    let resolveSlowFetch!:() => void
+    let resolveSlowFetch!:()=> void
     const slowFetch = new Promise<void>((resolve) => {
         resolveSlowFetch = resolve
     })

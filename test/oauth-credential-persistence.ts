@@ -181,14 +181,14 @@ test('OAuth callback persists tokens in the user DO only', async t => {
 function createHarness () {
     const storage = new Map<string, unknown>()
     const userDo = Object.create(RsssUserDO.prototype) as {
-        sql:{ exec:() => QueryResult }
+        sql:{ exec:()=> QueryResult }
         ctx:{
             storage:{
-                put:(key:string, value:unknown) => Promise<void>
+                put:(key:string, value:unknown)=> Promise<void>
             }
         }
-        createRouter:() => {
-            request:(path:string, init?:RequestInit) => Promise<Response>
+        createRouter:()=> {
+            request:(path:string, init?:RequestInit)=> Promise<Response>
         }
     }
     userDo.sql = { exec: () => fakeResult([]) }

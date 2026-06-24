@@ -72,7 +72,7 @@ test('listRemoteSubscriptions stops at MAX_RECORD_PAGES cap (AC7.5)',
                 ):string
                 isListedSubscriptionRecord(
                     value:unknown
-                ):value is ListedSubscriptionRecord
+                ):value isListedSubscriptionRecord
                 subscriptionFromRecord(
                     record:ListedSubscriptionRecord
                 ):{ feedUrl:string; subscription:RemoteSubscription }|null
@@ -107,7 +107,7 @@ test('listRemoteSubscriptions stops at MAX_RECORD_PAGES cap (AC7.5)',
 
             userDo.isListedSubscriptionRecord = (
                 value
-            ):value is ListedSubscriptionRecord => {
+            ):value isListedSubscriptionRecord => {
                 if (typeof value !== 'object' || value === null) return false
                 if (Array.isArray(value)) return false
                 const record = value as Partial<ListedSubscriptionRecord>
@@ -175,7 +175,7 @@ test('listRemoteSubscriptions bails on cursor stall (AC7.5)',
                 ):string
                 isListedSubscriptionRecord(
                     value:unknown
-                ):value is ListedSubscriptionRecord
+                ):value isListedSubscriptionRecord
                 subscriptionFromRecord(
                     record:ListedSubscriptionRecord
                 ):{ feedUrl:string; subscription:RemoteSubscription }|null
@@ -209,7 +209,7 @@ test('listRemoteSubscriptions bails on cursor stall (AC7.5)',
 
             userDo.isListedSubscriptionRecord = (
                 value
-            ):value is ListedSubscriptionRecord => {
+            ):value isListedSubscriptionRecord => {
                 if (typeof value !== 'object' || value === null) return false
                 if (Array.isArray(value)) return false
                 const record = value as Partial<ListedSubscriptionRecord>
@@ -277,7 +277,7 @@ test('listRemoteSubscriptions rejects blocked PDS hosts (AC20.1)',
                 ):string
                 isListedSubscriptionRecord(
                     value:unknown
-                ):value is ListedSubscriptionRecord
+                ):value isListedSubscriptionRecord
                 subscriptionFromRecord(
                     record:ListedSubscriptionRecord
                 ):{ feedUrl:string; subscription:RemoteSubscription }|null
@@ -309,7 +309,7 @@ test('listRemoteSubscriptions rejects blocked PDS hosts (AC20.1)',
 
             userDo.isListedSubscriptionRecord = (
                 value
-            ):value is ListedSubscriptionRecord => {
+            ):value isListedSubscriptionRecord => {
                 if (typeof value !== 'object' || value === null) return false
                 if (Array.isArray(value)) return false
                 const record = value as Partial<ListedSubscriptionRecord>
@@ -375,7 +375,7 @@ test('listRemoteSubscriptions accepts normal PDS hosts (AC20.1)',
                 ):string
                 isListedSubscriptionRecord(
                     value:unknown
-                ):value is ListedSubscriptionRecord
+                ):value isListedSubscriptionRecord
                 subscriptionFromRecord(
                     record:ListedSubscriptionRecord
                 ):{ feedUrl:string; subscription:RemoteSubscription }|null
@@ -407,7 +407,7 @@ test('listRemoteSubscriptions accepts normal PDS hosts (AC20.1)',
 
             userDo.isListedSubscriptionRecord = (
                 value
-            ):value is ListedSubscriptionRecord => {
+            ):value isListedSubscriptionRecord => {
                 if (typeof value !== 'object' || value === null) return false
                 if (Array.isArray(value)) return false
                 const record = value as Partial<ListedSubscriptionRecord>

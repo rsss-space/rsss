@@ -378,10 +378,10 @@ function shouldSkipItem (
 }
 
 export interface PullSyncOptions {
-    onFeedUpserted?:(count:number) => void
-    onItemUpserted?:(count:number) => void
-    onFeedPage?:(count:number) => void
-    onItemPage?:(count:number) => void
+    onFeedUpserted?:(count:number)=> void
+    onItemUpserted?:(count:number)=> void
+    onFeedPage?:(count:number)=> void
+    onItemPage?:(count:number)=> void
     trackStatus?:boolean
 }
 

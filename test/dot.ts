@@ -34,7 +34,7 @@ test('Dot CSS defines red and green using color variables', t => {
 
 function renderDot (color:'red'|'blue'|'green'|'gray'|'yellow'):{
     root:HTMLElement
-    cleanup:() => void
+    cleanup:()=> void
 } {
     const body = document.querySelector('body') as HTMLElement
     const root = document.createElement('div')

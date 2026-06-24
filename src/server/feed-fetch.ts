@@ -5,7 +5,7 @@ const MAX_FEED_REDIRECTS = 3
 export const MAX_ARTICLE_REDIRECTS = 5
 const DNS_JSON_URL = 'https://cloudflare-dns.com/dns-query'
 
-type ResolveHostname = (hostname:string) => Promise<string[]>
+type ResolveHostname = (hostname:string)=> Promise<string[]>
 
 export class FeedFetchError extends Error {
     status:number
@@ -35,7 +35,7 @@ export interface FetchOgImageOptions {
     maxBytes?:number
     resolveHostname?:ResolveHostname
     signal?:AbortSignal
-    onError?:(err:unknown) => void
+    onError?:(err:unknown)=> void
 }
 
 // Public — used at user-entry / dedup time. Strips trailing slash so
@@ -422,7 +422,7 @@ async function resolveDnsJson (
 
     return (body.Answer || [])
         .map(answer => answer.data)
-        .filter((data):data is string => typeof data === 'string')
+        .filter((data):data isstring => typeof data === 'string')
         .filter(data => parseIpv4(data) || parseIpv6(data))
 }
 

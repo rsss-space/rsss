@@ -53,7 +53,7 @@ function makeMockCaches ():{ storage:Pick<CacheStorage, 'open'>; puts:string[] }
 // Deliberate-failure paths log via console.error, which the tapout
 // runner treats as a failed run; silence it for the expected call.
 async function silencingConsoleError<T> (
-    fn:() => Promise<T>
+    fn:()=> Promise<T>
 ):Promise<T> {
     const orig = console.error
     console.error = () => {}
@@ -362,7 +362,7 @@ test('AC10.1: DB failure rolls back Cache Storage blob',
                     }
 
                     return (db as unknown as {
-                        exec:(arg:unknown) => void
+                        exec:(arg:unknown)=> void
                     }).exec(arg)
                 }
             } as Sqlite3Db
@@ -472,7 +472,7 @@ test('AC10.2: eviction accounting ignores rolled-back blobs',
                     }
 
                     return (db as unknown as {
-                        exec:(arg:unknown) => void
+                        exec:(arg:unknown)=> void
                     }).exec(arg)
                 }
             } as Sqlite3Db

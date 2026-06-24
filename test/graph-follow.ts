@@ -83,20 +83,20 @@ function createFollowHarness (options:{
         sql:ReturnType<typeof createFollowSql>
         ctx:{
             storage:{
-                get:<T>(key:string) => Promise<T|undefined>
-                put:(key:string, value:unknown) => Promise<void>
-                delete:(key:string) => Promise<void>
-                getAlarm:() => Promise<number|null>
-                setAlarm:(at:number) => Promise<void>
-                deleteAlarm:() => Promise<void>
+                get:<T>(key:string)=> Promise<T|undefined>
+                put:(key:string, value:unknown)=> Promise<void>
+                delete:(key:string)=> Promise<void>
+                getAlarm:()=> Promise<number|null>
+                setAlarm:(at:number)=> Promise<void>
+                deleteAlarm:()=> Promise<void>
             }
-            waitUntil:(promise:Promise<unknown>) => void
-            getWebSockets:() => Array<{ send:(msg:string) => void }>
+            waitUntil:(promise:Promise<unknown>)=> void
+            getWebSockets:()=> Array<{ send:(msg:string)=> void }>
         }
-        fetchFeed:(feed:unknown) => Promise<void>
-        refreshFeedBatches:() => Promise<void>
-        createRouter:() => {
-            request:(path:string, init?:RequestInit) => Promise<Response>
+        fetchFeed:(feed:unknown)=> Promise<void>
+        refreshFeedBatches:()=> Promise<void>
+        createRouter:()=> {
+            request:(path:string, init?:RequestInit)=> Promise<Response>
         }
     }
 

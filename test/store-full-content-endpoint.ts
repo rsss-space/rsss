@@ -76,9 +76,9 @@ function createHarness (items:ItemRow[]) {
     const sql = createSql(items)
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:MockSql
-        ctx:{ storage:object; waitUntil:(p:Promise<unknown>) => void }
-        createRouter:() => {
-            request:(path:string, init?:RequestInit) => Promise<Response>
+        ctx:{ storage:object; waitUntil:(p:Promise<unknown>)=> void }
+        createRouter:()=> {
+            request:(path:string, init?:RequestInit)=> Promise<Response>
         }
     }
     userDo.sql = sql

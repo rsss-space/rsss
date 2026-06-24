@@ -28,10 +28,10 @@ test('pendingUpdateLabel(0) returns "0 pending updates"', t => {
 
 function renderComponent (
     count:number,
-    onRefresh:() => Promise<void>
+    onRefresh:()=> Promise<void>
 ):{
     root:HTMLElement
-    cleanup:() => void
+    cleanup:()=> void
 } {
     const body = document.querySelector('body') as HTMLElement
     const root = document.createElement('div')
@@ -58,7 +58,7 @@ test(
     'AC1.3: clicking button invokes onRefresh exactly once',
     async t => {
         let callCount = 0
-        let resolve:((v?:void) => void) | undefined
+        let resolve:((v?:void)=> void) | undefined
         const p = new Promise<void>(_resolve => {
             resolve = _resolve
         })
@@ -101,7 +101,7 @@ test(
     'AC2.1: while onRefresh is pending, button disabled and label' +
         ' "Refreshing…"',
     async t => {
-        let resolve:((v?:void) => void) | undefined
+        let resolve:((v?:void)=> void) | undefined
         const p = new Promise<void>(_resolve => {
             resolve = _resolve
         })
@@ -153,7 +153,7 @@ test(
 test(
     'AC2.2: when onRefresh resolves, button re-enables',
     async t => {
-        let resolve:((v?:void) => void) | undefined
+        let resolve:((v?:void)=> void) | undefined
         const p = new Promise<void>(_resolve => {
             resolve = _resolve
         })
@@ -219,7 +219,7 @@ test(
         }
         window.addEventListener('unhandledrejection', onUnhandled)
 
-        let reject:((e:Error) => void) | undefined
+        let reject:((e:Error)=> void) | undefined
         const p = new Promise<void>((_resolve, _reject) => {
             reject = _reject
         })
@@ -254,7 +254,7 @@ test(
                 'button re-enabled after promise rejects'
             )
 
-            let reject2:((e:Error) => void) | undefined
+            let reject2:((e:Error)=> void) | undefined
             const p2 = new Promise<void>((_resolve, _reject) => {
                 reject2 = _reject
             })

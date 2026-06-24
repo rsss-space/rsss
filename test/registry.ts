@@ -15,16 +15,16 @@ type SqliteExec = (opts:{
     bind:unknown[]
     rowMode:'object'
     resultRows:Row[]
-}) => unknown
+})=> unknown
 type MemorySqliteDb = {
-    exec:(opts:Parameters<SqliteExec>[0]) => unknown
-    close:() => void
+    exec:(opts:Parameters<SqliteExec>[0])=> unknown
+    close:()=> void
 }
 type SqliteModule = (opts:{
-    locateFile:() => string
-}) => Promise<{
+    locateFile:()=> string
+})=> Promise<{
     oo1:{
-        DB:new (filename:string) => MemorySqliteDb
+        DB:new (filename:string)=> MemorySqliteDb
     }
 }>
 
@@ -45,7 +45,7 @@ function createFakeSqlStorage (execSql:SqliteExec) {
 
 async function createRegistryWithMemorySql ():Promise<{
     registryDo:RsssRegistryDO
-    close:() => void
+    close:()=> void
 }> {
     const initSqlite = sqlite3Module as unknown as SqliteModule
     const sqlite3 = await initSqlite({
@@ -62,7 +62,7 @@ async function createRegistryWithMemorySql ():Promise<{
             getAlarm: async () => null,
             setAlarm: async () => {}
         },
-        blockConcurrencyWhile: (fn:() => Promise<void>) => {
+        blockConcurrencyWhile: (fn:()=> Promise<void>) => {
             barrier = fn()
         }
     } as unknown as DurableObjectState
