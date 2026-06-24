@@ -64,7 +64,7 @@
         "Verify in browser using dev-browser skill: set a custom DEBUG value then reload and confirm it persists; with no DEBUG value set, confirm the default is seeded in dev"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "PRD US-004 / FR-7,8. Target src/client/index.ts l38-44 (dev/staging gate confirmed). Resolve the production branch per PRD Open Questions (current code does removeItem in prod) - prefer leaving DEBUG untouched when absent unless there is a reason to force-off."
     },
     {

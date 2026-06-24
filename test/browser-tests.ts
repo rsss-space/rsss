@@ -77,6 +77,7 @@ import './sync-status-feeds.js'
 import './sync-status-header.js'
 import './feed-blocked-banner.js'
 import './feed-reader-blocked-banner.js'
+import './debug-seed.js'
 
 test('all done', () => {
     if (window) {

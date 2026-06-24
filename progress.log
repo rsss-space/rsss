@@ -48,3 +48,21 @@
   - Session model: random sid → KV store; cookie = base64(sid).hmac_signature — strictly signing, not encryption
   - Pre-existing typecheck errors in test/ files are unrelated to doc changes and do not block doc-only tasks
 ---
+
+## 2026-06-23 - US-004
+- What was implemented: Stop stomping the DEBUG localStorage key on load
+- Extracted debug seeding logic into `src/client/debug-seed.ts` (`seedDebugIfAbsent`)
+  which only calls `localStorage.setItem('DEBUG', ...)` when `getItem('DEBUG') === null`.
+- Removed unconditional `localStorage.setItem` (line 41) and `localStorage.removeItem`
+  (line 43) from `src/client/index.ts`; replaced with `seedDebugIfAbsent()` call inside
+  the dev/staging gate. The production branch that called `removeItem` was deleted entirely.
+- Added `test/debug-seed.ts` with 3 tests (absent → seeds, present → preserves, empty
+  string → preserves). Added to `test/browser-tests.ts`.
+- Files changed: src/client/debug-seed.ts (new), src/client/index.ts, test/debug-seed.ts
+  (new), test/browser-tests.ts, specs/prd.json (passes: true)
+- **Learnings for future iterations:**
+  - Module-level side effects in index.ts that touch browser globals (localStorage) should
+    be extracted into small helpers so they can be unit-tested independently.
+  - `localStorage.getItem` returns `null` (not `undefined`) when a key is absent; the
+    presence check `=== null` correctly treats an empty-string value as "present".
+---
