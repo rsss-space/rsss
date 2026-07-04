@@ -1,6 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
-import { fakeResult } from './helpers/sql-fake.js'
+import { fakeResult, type QueryResult } from './helpers/sql-fake.js'
 import {
     INDEXES_SQL,
     TABLES_SQL,
@@ -38,7 +38,7 @@ function createConstructorContext (storedVersion:number | null) {
                             { name: 'full_content_status' }
                         ])
                     }
-                    return fakeResult()
+                    return fakeResult([])
                 }
             },
             get: async () => {

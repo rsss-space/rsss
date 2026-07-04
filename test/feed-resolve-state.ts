@@ -24,7 +24,7 @@ setTestMode(true, wasmUrl as string)
 
 interface QueryResult {
     toArray:()=> unknown[]
-    one:()=> unknown | null
+    one?:()=> unknown | null
     rowsWritten?:number
 }
 

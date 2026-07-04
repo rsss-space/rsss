@@ -152,7 +152,7 @@ function bodyForDeleteRecord (
     return body
 }
 
-function isRecord (value:unknown):value isRecord<string, unknown> {
+function isRecord (value:unknown):value is Record<string, unknown> {
     return typeof value === 'object' && value !== null &&
         !Array.isArray(value)
 }

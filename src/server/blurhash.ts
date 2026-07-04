@@ -22,9 +22,23 @@ export async function blurhashCacheKey (imageUrl:string):Promise<string> {
     return `blurhash:${hex.slice(0, 32)}`
 }
 
+export function parseBlurhashCacheEntry (
+    value:string | null
+):BlurhashCacheEntry | null {
+    if (!value) return null
+
+    try {
+        const parsed = JSON.parse(value) as BlurhashCacheEntry|null
+
+        return isBlurhashCacheEntry(parsed) ? parsed : null
+    } catch {
+        return null
+    }
+}
+
 export function isBlurhashCacheEntry (
     value:unknown
-):value isBlurhashCacheEntry {
+):value is BlurhashCacheEntry {
     if (!value || typeof value !== 'object') return false
 
     const entry = value as Partial<BlurhashCacheEntry>
@@ -34,18 +48,4 @@ export function isBlurhashCacheEntry (
         typeof entry.image_height === 'number' &&
         Number.isFinite(entry.image_width) &&
         Number.isFinite(entry.image_height)
-}
-
-export function parseBlurhashCacheEntry (
-    value:string | null
-):BlurhashCacheEntry | null {
-    if (!value) return null
-
-    try {
-        const parsed = JSON.parse(value) as unknown
-
-        return isBlurhashCacheEntry(parsed) ? parsed : null
-    } catch {
-        return null
-    }
 }

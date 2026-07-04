@@ -26,7 +26,7 @@ export function describeOp (row:DeadLetterRow):string {
         }
 
         case 'update_item': {
-            const fields = []
+            const fields:string[] = []
             if (payload.is_read !== undefined) {
                 fields.push('read')
             }

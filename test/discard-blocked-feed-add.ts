@@ -18,10 +18,9 @@ import {
     syncDeadLetters
 } from '../src/client/db/sync-status.js'
 import type { Sqlite3Db } from '../src/client/db/sqlite-init.js'
+import type { SqlValue } from '@sqlite.org/sqlite-wasm'
 
 setTestMode(true, wasmUrl as string)
-
-type SqlValue = unknown
 function queryOne<T> (
     db:Sqlite3Db,
     sql:string,

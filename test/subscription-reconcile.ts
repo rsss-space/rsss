@@ -144,7 +144,7 @@ test('AC9.2: reconcile matches records with canonical URL',
                 ):string
                 isListedSubscriptionRecord(
                     value:unknown
-                ):value isListedSubscriptionRecord
+                ):value is ListedSubscriptionRecord
                 subscriptionFromRecord(
                     record:ListedSubscriptionRecord
                 ):{ feedUrl:string; subscription:RemoteSubscription }|null
@@ -217,7 +217,7 @@ test('AC9.2: reconcile matches records with canonical URL',
 
             userDo.isListedSubscriptionRecord = (
                 value
-            ):value isListedSubscriptionRecord => {
+            ):value is ListedSubscriptionRecord => {
                 if (typeof value !== 'object' || value === null) {
                     return false
                 }

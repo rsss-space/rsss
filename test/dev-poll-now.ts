@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { fakeResult, type FakeQueryResult } from './helpers/sql-fake.js'
+import { fakeResult, type QueryResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 import app from '../src/server/index.js'
 import { makeEnv, executionCtx } from './signup-helpers.js'
@@ -85,7 +85,7 @@ test('POST /api/dev/poll-now returns 404 in staging',
 // ---- DO-level tests (AC3.1, AC3.3) ----
 
 interface DevPollDoType {
-    sql:{ exec:(q:string, ...p:unknown[])=> FakeQueryResult }
+    sql:{ exec:(q:string, ...p:unknown[])=> QueryResult }
     fetchFeed:(feed:FeedRow)=> Promise<void>
     advanceFeedCursor:(feedId:number)=> void
     getFeedUpdateCounts:()=> Record<string, number>

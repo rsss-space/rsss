@@ -222,13 +222,13 @@ function isDuplicateInsertError (err:unknown):boolean {
         message.includes('unique constraint failed')
 }
 
-function isObjectRecord (value:unknown):value isRecord<string, unknown> {
+function isObjectRecord (value:unknown):value is Record<string, unknown> {
     return typeof value === 'object' && value !== null
 }
 
 function isOAuthCredentialRecord (
     value:unknown
-):value isOAuthCredentialRecord {
+):value is OAuthCredentialRecord {
     if (!isObjectRecord(value)) return false
     if (typeof value.did !== 'string') return false
     if (typeof value.accessToken !== 'string') return false
@@ -840,7 +840,7 @@ export class RsssUserDO extends DurableObject<Env> {
 
     private isListedSubscriptionRecord (
         value:unknown
-    ):value isListedSubscriptionRecord {
+    ):value is ListedSubscriptionRecord {
         if (typeof value !== 'object' || value === null) return false
         if (Array.isArray(value)) return false
 

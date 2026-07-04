@@ -275,7 +275,7 @@ export function clearStoredDid ():void {
     }
 }
 
-function isPaintCacheV1 (v:unknown):v isPaintCacheV1 {
+function isPaintCacheV1 (v:unknown):v is PaintCacheV1 {
     if (typeof v !== 'object' || v === null) return false
     const o = v as Record<string, unknown>
     if (o.schemaVersion !== SCHEMA_VERSION) return false  // AC2.7

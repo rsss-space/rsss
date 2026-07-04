@@ -68,7 +68,7 @@ const BROWSER_USER_AGENT = [
 
 export const BLURHASH_CACHE_TTL_SECONDS = 60 * 60 * 24 * 90
 
-function isBlurhashJob (value:unknown):value isBlurhashJob {
+function isBlurhashJob (value:unknown):value is BlurhashJob {
     if (!value || typeof value !== 'object') return false
 
     const job = value as Partial<BlurhashJob>

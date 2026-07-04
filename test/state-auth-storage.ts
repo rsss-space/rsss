@@ -1521,7 +1521,7 @@ async t => {
         'visibilityState'
     )
     let loadFeedStatusCalls = 0
-    let resolvePending:(()=> void)|null = null
+    let resolvePending:()=> void = () => {}
     const pendingPromise = new Promise<void>((resolve) => {
         resolvePending = resolve
     })

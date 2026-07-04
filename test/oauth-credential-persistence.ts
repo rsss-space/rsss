@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { fakeResult } from './helpers/sql-fake.js'
+import { fakeResult, type QueryResult } from './helpers/sql-fake.js'
 import app from '../src/server/index.js'
 import {
     RsssUserDO

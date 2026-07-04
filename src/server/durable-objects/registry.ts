@@ -93,7 +93,7 @@ export class RsssRegistryDO extends DurableObject<RegistryEnv> {
             }
 
             const dids = body.dids.filter(
-                (d):d isstring => typeof d === 'string'
+                (d):d is string => typeof d === 'string'
             )
 
             if (dids.length === 0) {

@@ -18,7 +18,7 @@ let consumed = false
 
 function isInitialFeedPayload (
     value:unknown
-):value isInitialFeedPayload {
+):value is InitialFeedPayload {
     if (!value || typeof value !== 'object') return false
 
     const payload = value as Partial<InitialFeedPayload>

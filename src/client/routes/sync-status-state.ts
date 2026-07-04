@@ -4,7 +4,8 @@ import {
     listDeadLetterOutbox
 } from '../db/push-sync.js'
 import { deadLetterRows } from '../db/sync-status.js'
-import { listFailedFeeds, type Feed } from '../db/local-adapter.js'
+import { listFailedFeeds } from '../db/local-adapter.js'
+import { type Feed } from '../db/types.js'
 import { type AppState } from '../state.js'
 
 export { deadLetterRows } from '../db/sync-status.js'

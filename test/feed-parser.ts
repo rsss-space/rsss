@@ -1,6 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
-import { fakeResult } from './helpers/sql-fake.js'
+import { fakeResult, type QueryResult } from './helpers/sql-fake.js'
 
 const pollerStorage = new Map<string, unknown>()
 
@@ -1320,9 +1320,7 @@ test('fetchFeed silently handles og failures, uses parser image', async t => {
 test('fetchFeed records non-duplicate item insert failures', async t => {
     const userDo = Object.create(RsssUserDO.prototype) as {
         sql:{
-            exec:(query:string, ...params:unknown[])=> {
-                toArray:()=> []
-            }
+            exec:(query:string, ...params:unknown[])=> QueryResult
         }
         fetchFeed:(feed:{
             id:number

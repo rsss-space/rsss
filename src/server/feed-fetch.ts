@@ -422,7 +422,7 @@ async function resolveDnsJson (
 
     return (body.Answer || [])
         .map(answer => answer.data)
-        .filter((data):data isstring => typeof data === 'string')
+        .filter((data):data is string => typeof data === 'string')
         .filter(data => parseIpv4(data) || parseIpv6(data))
 }
 

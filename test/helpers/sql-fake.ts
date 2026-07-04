@@ -12,6 +12,17 @@ export interface FakeQueryResult<T = Record<string, unknown>> {
     one():T
 }
 
+/**
+ * Structural shape of a Cloudflare SqlStorageCursor as consumed by DO test
+ * harnesses. Broad enough that any `FakeQueryResult<T>` is assignable to it,
+ * so a fake `sql.exec` can be annotated with this return type.
+ */
+export interface QueryResult {
+    toArray:()=> unknown[]
+    one?:()=> unknown
+    rowsWritten?:number
+}
+
 export function fakeResult<T = Record<string, unknown>> (
     rows:T[]
 ):FakeQueryResult<T> {

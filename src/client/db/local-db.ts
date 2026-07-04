@@ -60,7 +60,7 @@ export class WorkerBackedLocalDb {
 
 export function isWorkerBackedLocalDb (
     db:Sqlite3Db
-):db isSqlite3Db & WorkerBackedLocalDb {
+):db is Sqlite3Db & WorkerBackedLocalDb {
     return Boolean(
         (db as unknown as { isWorkerBackedLocalDb?:boolean })
             .isWorkerBackedLocalDb

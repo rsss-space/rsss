@@ -4,7 +4,7 @@ export interface ArticleFetchJob {
     objectId:string;
 }
 
-export function isArticleFetchJob (value:unknown):value isArticleFetchJob {
+export function isArticleFetchJob (value:unknown):value is ArticleFetchJob {
     if (!value || typeof value !== 'object') return false
 
     const job = value as Partial<ArticleFetchJob>

@@ -1,5 +1,5 @@
 import { test } from '@substrate-system/tapzero'
-import { fakeResult } from './helpers/sql-fake.js'
+import { fakeResult, type QueryResult } from './helpers/sql-fake.js'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
 
 interface FeedRow {

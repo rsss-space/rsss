@@ -18,7 +18,7 @@ export interface BillingEnv {
 export const BILLING_PLAN_IDS = ['local-first'] as const
 export type BillingPlanId = typeof BILLING_PLAN_IDS[number]
 
-export function isValidPlanId (id:string):id isBillingPlanId {
+export function isValidPlanId (id:string):id is BillingPlanId {
     return (BILLING_PLAN_IDS as readonly string[]).includes(id)
 }
 
@@ -106,7 +106,7 @@ export interface VerifiedSubscription {
 
 function isVerifiedSubscriptionStatus (
     status:unknown
-):status isVerifiedSubscription['status'] {
+):status is VerifiedSubscription['status'] {
     return status === 'active' || status === 'scheduled'
 }
 

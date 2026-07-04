@@ -1,6 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { RsssUserDO } from '../src/server/durable-objects/index.js'
-import { fakeResult } from './helpers/sql-fake.js'
+import { fakeResult, type QueryResult } from './helpers/sql-fake.js'
 import { TABLES_SQL } from '../src/shared/schema.js'
 
 function createPatchRouteDo () {

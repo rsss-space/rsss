@@ -31,7 +31,7 @@ function setTabState (next:TabState):void {
     localTabLockRevision.value++
 }
 
-function isTabMessage (data:unknown):data isTabMessage {
+function isTabMessage (data:unknown):data is TabMessage {
     if (data == null || typeof data !== 'object') return false
     const type = (data as { type?:unknown }).type
     return type === 'hello' || type === 'primary' || type === 'released'
